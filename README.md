@@ -1,19 +1,11 @@
-# VMAX Dashboard 2.1 – dauerhaft updatefähig
+# VMAX Dashboard 3.1
 
-Premium-Dashboard mit BLE-Telemetrie und fest eingerichteter Release-Signatur für zukünftige Updates.
+Android-Dashboard für VMAX/BT638 mit BLE-Kanal-Explorer.
 
-## Build
-
-Der GitHub-Workflow **Signierte VMAX Update-APK** erzeugt eine signierte Release-APK. Vor dem ersten Build müssen die vier Repository-Secrets aus dem privaten Signatur-Backup hinterlegt werden.
-
-## Paket und Version
-
-- Paketname: `de.kevin.vmaxdashboard`
-- Basisversion: `2.1`
-- `versionCode`: automatisch `2100 + GitHub-Laufnummer`
-
-Siehe `UPDATE_SIGNATUR_ANLEITUNG.md`.
-
-## Version 2.2 – BLE Labor
-
-Die Diagnoseansicht enthält jetzt markierbare Testphasen (Stillstand, Rad, Fahrt und Bremse), automatische Min-/Max-/Änderungsstatistiken je Byte, einen Kandidatenfilter, Analyse-Reset und einen kopierbaren Textbericht. Damit lassen sich unbekannte Telemetriewerte beim Scooter-Test wesentlich schneller zuordnen.
+## Neu in 3.1
+- scannt Notify- und Indicate-Kanäle aus allen BLE-Diensten
+- zeigt auch Kanäle ohne empfangene Pakete
+- Live-Status, Paketrate und Paketlänge pro Kanal
+- automatische Byte-Änderungsanalyse und Kandidaten-Ranking
+- echter Geschwindigkeitsgraph und Fahrstatistik
+- Nur-Lese-Modus: keine Scooter-Steuerbefehle

@@ -35,10 +35,16 @@ class BleScooterManager(private val context: Context) {
     private var descriptorWriteRunning = false
     private val previousPackets = mutableMapOf<String, ByteArray>()
     private val packetCounts = mutableMapOf<String, Int>()
+    private val firstPacketTimes = mutableMapOf<String, Long>()
+    private val characteristicServices = mutableMapOf<UUID, String>()
+    private val characteristicProperties = mutableMapOf<UUID, String>()
     private val byteMinimums = mutableMapOf<String, MutableList<Int>>()
     private val byteMaximums = mutableMapOf<String, MutableList<Int>>()
     private val byteChangeCounts = mutableMapOf<String, MutableList<Int>>()
     private val baselinePackets = mutableMapOf<String, ByteArray>()
+    private var rideStartedAtMs: Long? = null
+    private var speedSampleSum = 0.0
+    private var speedSampleCount = 0L
 
     private val _state = MutableStateFlow(ScooterState())
     val state: StateFlow<ScooterState> = _state
@@ -58,6 +64,7 @@ class BleScooterManager(private val context: Context) {
     fun resetAnalyzer() {
         previousPackets.clear()
         packetCounts.clear()
+        firstPacketTimes.clear()
         byteMinimums.clear()
         byteMaximums.clear()
         byteChangeCounts.clear()
@@ -66,6 +73,10 @@ class BleScooterManager(private val context: Context) {
             it.copy(
                 packetTotal = 0,
                 maxSpeedKmh = 0.0,
+                averageSpeedKmh = 0.0,
+                rideSeconds = 0,
+                speedHistory = emptyList(),
+                decoderCandidates = emptyList(),
                 channels = emptyList(),
                 log = emptyList(),
                 lastCharacteristic = "",
@@ -74,6 +85,9 @@ class BleScooterManager(private val context: Context) {
                 analysisPhaseNumber = 0
             )
         }
+        rideStartedAtMs = null
+        speedSampleSum = 0.0
+        speedSampleCount = 0
         addLog("BLE-Analyse zurückgesetzt")
     }
 
@@ -181,24 +195,45 @@ class BleScooterManager(private val context: Context) {
                 return
             }
 
-            val service = g.getService(SERVICE_TELEMETRY)
-            if (service == null) {
-                update { it.copy(status = "Telemetrie-Dienst nicht gefunden") }
+            val notifyChars = g.services.flatMap { service ->
+                service.characteristics.filter { characteristic ->
+                    val p = characteristic.properties
+                    val supportsLiveData =
+                        p and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0 ||
+                            p and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0
+                    if (supportsLiveData) {
+                        characteristicServices[characteristic.uuid] = shortUuid(service.uuid)
+                        characteristicProperties[characteristic.uuid] = buildString {
+                            if (p and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0) append("Notify")
+                            if (p and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0) {
+                                if (isNotEmpty()) append(" + ")
+                                append("Indicate")
+                            }
+                        }
+                    }
+                    supportsLiveData
+                }
+            }.distinctBy { it.uuid }
+
+            if (notifyChars.isEmpty()) {
+                update { it.copy(status = "Keine Live-Datenkanäle gefunden") }
                 return
             }
 
-            val notifyChars = service.characteristics.filter { characteristic ->
-                val p = characteristic.properties
-                p and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0 ||
-                    p and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0
-            }
+            val discoveredChannels = notifyChars.map { characteristic ->
+                BleChannelState(
+                    channel = shortUuid(characteristic.uuid),
+                    service = characteristicServices[characteristic.uuid].orEmpty(),
+                    properties = characteristicProperties[characteristic.uuid] ?: "Notify"
+                )
+            }.sortedWith(compareBy<BleChannelState> { it.service }.thenBy { it.channel })
 
             notificationQueue.clear()
             notificationQueue.addAll(
                 notifyChars.sortedByDescending { it.uuid == BATTERY_CHARACTERISTIC }
             )
-            addLog("${notifyChars.size} Datenkanäle gefunden")
-            update { it.copy(status = "Verbunden – aktiviere Live-Daten") }
+            addLog("${notifyChars.size} Live-Kanäle in ${g.services.size} Diensten gefunden")
+            update { it.copy(status = "Verbunden – aktiviere alle Live-Daten", channels = discoveredChannels) }
             enableNextNotification(g)
         }
 
@@ -328,7 +363,11 @@ class BleScooterManager(private val context: Context) {
         }
 
         previousPackets[short] = value.copyOf()
+        val nowMs = System.currentTimeMillis()
         packetCounts[short] = (packetCounts[short] ?: 0) + 1
+        firstPacketTimes.putIfAbsent(short, nowMs)
+        val elapsedSeconds = ((nowMs - (firstPacketTimes[short] ?: nowMs)).coerceAtLeast(1L)) / 1000.0
+        val packetRate = (packetCounts[short] ?: 1) / elapsedSeconds.coerceAtLeast(1.0)
         val baseline = baselinePackets[short]
         val stats = value.indices.map { index ->
             val current = value[index].toInt() and 0xFF
@@ -342,22 +381,42 @@ class BleScooterManager(private val context: Context) {
             )
         }
 
+        val existing = _state.value.channels.firstOrNull { it.channel == short }
         val channel = BleChannelState(
             channel = short,
+            service = characteristicServices[uuid] ?: existing?.service.orEmpty(),
+            properties = characteristicProperties[uuid] ?: existing?.properties ?: "Notify",
             hex = hex,
             packetCount = packetCounts[short] ?: 1,
             packetLength = value.size,
+            packetsPerSecond = packetRate,
+            lastSeenMs = nowMs,
             changedBytes = changes,
             byteStats = stats
         )
         val channels = (_state.value.channels.filterNot { it.channel == short } + channel)
-            .sortedBy { it.channel }
+            .sortedWith(compareBy<BleChannelState> { it.service }.thenBy { it.channel })
+
+        val speedValue = speed ?: 0.0
+        if (speedValue >= 0.3) {
+            if (rideStartedAtMs == null) rideStartedAtMs = System.currentTimeMillis()
+            speedSampleSum += speedValue
+            speedSampleCount += 1
+        }
+        val rideSeconds = rideStartedAtMs?.let { (System.currentTimeMillis() - it) / 1000 } ?: 0
+        val averageSpeed = if (speedSampleCount > 0) speedSampleSum / speedSampleCount else 0.0
+        val history = (_state.value.speedHistory + speedValue).takeLast(60)
+        val decoderCandidates = buildDecoderCandidates(channels)
 
         update {
             it.copy(
                 batteryPercent = battery,
                 speedKmh = speed,
-                maxSpeedKmh = maxOf(it.maxSpeedKmh, speed ?: 0.0),
+                maxSpeedKmh = maxOf(it.maxSpeedKmh, speedValue),
+                averageSpeedKmh = averageSpeed,
+                rideSeconds = rideSeconds,
+                speedHistory = history,
+                decoderCandidates = decoderCandidates,
                 packetTotal = it.packetTotal + 1,
                 channels = channels,
                 lastCharacteristic = short,
@@ -367,6 +426,23 @@ class BleScooterManager(private val context: Context) {
         }
         addLog("$short: $hex")
     }
+
+
+    private fun buildDecoderCandidates(channels: List<BleChannelState>): List<DecoderCandidate> =
+        channels.flatMap { channel ->
+            channel.byteStats.mapNotNull { stat ->
+                if (stat.changeCount < 2 && stat.range < 2) return@mapNotNull null
+                val score = (stat.changeCount * 3 + stat.range).coerceAtMost(100)
+                val hint = when {
+                    channel.channel == "1505" && stat.index == 8 -> "Geschwindigkeit × 0,1 km/h (bestätigt)"
+                    stat.range in 1..100 && stat.current in 0..100 -> "Prozentwert / Status"
+                    stat.range >= 20 && stat.changeCount >= 5 -> "Dynamischer Fahrwert"
+                    stat.range in 2..15 -> "Temperatur, Modus oder Sensor"
+                    else -> "Unbekannter Telemetriewert"
+                }
+                DecoderCandidate(channel.channel, stat.index, score, hint, stat.current, stat.range, stat.changeCount)
+            }
+        }.sortedByDescending { it.score }.take(12)
 
     private fun shortUuid(uuid: UUID): String =
         uuid.toString().substring(4, 8).uppercase()

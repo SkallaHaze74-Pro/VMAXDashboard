@@ -178,7 +178,7 @@ private fun DashboardScreen(state: ScooterState, connect: () -> Unit, disconnect
             }
         }
         item { TelemetryStrip(state) }
-        item { MiniGraph(state.speedKmh ?: 0.0) }
+        item { MiniGraph(state.speedHistory) }
     }
 }
 
@@ -236,19 +236,22 @@ private fun CompactMetric(label: String, value: String, modifier: Modifier = Mod
 }
 
 @Composable
-private fun MiniGraph(speed: Double) {
+private fun MiniGraph(history: List<Double>) {
     Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(24.dp)) {
         Column(Modifier.padding(18.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("LIVE-TELEMETRIE", fontWeight = FontWeight.Bold)
-                Text("SPEED", color = ElectricBlue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("ECHTE LIVE-TELEMETRIE", fontWeight = FontWeight.Bold)
+                Text("${history.size}/60 WERTE", color = ElectricBlue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
             Spacer(Modifier.height(14.dp))
             Canvas(Modifier.fillMaxWidth().height(90.dp)) {
-                val points = listOf(.08f, .16f, .12f, .35f, .28f, .55f, .46f, .68f, .57f, (speed / 25).toFloat().coerceIn(.05f, .95f))
-                val step = size.width / (points.size - 1)
+                val points = if (history.size >= 2) history else listOf(0.0, 0.0)
+                val maxValue = maxOf(25.0, points.maxOrNull() ?: 25.0)
+                val step = size.width / (points.size - 1).coerceAtLeast(1)
                 for (i in 0 until points.lastIndex) {
-                    drawLine(ElectricBlue, Offset(i * step, size.height * (1 - points[i])), Offset((i + 1) * step, size.height * (1 - points[i + 1])), 4.dp.toPx(), StrokeCap.Round)
+                    val y1 = size.height * (1f - (points[i] / maxValue).toFloat().coerceIn(0f, 1f))
+                    val y2 = size.height * (1f - (points[i + 1] / maxValue).toFloat().coerceIn(0f, 1f))
+                    drawLine(ElectricBlue, Offset(i * step, y1), Offset((i + 1) * step, y2), 4.dp.toPx(), StrokeCap.Round)
                 }
             }
         }
@@ -268,11 +271,12 @@ private fun RideScreen(state: ScooterState, padding: PaddingValues) {
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                BigStat("STRECKE", "%.1f".format(state.tripKm), "km", Modifier.weight(1f))
-                BigStat("GESAMT", state.odometerKm?.let { "%.1f".format(it) } ?: "–", "km", Modifier.weight(1f))
+                BigStat("Ø SPEED", "%.1f".format(state.averageSpeedKmh), "km/h", Modifier.weight(1f))
+                BigStat("FAHRZEIT", formatRideTime(state.rideSeconds), "hh:mm:ss", Modifier.weight(1f))
             }
         }
-        item { InfoPanel("Fahrtenaufzeichnung", "GPS, Durchschnitt, Fahrzeit und CSV-Export sind vorbereitet und werden in der nächsten Ausbaustufe mit echten Messwerten verbunden.") }
+        item { MiniGraph(state.speedHistory) }
+        item { InfoPanel("Fahrtenaufzeichnung 3.1", "Geschwindigkeit, Maximum, Durchschnitt und Fahrzeit werden jetzt aus echten BLE-Messwerten berechnet. Strecke und GPS folgen nach Bestätigung des Kilometer-Bytes.") }
     }
 }
 
@@ -302,7 +306,7 @@ private fun DiagnoseScreen(state: ScooterState, manager: BleScooterManager, padd
     ) {
         item { Header(state) }
         item {
-            Text("BLE LABOR 2.2", fontSize = 28.sp, fontWeight = FontWeight.Black)
+            Text("BLE LABOR 3.1", fontSize = 28.sp, fontWeight = FontWeight.Black)
             Text("Markiere jede Aktion. Die App vergleicht alle Bytes automatisch mit dem Startwert.", color = SoftText)
         }
         item {
@@ -327,6 +331,7 @@ private fun DiagnoseScreen(state: ScooterState, manager: BleScooterManager, padd
             }
         }
         item { TelemetryStrip(state) }
+        item { ChannelExplorerSummary(state.channels) }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
@@ -345,6 +350,9 @@ private fun DiagnoseScreen(state: ScooterState, manager: BleScooterManager, padd
                 Text("ANALYSE ZURÜCKSETZEN")
             }
         }
+        if (state.decoderCandidates.isNotEmpty()) item {
+            DecoderAssistantCard(state.decoderCandidates)
+        }
         if (state.channels.isEmpty()) item {
             InfoPanel("Noch keine Pakete", "Verbinde BT638. Drücke zuerst STAND, warte fünf Sekunden und markiere danach jede Bewegung mit RAD, FAHRT oder BREMSE.")
         }
@@ -357,6 +365,56 @@ private fun DiagnoseScreen(state: ScooterState, manager: BleScooterManager, padd
     }
 }
 
+
+@Composable
+private fun ChannelExplorerSummary(channels: List<BleChannelState>) {
+    val active = channels.count { it.active }
+    val changing = channels.count { channel -> channel.byteStats.any { it.changeCount > 0 } }
+    val services = channels.map { it.service }.filter { it.isNotBlank() }.distinct().size
+    Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(22.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("BLE-KANAL-EXPLORER", fontWeight = FontWeight.Black, fontSize = 18.sp)
+            Text("Alle gefundenen Notify- und Indicate-Kanäle – nicht nur Dienst 1500.", color = SoftText, fontSize = 12.sp)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                ExplorerMetric("GEFUNDEN", channels.size.toString())
+                ExplorerMetric("AKTIV", active.toString())
+                ExplorerMetric("ÄNDERN SICH", changing.toString())
+                ExplorerMetric("DIENSTE", services.toString())
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExplorerMetric(label: String, value: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(value, color = ElectricBlue, fontWeight = FontWeight.Black, fontSize = 20.sp)
+        Text(label, color = SoftText, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun DecoderAssistantCard(candidates: List<DecoderCandidate>) {
+    Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(22.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("AUTO-DECODER 3.1", fontWeight = FontWeight.Black, fontSize = 18.sp)
+            Text("Die stärksten unbekannten Byte-Kandidaten", color = SoftText, fontSize = 12.sp)
+            candidates.take(6).forEach { candidate ->
+                Surface(color = Panel2, shape = RoundedCornerShape(14.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("${candidate.channel} · B${candidate.byteIndex}", color = ElectricBlue, fontWeight = FontWeight.Bold)
+                            Text("Score ${candidate.score}", color = VmaxRed, fontWeight = FontWeight.Bold)
+                        }
+                        Text(candidate.hint, fontSize = 12.sp)
+                        Text("Wert ${candidate.current} · Bereich ${candidate.range} · ${candidate.changeCount} Änderungen", color = SoftText, fontSize = 11.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun PhaseButton(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Button(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(14.dp)) {
@@ -364,8 +422,15 @@ private fun PhaseButton(label: String, modifier: Modifier = Modifier, onClick: (
     }
 }
 
+private fun formatRideTime(seconds: Long): String {
+    val hours = seconds / 3600
+    val minutes = (seconds % 3600) / 60
+    val secs = seconds % 60
+    return "%02d:%02d:%02d".format(hours, minutes, secs)
+}
+
 private fun buildAnalysisReport(state: ScooterState): String = buildString {
-    appendLine("VMAX BLE ANALYSE v2.2")
+    appendLine("VMAX BLE ANALYSE v3.1")
     appendLine("Gerät: ${state.deviceName} ${state.address}")
     appendLine("Status: ${state.status}")
     appendLine("Testphase #${state.analysisPhaseNumber}: ${state.analysisPhase}")
@@ -373,7 +438,7 @@ private fun buildAnalysisReport(state: ScooterState): String = buildString {
     appendLine("Geschwindigkeit: ${state.speedKmh ?: 0.0} km/h; Akku: ${state.batteryPercent ?: -1}%")
     appendLine()
     state.channels.forEach { channel ->
-        appendLine("KANAL ${channel.channel} | Pakete ${channel.packetCount} | Länge ${channel.packetLength}")
+        appendLine("DIENST ${channel.service} | KANAL ${channel.channel} | ${channel.properties} | Pakete ${channel.packetCount} | ${"%.2f".format(channel.packetsPerSecond)} Pakete/s | Länge ${channel.packetLength}")
         appendLine(channel.hex)
         appendLine("Letzte Änderungen: ${channel.changedBytes}")
         channel.byteStats
@@ -397,11 +462,18 @@ private fun ChannelCard(channel: BleChannelState) {
     Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp)) {
         Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("KANAL ${channel.channel}", color = ElectricBlue, fontWeight = FontWeight.Black)
-                Text("#${channel.packetCount} · ${channel.packetLength} Byte", color = SoftText)
+                Column {
+                    Text("KANAL ${channel.channel}", color = ElectricBlue, fontWeight = FontWeight.Black)
+                    Text("Dienst ${channel.service.ifBlank { "?" }} · ${channel.properties}", color = SoftText, fontSize = 10.sp)
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(if (channel.active) "● AKTIV" else "○ WARTET", color = if (channel.active) ElectricBlue else SoftText, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                    Text("#${channel.packetCount} · ${"%.1f".format(channel.packetsPerSecond)} Hz · ${channel.packetLength} Byte", color = SoftText, fontSize = 10.sp)
+                }
             }
-            Text(channel.hex, fontSize = 11.sp, lineHeight = 16.sp)
-            Text("Letzte Änderung: ${channel.changedBytes}", color = VmaxRed, fontSize = 11.sp)
+            Text(channel.hex, fontSize = 11.sp, lineHeight = 16.sp, color = if (channel.active) Color.White else SoftText)
+            if (channel.active) Text("Letzte Änderung: ${channel.changedBytes}", color = VmaxRed, fontSize = 11.sp)
+            else Text("Kanal wurde gefunden, hat aber noch kein Paket gesendet.", color = SoftText, fontSize = 11.sp)
             if (candidates.isNotEmpty()) {
                 HorizontalDivider(color = Color.White.copy(alpha = .08f))
                 Text("BYTE-KANDIDATEN", color = SoftText, fontSize = 10.sp, fontWeight = FontWeight.Bold)
@@ -433,7 +505,7 @@ private fun SettingsScreen(state: ScooterState, connect: () -> Unit, disconnect:
                 OutlinedButton(disconnect, enabled = state.connected, modifier = Modifier.weight(1f)) { Text("TRENNEN") }
             }
         }
-        item { InfoPanel("VMAX Dashboard 2.2", "Premium-Interface mit BLE-Labor, Testphasen, automatischer Byte-Auswertung und kopierbarem Analysebericht.") }
+        item { InfoPanel("VMAX Dashboard 3.1", "BLE-Kanal-Explorer über alle Dienste, Live-Aktivität, Paketrate, Byte-Analyse, echter Graph und Auto-Decoder.") }
     }
 }
 
