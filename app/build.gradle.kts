@@ -8,8 +8,8 @@ val signingStoreFile = System.getenv("SIGNING_STORE_FILE")
 val signingStorePassword = System.getenv("SIGNING_STORE_PASSWORD")
 val signingKeyAlias = System.getenv("SIGNING_KEY_ALIAS")
 val signingKeyPassword = System.getenv("SIGNING_KEY_PASSWORD")
-val ciVersionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 3100
-val ciVersionName = System.getenv("VERSION_NAME") ?: "3.1.0"
+val ciVersionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 4000
+val ciVersionName = System.getenv("VERSION_NAME") ?: "4.0.0"
 
 android {
     namespace = "de.kevin.vmaxdashboard"

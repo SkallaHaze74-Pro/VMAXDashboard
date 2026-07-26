@@ -10,8 +10,14 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -27,6 +33,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -41,6 +48,13 @@ private val Night = Color(0xFF070A10)
 private val Panel = Color(0xFF111722)
 private val Panel2 = Color(0xFF171F2C)
 private val SoftText = Color(0xFF9BA9BB)
+private val NeonPurple = Color(0xFF9D4EDD)
+private val NeonPink = Color(0xFFFF3CAC)
+private val NeonOrange = Color(0xFFFF8A00)
+private val NeonYellow = Color(0xFFFFE600)
+private val NeonGreen = Color(0xFF39FF88)
+private val NeonCyan = Color(0xFF00E5FF)
+private val RainbowColors = listOf(NeonPink, NeonPurple, NeonCyan, NeonGreen, NeonYellow, NeonOrange, NeonPink)
 
 class MainActivity : ComponentActivity() {
     private lateinit var bleManager: BleScooterManager
@@ -94,10 +108,18 @@ private fun VmaxApp(manager: BleScooterManager) {
         )
     }
 
+    Box(
+        Modifier.fillMaxSize().background(
+            Brush.radialGradient(
+                colors = listOf(Color(0xFF17102A), Night, Color.Black),
+                radius = 1400f
+            )
+        )
+    ) {
     Scaffold(
-        containerColor = Night,
+        containerColor = Color.Transparent,
         bottomBar = {
-            NavigationBar(containerColor = Color(0xFF0B1018)) {
+            NavigationBar(containerColor = Color(0xEE090B12)) {
                 Screen.entries.forEach { item ->
                     NavigationBarItem(
                         selected = screen == item,
@@ -123,6 +145,7 @@ private fun VmaxApp(manager: BleScooterManager) {
             Screen.Settings -> SettingsScreen(state, ::connect, manager::disconnect, padding)
         }
     }
+    }
 }
 
 @Composable
@@ -130,9 +153,13 @@ private fun Header(state: ScooterState) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("VMAX", fontWeight = FontWeight.Black, fontSize = 28.sp, letterSpacing = 2.sp)
-            Text("LIVE CONTROL", color = VmaxRed, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            Text("NEON TELEMETRY", color = NeonCyan, fontWeight = FontWeight.Bold, fontSize = 12.sp)
         }
-        Surface(shape = RoundedCornerShape(50), color = if (state.connected) Color(0xFF153827) else Panel2) {
+        Surface(
+            modifier = Modifier.border(1.dp, Brush.horizontalGradient(RainbowColors), RoundedCornerShape(50)),
+            shape = RoundedCornerShape(50),
+            color = if (state.connected) Color(0xCC10291F) else Color(0xCC151824)
+        ) {
             Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(8.dp).background(if (state.connected) Color(0xFF48E58B) else VmaxRed, CircleShape))
                 Spacer(Modifier.width(7.dp))
@@ -184,21 +211,55 @@ private fun DashboardScreen(state: ScooterState, connect: () -> Unit, disconnect
 
 @Composable
 private fun Speedometer(speed: Double, battery: Int?) {
-    val progress by animateFloatAsState((speed / 25.0).coerceIn(0.0, 1.0).toFloat(), label = "speed")
-    Box(Modifier.fillMaxWidth().height(310.dp), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.size(280.dp)) {
+    val progress by animateFloatAsState(
+        (speed / 25.0).coerceIn(0.0, 1.0).toFloat(),
+        animationSpec = tween(650),
+        label = "speed"
+    )
+    val infinite = rememberInfiniteTransition(label = "neonRainbow")
+    val rotation by infinite.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(8500), RepeatMode.Restart),
+        label = "rainbowRotation"
+    )
+    val pulse by infinite.animateFloat(
+        initialValue = .72f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1200), RepeatMode.Reverse),
+        label = "neonPulse"
+    )
+
+    Box(Modifier.fillMaxWidth().height(326.dp), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.size(300.dp)) {
             val stroke = 22.dp.toPx()
             val inset = stroke / 2
-            drawArc(Color(0xFF202938), 140f, 260f, false, Offset(inset, inset), Size(size.width - stroke, size.height - stroke), style = Stroke(stroke, cap = StrokeCap.Round))
-            drawArc(Brush.sweepGradient(listOf(ElectricBlue, VmaxRed, VmaxRed)), 140f, 260f * progress, false, Offset(inset, inset), Size(size.width - stroke, size.height - stroke), style = Stroke(stroke, cap = StrokeCap.Round))
+            val arcSize = Size(size.width - stroke, size.height - stroke)
+            drawArc(Color(0xFF202331), 140f, 260f, false, Offset(inset, inset), arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
+            rotate(rotation, pivot = center) {
+                drawArc(
+                    Brush.sweepGradient(RainbowColors, center), 140f, 260f * progress, false,
+                    Offset(inset, inset), arcSize,
+                    style = Stroke(36.dp.toPx(), cap = StrokeCap.Round), alpha = .12f * pulse
+                )
+                drawArc(
+                    Brush.sweepGradient(RainbowColors, center), 140f, 260f * progress, false,
+                    Offset(inset, inset), arcSize,
+                    style = Stroke(stroke, cap = StrokeCap.Round)
+                )
+            }
+            drawCircle(Brush.radialGradient(listOf(NeonPurple.copy(alpha = .12f), Color.Transparent)), radius = size.minDimension * .38f)
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("GESCHWINDIGKEIT", color = SoftText, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            Text("%.1f".format(speed), fontSize = 72.sp, fontWeight = FontWeight.Black, letterSpacing = (-3).sp)
-            Text("km/h", color = ElectricBlue, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text("NEON SPEED", color = SoftText, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+            Text("%.1f".format(speed), fontSize = 76.sp, fontWeight = FontWeight.Black, letterSpacing = (-4).sp)
+            Text("km/h", color = NeonCyan, fontSize = 18.sp, fontWeight = FontWeight.Black)
             Spacer(Modifier.height(15.dp))
-            Surface(color = Panel2, shape = RoundedCornerShape(50)) {
-                Text("SPORT  •  ${battery?.let { "$it %" } ?: "AKKU –"}", Modifier.padding(horizontal = 16.dp, vertical = 8.dp), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            Surface(
+                modifier = Modifier.border(1.dp, Brush.horizontalGradient(RainbowColors), RoundedCornerShape(50)),
+                color = Color(0xCC11131D), shape = RoundedCornerShape(50)
+            ) {
+                Text("SPORT  •  ${battery?.let { "$it %" } ?: "AKKU –"}", Modifier.padding(horizontal = 18.dp, vertical = 9.dp), fontWeight = FontWeight.Bold, fontSize = 12.sp)
             }
         }
     }
@@ -206,7 +267,12 @@ private fun Speedometer(speed: Double, battery: Int?) {
 
 @Composable
 private fun ProMetric(symbol: String, label: String, value: String, modifier: Modifier = Modifier) {
-    Card(modifier, shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Panel)) {
+    val shape = RoundedCornerShape(20.dp)
+    Card(
+        modifier.border(1.dp, Brush.linearGradient(RainbowColors.map { it.copy(alpha = .55f) }), shape),
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = Color(0xDD11131D))
+    ) {
         Column(Modifier.fillMaxWidth().padding(vertical = 15.dp, horizontal = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(symbol, fontSize = 20.sp)
             Spacer(Modifier.height(5.dp))
@@ -237,11 +303,15 @@ private fun CompactMetric(label: String, value: String, modifier: Modifier = Mod
 
 @Composable
 private fun MiniGraph(history: List<Double>) {
-    Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(24.dp)) {
+    val shape = RoundedCornerShape(24.dp)
+    Card(
+        modifier = Modifier.border(1.dp, Brush.horizontalGradient(RainbowColors.map { it.copy(alpha = .45f) }), shape),
+        colors = CardDefaults.cardColors(containerColor = Color(0xDD11131D)), shape = shape
+    ) {
         Column(Modifier.padding(18.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("ECHTE LIVE-TELEMETRIE", fontWeight = FontWeight.Bold)
-                Text("${history.size}/60 WERTE", color = ElectricBlue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("NEON LIVE WAVE", fontWeight = FontWeight.Bold)
+                Text("${history.size}/60 WERTE", color = NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
             Spacer(Modifier.height(14.dp))
             Canvas(Modifier.fillMaxWidth().height(90.dp)) {
@@ -251,7 +321,11 @@ private fun MiniGraph(history: List<Double>) {
                 for (i in 0 until points.lastIndex) {
                     val y1 = size.height * (1f - (points[i] / maxValue).toFloat().coerceIn(0f, 1f))
                     val y2 = size.height * (1f - (points[i + 1] / maxValue).toFloat().coerceIn(0f, 1f))
-                    drawLine(ElectricBlue, Offset(i * step, y1), Offset((i + 1) * step, y2), 4.dp.toPx(), StrokeCap.Round)
+                    val fraction = i.toFloat() / points.lastIndex.coerceAtLeast(1)
+                    val colorIndex = (fraction * (RainbowColors.size - 1)).toInt().coerceIn(0, RainbowColors.lastIndex)
+                    val lineColor = RainbowColors[colorIndex]
+                    drawLine(lineColor.copy(alpha = .18f), Offset(i * step, y1), Offset((i + 1) * step, y2), 11.dp.toPx(), StrokeCap.Round)
+                    drawLine(lineColor, Offset(i * step, y1), Offset((i + 1) * step, y2), 4.dp.toPx(), StrokeCap.Round)
                 }
             }
         }
@@ -505,7 +579,7 @@ private fun SettingsScreen(state: ScooterState, connect: () -> Unit, disconnect:
                 OutlinedButton(disconnect, enabled = state.connected, modifier = Modifier.weight(1f)) { Text("TRENNEN") }
             }
         }
-        item { InfoPanel("VMAX Dashboard 3.1", "BLE-Kanal-Explorer über alle Dienste, Live-Aktivität, Paketrate, Byte-Analyse, echter Graph und Auto-Decoder.") }
+        item { InfoPanel("VMAX Dashboard 3.1", "Neon Rainbow Cockpit, flüssiger Tacho, echte Live-Wave, BLE-Kanal-Explorer und Auto-Decoder. Weiterhin sicherer Nur-Lesemodus.") }
     }
 }
 

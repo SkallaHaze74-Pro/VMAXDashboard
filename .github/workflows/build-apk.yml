@@ -42,8 +42,8 @@ jobs:
           test -n "$SIGNING_KEY_ALIAS" || (echo "GitHub Secret SIGNING_KEY_ALIAS fehlt" && exit 1)
           test -n "$SIGNING_KEY_PASSWORD" || (echo "GitHub Secret SIGNING_KEY_PASSWORD fehlt" && exit 1)
 
-          export VERSION_CODE=$((3100 + GITHUB_RUN_NUMBER))
-          export VERSION_NAME="3.1.${GITHUB_RUN_NUMBER}"
+          export VERSION_CODE=$((4000 + GITHUB_RUN_NUMBER))
+          export VERSION_NAME="4.0.${GITHUB_RUN_NUMBER}"
 
           gradle assembleRelease --stacktrace
           cp app/build/outputs/apk/release/app-release.apk "VMAX-Dashboard-v${VERSION_NAME}.apk"

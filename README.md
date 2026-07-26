@@ -1,4 +1,14 @@
-# VMAX Dashboard 3.1
+# VMAX Dashboard X 4.0 – Neon Rainbow Edition
+
+## Neu in 4.0
+
+- animierter Neon-Regenbogen-Tachoring
+- pulsierender Glow und AMOLED-Hintergrund
+- Neon-Messkarten für Akku, Spannung und Temperatur
+- mehrfarbiger echter Live-Geschwindigkeitsgraph
+- überarbeiteter LIVE/OFFLINE-Status
+- alle Funktionen aus 3.1 inklusive BLE-Kanal-Explorer und Auto-Decoder
+- weiterhin reiner Lesemodus ohne Steuerbefehle
 
 Android-Dashboard für VMAX/BT638 mit BLE-Kanal-Explorer.
 
