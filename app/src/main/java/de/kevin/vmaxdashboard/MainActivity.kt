@@ -93,6 +93,14 @@ private enum class Screen(val label: String, val symbol: String) {
     Dashboard("Cockpit", "◉"), Tester("Tester Lab", "✦"), Diagnose("Explorer", "⌁"), Settings("Setup", "⚙")
 }
 
+private enum class ReportSendState {
+    Idle,
+    Sending,
+    Sent,
+    Failed
+}
+
+
 @Composable
 private fun VmaxApp(manager: BleScooterManager) {
     val state by manager.state.collectAsStateWithLifecycle()
@@ -675,6 +683,18 @@ private fun TesterLabScreen(
     var telemetryStatus by remember { mutableStateOf("") }
     var autoScanStarted by remember { mutableStateOf(false) }
     var showAllDevices by remember { mutableStateOf(false) }
+    var reportType by remember { mutableStateOf("Fehlerbericht") }
+    var reportSendState by remember {
+        mutableStateOf(ReportSendState.Idle)
+    }
+    var firebaseReady by remember { mutableStateOf(false) }
+    var ownReports by remember {
+        mutableStateOf<List<TesterReportItem>>(emptyList())
+    }
+    var ownReportsStatus by remember {
+        mutableStateOf("Firebase-Verbindung wird aufgebaut …")
+    }
+
 
     LaunchedEffect(Unit) {
         if (!autoScanStarted && !state.connected && state.discoveredScooters.isEmpty()) {
@@ -682,6 +702,42 @@ private fun TesterLabScreen(
             universalScan()
         }
     }
+
+    LaunchedEffect(Unit) {
+        telemetryReporter.ensureLogin(
+            onSuccess = {
+                firebaseReady = true
+                ownReportsStatus = "Eigene Berichte werden geladen …"
+
+                telemetryReporter.observeOwnReports(
+                    onUpdate = { reports ->
+                        ownReports = reports
+                        ownReportsStatus =
+                            if (reports.isEmpty()) {
+                                "Noch keine Berichte vorhanden."
+                            } else {
+                                ""
+                            }
+                    },
+                    onFailure = { error ->
+                        ownReportsStatus =
+                            "Berichte konnten nicht geladen werden: " +
+                                (error.localizedMessage
+                                    ?: "unbekannter Fehler")
+                    }
+                )
+            },
+            onFailure = { error ->
+                firebaseReady = false
+                ownReportsStatus =
+                    "Firebase-Anmeldung fehlgeschlagen: " +
+                        (error.localizedMessage
+                            ?: "unbekannter Fehler")
+            }
+        )
+    }
+
+
 
     val phases = listOf(
         "01 Stillstand 20 s",
@@ -887,37 +943,97 @@ private fun TesterLabScreen(
         }
         item {
             Card(
-                colors = CardDefaults.cardColors(containerColor = Panel),
+                colors = CardDefaults.cardColors(
+                    containerColor = Panel
+                ),
                 shape = RoundedCornerShape(22.dp)
             ) {
                 Column(
                     Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement =
+                        Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        "4 · FIREBASE TESTDATEN",
+                        "4 · BETA CENTER",
                         fontWeight = FontWeight.Black,
                         color = NeonCyan
                     )
 
+                    Surface(
+                        color = Panel2,
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment =
+                                Alignment.CenterVertically
+                        ) {
+                            Box(
+                                Modifier
+                                    .size(10.dp)
+                                    .background(
+                                        if (firebaseReady) {
+                                            NeonGreen
+                                        } else {
+                                            NeonYellow
+                                        },
+                                        CircleShape
+                                    )
+                            )
+
+                            Spacer(Modifier.width(9.dp))
+
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    if (firebaseReady) {
+                                        "Firebase verbunden"
+                                    } else {
+                                        "Firebase wird verbunden"
+                                    },
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+
+                                Text(
+                                    "Tester-ID " +
+                                        telemetryReporter.testerId
+                                            .take(8)
+                                            .uppercase() +
+                                        "…",
+                                    color = SoftText,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                    }
+
                     Row(
                         Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment =
+                            Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f)) {
                             Text(
                                 "Anonyme Testdaten senden",
                                 fontWeight = FontWeight.Bold
                             )
+
                             Text(
-                                if (telemetryUploadEnabled)
-                                    "Aktiv – BLE-Testdaten können übertragen werden."
-                                else
-                                    "Aus – es werden keine BLE-Testdaten hochgeladen.",
-                                color = if (telemetryUploadEnabled)
-                                    NeonGreen
-                                else
-                                    SoftText,
+                                if (telemetryUploadEnabled) {
+                                    "Aktiv – technische Testdaten " +
+                                        "dürfen übertragen werden."
+                                } else {
+                                    "Aus – es werden keine " +
+                                        "Testdaten hochgeladen."
+                                },
+                                color =
+                                    if (telemetryUploadEnabled) {
+                                        NeonGreen
+                                    } else {
+                                        SoftText
+                                    },
                                 fontSize = 11.sp
                             )
                         }
@@ -926,47 +1042,100 @@ private fun TesterLabScreen(
                             checked = telemetryUploadEnabled,
                             onCheckedChange = { enabled ->
                                 telemetryUploadEnabled = enabled
-                                telemetryReporter.uploadEnabled = enabled
+                                telemetryReporter.uploadEnabled =
+                                    enabled
+                                reportSendState =
+                                    ReportSendState.Idle
+
                                 telemetryStatus =
-                                    if (enabled)
-                                        "Upload aktiviert."
-                                    else
-                                        "Upload ausgeschaltet."
+                                    if (enabled) {
+                                        "Upload ist aktiviert."
+                                    } else {
+                                        "Upload ist ausgeschaltet."
+                                    }
                             }
                         )
                     }
 
-                    Surface(
-                        color = Panel2,
-                        shape = RoundedCornerShape(14.dp)
+                    HorizontalDivider(
+                        color = Color.White.copy(alpha = 0.08f)
+                    )
+
+                    Text(
+                        "BERICHTSTYP",
+                        color = SoftText,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Row(
+                        horizontalArrangement =
+                            Arrangement.spacedBy(8.dp)
                     ) {
-                        Column(
-                            Modifier.fillMaxWidth().padding(12.dp)
-                        ) {
-                            Text(
-                                "ANONYME TESTER-ID",
-                                color = SoftText,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                telemetryReporter.testerId.take(8)
-                                    .uppercase() + "…",
-                                color = NeonCyan,
-                                fontWeight = FontWeight.Black
-                            )
-                        }
+                        FilterChip(
+                            selected =
+                                reportType == "Fehlerbericht",
+                            onClick = {
+                                reportType = "Fehlerbericht"
+                            },
+                            label = {
+                                Text("🐞 FEHLER")
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        FilterChip(
+                            selected =
+                                reportType == "Funktionswunsch",
+                            onClick = {
+                                reportType = "Funktionswunsch"
+                            },
+                            label = {
+                                Text("💡 WUNSCH")
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
                     }
+
+                    Text(
+                        if (reportType == "Fehlerbericht") {
+                            "Beschreibe oben bei Besonderheiten " +
+                                "möglichst genau, was nicht funktioniert."
+                        } else {
+                            "Beschreibe oben, welche Funktion du " +
+                                "dir für die App wünschst."
+                        },
+                        color = SoftText,
+                        fontSize = 11.sp
+                    )
 
                     Button(
                         onClick = {
-                            telemetryStatus = "Bericht wird gesendet …"
+                            reportSendState =
+                                ReportSendState.Sending
+                            telemetryStatus =
+                                "Bericht wird gesendet …"
 
-                            val title = if (scooterModel.isBlank()) {
-                                "Tester-Lab-Bericht"
-                            } else {
-                                "Tester-Lab-Bericht: $scooterModel"
-                            }
+                            val title =
+                                when (reportType) {
+                                    "Funktionswunsch" -> {
+                                        if (scooterModel.isBlank()) {
+                                            "Funktionswunsch"
+                                        } else {
+                                            "Funktionswunsch: " +
+                                                scooterModel
+                                        }
+                                    }
+
+                                    else -> {
+                                        if (scooterModel.isBlank()) {
+                                            "Fehlerbericht"
+                                        } else {
+                                            "Fehlerbericht: " +
+                                                scooterModel
+                                        }
+                                    }
+                                }
 
                             telemetryReporter.reportProblem(
                                 title = title,
@@ -976,52 +1145,101 @@ private fun TesterLabScreen(
                                     testerNote
                                 ),
                                 scooterState = state,
+                                reportType = reportType,
+                                scooterModel = scooterModel,
                                 onSuccess = {
+                                    reportSendState =
+                                        ReportSendState.Sent
                                     telemetryStatus =
-                                        "✓ Bericht erfolgreich an Firebase gesendet."
+                                        "Bericht erfolgreich gesendet."
                                 },
                                 onFailure = { error ->
+                                    reportSendState =
+                                        ReportSendState.Failed
                                     telemetryStatus =
-                                        "Fehler beim Senden: " +
-                                        (error.localizedMessage
-                                            ?: "unbekannter Fehler")
+                                        error.localizedMessage
+                                            ?: "Bericht konnte nicht " +
+                                                "gesendet werden."
                                 }
                             )
                         },
-                        enabled = telemetryUploadEnabled &&
-                            state.packetTotal > 0,
+                        enabled =
+                            telemetryUploadEnabled &&
+                                testerNote.isNotBlank() &&
+                                reportSendState !=
+                                    ReportSendState.Sending,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(14.dp)
                     ) {
                         Text(
-                            if (telemetryUploadEnabled)
-                                "JETZT AN FIREBASE SENDEN"
-                            else
-                                "UPLOAD ZUERST AKTIVIEREN",
+                            when {
+                                !telemetryUploadEnabled ->
+                                    "UPLOAD ZUERST AKTIVIEREN"
+
+                                testerNote.isBlank() ->
+                                    "BESCHREIBUNG OBEN EINTRAGEN"
+
+                                reportSendState ==
+                                    ReportSendState.Sending ->
+                                    "WIRD GESENDET …"
+
+                                reportType ==
+                                    "Funktionswunsch" ->
+                                    "FUNKTIONSWUNSCH SENDEN"
+
+                                else ->
+                                    "FEHLERBERICHT SENDEN"
+                            },
                             fontWeight = FontWeight.Black
                         )
                     }
 
-                    if (telemetryStatus.isNotBlank()) {
+                    ReportUploadStatus(
+                        state = reportSendState,
+                        message = telemetryStatus
+                    )
+
+                    HorizontalDivider(
+                        color = Color.White.copy(alpha = 0.08f)
+                    )
+
+                    Text(
+                        "MEINE BERICHTE",
+                        fontWeight = FontWeight.Black,
+                        color = NeonPurple
+                    )
+
+                    if (ownReportsStatus.isNotBlank()) {
                         Text(
-                            telemetryStatus,
-                            color = when {
-                                telemetryStatus.startsWith("✓") -> NeonGreen
-                                telemetryStatus.startsWith("Fehler") -> VmaxRed
-                                else -> NeonYellow
-                            },
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
+                            ownReportsStatus,
+                            color =
+                                if (
+                                    ownReportsStatus.contains(
+                                        "fehl",
+                                        ignoreCase = true
+                                    ) ||
+                                    ownReportsStatus.contains(
+                                        "nicht geladen",
+                                        ignoreCase = true
+                                    )
+                                ) {
+                                    VmaxRed
+                                } else {
+                                    SoftText
+                                },
+                            fontSize = 11.sp
                         )
                     }
 
+                    ownReports.take(10).forEach { report ->
+                        TesterReportRow(report)
+                    }
+
                     Text(
-                        "Gesendet werden technische BLE-Daten, " +
-                            "App-/Android-Version, Scooter-Modell und " +
-                            "eine gehashte Geräteadresse. Kein GPS. " +
-                            "Der Schalter bleibt bis zur Änderung gespeichert.",
+                        "Nur Berichte deiner anonymen Tester-ID " +
+                            "werden angezeigt.",
                         color = SoftText,
-                        fontSize = 11.sp
+                        fontSize = 10.sp
                     )
                 }
             }
@@ -1044,6 +1262,131 @@ private fun TesterLabScreen(
                     Text("Enthält Geräte-/Android-Version, Modellangabe, UUID-Kanäle und Byte-Statistiken. Kein GPS. Firebase-Übertragung nur nach ausdrücklicher Aktivierung.", color = SoftText, fontSize = 11.sp)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ReportUploadStatus(
+    state: ReportSendState,
+    message: String
+) {
+    val color = when (state) {
+        ReportSendState.Idle -> SoftText
+        ReportSendState.Sending -> NeonYellow
+        ReportSendState.Sent -> NeonGreen
+        ReportSendState.Failed -> VmaxRed
+    }
+
+    val fallback = when (state) {
+        ReportSendState.Idle ->
+            "Bereit zum Senden"
+
+        ReportSendState.Sending ->
+            "Bericht wird gesendet …"
+
+        ReportSendState.Sent ->
+            "Bericht wurde erfolgreich gesendet."
+
+        ReportSendState.Failed ->
+            "Bericht konnte nicht gesendet werden."
+    }
+
+    Surface(
+        color = color.copy(alpha = 0.10f),
+        shape = RoundedCornerShape(14.dp)
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                Modifier
+                    .size(10.dp)
+                    .background(color, CircleShape)
+            )
+
+            Spacer(Modifier.width(9.dp))
+
+            Text(
+                message.ifBlank { fallback },
+                color = color,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@Composable
+private fun TesterReportRow(
+    report: TesterReportItem
+) {
+    val statusColor = when (
+        report.status.trim().lowercase()
+    ) {
+        "behoben" ->
+            NeonGreen
+
+        "in prüfung",
+        "in pruefung" ->
+            ElectricBlue
+
+        "gesehen" ->
+            NeonPurple
+
+        else ->
+            NeonYellow
+    }
+
+    Surface(
+        color = Panel2,
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            Modifier.padding(12.dp),
+            verticalArrangement =
+                Arrangement.spacedBy(5.dp)
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment =
+                    Alignment.CenterVertically
+            ) {
+                Box(
+                    Modifier
+                        .size(9.dp)
+                        .background(
+                            statusColor,
+                            CircleShape
+                        )
+                )
+
+                Spacer(Modifier.width(8.dp))
+
+                Text(
+                    report.title,
+                    modifier = Modifier.weight(1f),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
+                )
+
+                Text(
+                    report.status.uppercase(),
+                    color = statusColor,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Black
+                )
+            }
+
+            Text(
+                report.reportType,
+                color = SoftText,
+                fontSize = 10.sp
+            )
         }
     }
 }
