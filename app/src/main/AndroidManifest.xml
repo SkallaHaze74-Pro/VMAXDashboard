@@ -14,7 +14,7 @@
         android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
-    <application
+    <application android:roundIcon="@mipmap/ic_launcher_round" android:icon="@mipmap/ic_launcher"
         android:allowBackup="true"
         android:label="Scooter Telemetry VX"
         android:theme="@style/Theme.VMAXDashboard">
