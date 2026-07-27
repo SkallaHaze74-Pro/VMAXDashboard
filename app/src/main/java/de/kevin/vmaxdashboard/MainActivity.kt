@@ -57,7 +57,7 @@ private fun VmaxApp(manager: BleScooterManager) {
         }
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("VMAX Dashboard • Live AI 6.2") }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text("VMAX Dashboard • Live AI 6.3") }) }) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -241,6 +241,7 @@ private fun yesNoUnknown(value: Boolean, confirmed: Boolean): String =
     onExport: () -> Unit
 ) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var lastPressedMarker by remember { mutableStateOf("") }
     LaunchedEffect(state.recordingActive, state.recordingStartedAt) {
         while (state.recordingActive) {
             now = System.currentTimeMillis()
@@ -254,31 +255,77 @@ private fun yesNoUnknown(value: Boolean, confirmed: Boolean): String =
     Card(shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("● Messfahrt-Aufnahme", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("Speichert BLE-Rohdaten, Live-Telemetrie, Marker und lokale Lernkandidaten mit derselben Millisekunden-Zeitbasis.")
+            Text("Für normale Tests nur diesen Bereich verwenden. Der Decoder Lab darunter ist optional und muss nicht gleichzeitig laufen.")
             Text("Speicherort: Downloads/VMAXDashboard/Messfahrt_Datum_Uhrzeit", style = MaterialTheme.typography.bodySmall)
+
+            val statusText = when {
+                state.recordingPaused -> "⏸ AUFNAHME PAUSIERT"
+                state.recordingActive -> "● AUFNAHME LÄUFT"
+                state.connected -> "✓ BEREIT ZUR AUFNAHME"
+                else -> "○ ZUERST SCOOTER VERBINDEN"
+            }
+            val statusContainer = when {
+                state.recordingPaused -> MaterialTheme.colorScheme.tertiaryContainer
+                state.recordingActive -> MaterialTheme.colorScheme.errorContainer
+                state.connected -> MaterialTheme.colorScheme.primaryContainer
+                else -> MaterialTheme.colorScheme.surfaceVariant
+            }
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                color = statusContainer
+            ) {
+                Text(
+                    statusText,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                    fontWeight = FontWeight.Black
+                )
+            }
+
             Text(timer, style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Black)
             Text("Pakete: ${state.recordingPacketCount} • Marker: ${state.markerCount} • Letzter Marker: ${state.lastMarker.ifBlank { "–" }}")
-            if (state.recordingPaused) Text("PAUSIERT", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Black)
 
             if (!state.recordingActive) {
-                Button(onClick = onStart, enabled = state.connected, modifier = Modifier.fillMaxWidth()) {
-                    Text("Messfahrt starten")
+                Button(
+                    onClick = onStart,
+                    enabled = state.connected,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 58.dp)
+                ) {
+                    Text(if (state.connected) "● MESSFAHRT STARTEN" else "ZUERST VERBINDEN", fontWeight = FontWeight.Black)
+                }
+                if (!state.connected) {
+                    Text("Der Button wird nach erfolgreicher Bluetooth-Verbindung aktiv.", style = MaterialTheme.typography.bodySmall)
                 }
             } else {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onPause, modifier = Modifier.weight(1f)) {
-                        Text(if (state.recordingPaused) "Fortsetzen" else "Pause")
+                    FilledTonalButton(onClick = onPause, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
+                        Text(if (state.recordingPaused) "▶ FORTSETZEN" else "⏸ PAUSE", fontWeight = FontWeight.Bold)
                     }
-                    Button(onClick = onStop, modifier = Modifier.weight(1f)) {
-                        Text("Stop & speichern")
+                    Button(onClick = onStop, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
+                        Text("■ STOP & SPEICHERN", fontWeight = FontWeight.Bold)
                     }
                 }
-                Text("Ereignis jetzt markieren", fontWeight = FontWeight.Bold)
+                Text("MARKER – gedrückter Button bleibt sichtbar markiert", fontWeight = FontWeight.Bold)
                 markers.chunked(3).forEach { row ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         row.forEach { marker ->
-                            OutlinedButton(onClick = { onMarker(marker) }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)) {
-                                Text(marker, style = MaterialTheme.typography.labelSmall)
+                            val selected = lastPressedMarker == marker || state.lastMarker == marker
+                            if (selected) {
+                                Button(
+                                    onClick = { lastPressedMarker = marker; onMarker(marker) },
+                                    modifier = Modifier.weight(1f).heightIn(min = 46.dp),
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+                                ) {
+                                    Text("✓ $marker", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Black)
+                                }
+                            } else {
+                                FilledTonalButton(
+                                    onClick = { lastPressedMarker = marker; onMarker(marker) },
+                                    modifier = Modifier.weight(1f).heightIn(min = 46.dp),
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+                                ) {
+                                    Text(marker, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                         repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
@@ -346,7 +393,7 @@ private fun formatElapsed(ms: Long): String {
     Card(shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("🔬 Decoder Lab", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("Vergleicht stabile Bytes vor und während einer Aktion.")
+            Text("Optionaler Einzeltest. Nicht gleichzeitig mit der Messfahrt nötig. Vergleicht stabile Bytes vor und während genau einer Aktion.")
             ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
                 OutlinedTextField(
                     value = selectedAction, onValueChange = {}, readOnly = true,
