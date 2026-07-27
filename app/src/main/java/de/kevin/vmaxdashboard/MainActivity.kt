@@ -627,7 +627,7 @@ private fun SettingsScreen(state: ScooterState, manager: BleScooterManager, conn
                 OutlinedButton(disconnect, enabled = state.connected, modifier = Modifier.weight(1f)) { Text("TRENNEN") }
             }
         }
-        item { InfoPanel("Scooter Telemetry VX 5.2", "Scooter-Finder, Tester Lab, universeller BLE-Scanner, standardisierte Decoder-Tests, Vergleichsbericht, Neon-Cockpit und sicherer Nur-Lesemodus.") }
+        item { InfoPanel("Scooter Telemetry VX ${BuildConfig.VERSION_NAME}", "Scooter-Finder, Tester Lab, universeller BLE-Scanner, standardisierte Decoder-Tests, Vergleichsbericht, Neon-Cockpit und sicherer Nur-Lesemodus.") }
     }
 }
 
@@ -662,9 +662,17 @@ private fun TesterLabScreen(
     padding: PaddingValues
 ) {
     val context = LocalContext.current
+    val telemetryReporter = remember(context.applicationContext) {
+        TelemetryReporter(context.applicationContext)
+    }
+
     var scooterModel by remember { mutableStateOf("") }
     var testerNote by remember { mutableStateOf("") }
     var consent by remember { mutableStateOf(false) }
+    var telemetryUploadEnabled by remember {
+        mutableStateOf(telemetryReporter.uploadEnabled)
+    }
+    var telemetryStatus by remember { mutableStateOf("") }
     var autoScanStarted by remember { mutableStateOf(false) }
     var showAllDevices by remember { mutableStateOf(false) }
 
@@ -707,7 +715,7 @@ private fun TesterLabScreen(
         item {
             InfoPanel(
                 "VX TESTER LAB",
-                "Geführte Aufnahmen machen Daten verschiedener Scooter vergleichbar. Die App sendet nichts automatisch; der Bericht wird erst über Teilen freigegeben."
+                "Geführte Aufnahmen machen Daten verschiedener Scooter vergleichbar. Testdaten werden nur übertragen, wenn der Firebase-Schalter ausdrücklich aktiviert wurde. Das manuelle Teilen bleibt zusätzlich verfügbar."
             )
         }
         item {
@@ -878,9 +886,151 @@ private fun TesterLabScreen(
             }
         }
         item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Panel),
+                shape = RoundedCornerShape(22.dp)
+            ) {
+                Column(
+                    Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        "4 · FIREBASE TESTDATEN",
+                        fontWeight = FontWeight.Black,
+                        color = NeonCyan
+                    )
+
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "Anonyme Testdaten senden",
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                if (telemetryUploadEnabled)
+                                    "Aktiv – BLE-Testdaten können übertragen werden."
+                                else
+                                    "Aus – es werden keine BLE-Testdaten hochgeladen.",
+                                color = if (telemetryUploadEnabled)
+                                    NeonGreen
+                                else
+                                    SoftText,
+                                fontSize = 11.sp
+                            )
+                        }
+
+                        Switch(
+                            checked = telemetryUploadEnabled,
+                            onCheckedChange = { enabled ->
+                                telemetryUploadEnabled = enabled
+                                telemetryReporter.uploadEnabled = enabled
+                                telemetryStatus =
+                                    if (enabled)
+                                        "Upload aktiviert."
+                                    else
+                                        "Upload ausgeschaltet."
+                            }
+                        )
+                    }
+
+                    Surface(
+                        color = Panel2,
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Column(
+                            Modifier.fillMaxWidth().padding(12.dp)
+                        ) {
+                            Text(
+                                "ANONYME TESTER-ID",
+                                color = SoftText,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                telemetryReporter.testerId.take(8)
+                                    .uppercase() + "…",
+                                color = NeonCyan,
+                                fontWeight = FontWeight.Black
+                            )
+                        }
+                    }
+
+                    Button(
+                        onClick = {
+                            telemetryStatus = "Bericht wird gesendet …"
+
+                            val title = if (scooterModel.isBlank()) {
+                                "Tester-Lab-Bericht"
+                            } else {
+                                "Tester-Lab-Bericht: $scooterModel"
+                            }
+
+                            telemetryReporter.reportProblem(
+                                title = title,
+                                details = buildTesterReport(
+                                    state,
+                                    scooterModel,
+                                    testerNote
+                                ),
+                                scooterState = state,
+                                onSuccess = {
+                                    telemetryStatus =
+                                        "✓ Bericht erfolgreich an Firebase gesendet."
+                                },
+                                onFailure = { error ->
+                                    telemetryStatus =
+                                        "Fehler beim Senden: " +
+                                        (error.localizedMessage
+                                            ?: "unbekannter Fehler")
+                                }
+                            )
+                        },
+                        enabled = telemetryUploadEnabled &&
+                            state.packetTotal > 0,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text(
+                            if (telemetryUploadEnabled)
+                                "JETZT AN FIREBASE SENDEN"
+                            else
+                                "UPLOAD ZUERST AKTIVIEREN",
+                            fontWeight = FontWeight.Black
+                        )
+                    }
+
+                    if (telemetryStatus.isNotBlank()) {
+                        Text(
+                            telemetryStatus,
+                            color = when {
+                                telemetryStatus.startsWith("✓") -> NeonGreen
+                                telemetryStatus.startsWith("Fehler") -> VmaxRed
+                                else -> NeonYellow
+                            },
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Text(
+                        "Gesendet werden technische BLE-Daten, " +
+                            "App-/Android-Version, Scooter-Modell und " +
+                            "eine gehashte Geräteadresse. Kein GPS. " +
+                            "Der Schalter bleibt bis zur Änderung gespeichert.",
+                        color = SoftText,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+        }
+
+        item {
             Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(22.dp)) {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("4 · BERICHT FREIGEBEN", fontWeight = FontWeight.Black, color = NeonGreen)
+                    Text("5 · BERICHT TEILEN", fontWeight = FontWeight.Black, color = NeonGreen)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = consent, onCheckedChange = { consent = it })
                         Text("Ich habe geprüft, dass ich diesen technischen Bericht teilen möchte.", fontSize = 12.sp)
@@ -891,7 +1041,7 @@ private fun TesterLabScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("STANDARDISIERTEN TESTBERICHT TEILEN") }
                     OutlinedButton(onClick = manager::resetAnalyzer, modifier = Modifier.fillMaxWidth()) { Text("NEUE TESTSESSION") }
-                    Text("Enthält Geräte-/Android-Version, Modellangabe, UUID-Kanäle und Byte-Statistiken. Kein GPS und keine automatische Übertragung.", color = SoftText, fontSize = 11.sp)
+                    Text("Enthält Geräte-/Android-Version, Modellangabe, UUID-Kanäle und Byte-Statistiken. Kein GPS. Firebase-Übertragung nur nach ausdrücklicher Aktivierung.", color = SoftText, fontSize = 11.sp)
                 }
             }
         }
@@ -899,7 +1049,7 @@ private fun TesterLabScreen(
 }
 
 private fun buildTesterReport(state: ScooterState, scooterModel: String, testerNote: String): String = buildString {
-    appendLine("SCOOTER TELEMETRY VX – TESTER REPORT v5.2")
+    appendLine("SCOOTER TELEMETRY VX – TESTER REPORT ${BuildConfig.VERSION_NAME}")
     appendLine("Report-Schema: STVX-1")
     appendLine("App: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
     appendLine("Android: ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT}")
