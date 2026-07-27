@@ -7,7 +7,6 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
-import com.google.firebase.firestore.Query
 import java.security.MessageDigest
 import java.util.UUID
 
@@ -199,7 +198,6 @@ class TelemetryReporter(private val context: Context) {
             onSuccess = { uid ->
                 registration = firestore.collection("testerReports")
                     .whereEqualTo("firebaseUid", uid)
-                    .orderBy("timestamp", Query.Direction.DESCENDING)
                     .limit(30)
                     .addSnapshotListener { snapshot, error ->
                         if (error != null) {
@@ -223,7 +221,11 @@ class TelemetryReporter(private val context: Context) {
                             )
                         }
 
-                        onUpdate(reports)
+                        onUpdate(
+                            reports.sortedByDescending {
+                                it.timestamp?.seconds ?: 0L
+                            }
+                        )
                     }
             },
             onFailure = onFailure
