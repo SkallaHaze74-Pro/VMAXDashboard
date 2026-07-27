@@ -6,8 +6,19 @@ import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.Query
 import java.security.MessageDigest
 import java.util.UUID
+
+data class TesterReportItem(
+    val id: String,
+    val title: String,
+    val reportType: String,
+    val status: String,
+    val details: String,
+    val timestamp: Timestamp?
+)
 
 class TelemetryReporter(private val context: Context) {
 
@@ -31,6 +42,12 @@ class TelemetryReporter(private val context: Context) {
             crashlytics.setCustomKey("telemetry_upload_enabled", value)
         }
 
+    val isSignedIn: Boolean
+        get() = auth.currentUser != null
+
+    val firebaseUid: String?
+        get() = auth.currentUser?.uid
+
     private val lastUploadAt = mutableMapOf<String, Long>()
     private val lastUploadedHex = mutableMapOf<String, String>()
 
@@ -51,10 +68,7 @@ class TelemetryReporter(private val context: Context) {
         val previousTime = lastUploadAt[channel] ?: 0L
         val previousHex = lastUploadedHex[channel]
 
-        // Pro Kanal höchstens alle fünf Sekunden senden.
         if (now - previousTime < 5_000L) return
-
-        // Identische Pakete höchstens einmal pro Minute erneut senden.
         if (previousHex == hex && now - previousTime < 60_000L) return
 
         lastUploadAt[channel] = now
@@ -81,8 +95,8 @@ class TelemetryReporter(private val context: Context) {
         )
 
         ensureAnonymousLogin(
-            onSuccess = { firebaseUid ->
-                data["firebaseUid"] = firebaseUid
+            onSuccess = { uid ->
+                data["firebaseUid"] = uid
 
                 firestore.collection("bleTelemetry")
                     .add(data)
@@ -90,9 +104,7 @@ class TelemetryReporter(private val context: Context) {
                         crashlytics.recordException(error)
                     }
             },
-            onFailure = { error ->
-                crashlytics.recordException(error)
-            }
+            onFailure = crashlytics::recordException
         )
     }
 
@@ -100,6 +112,8 @@ class TelemetryReporter(private val context: Context) {
         title: String,
         details: String,
         scooterState: ScooterState,
+        reportType: String = "Fehlerbericht",
+        scooterModel: String = "",
         onSuccess: (() -> Unit)? = null,
         onFailure: ((Exception) -> Unit)? = null
     ) {
@@ -130,6 +144,9 @@ class TelemetryReporter(private val context: Context) {
             "timestamp" to Timestamp.now(),
             "title" to title,
             "details" to details,
+            "reportType" to reportType,
+            "status" to "Neu",
+            "scooterModel" to scooterModel,
             "deviceName" to scooterState.deviceName,
             "deviceAddressHash" to sha256(scooterState.address),
             "lastCharacteristic" to scooterState.lastCharacteristic,
@@ -152,8 +169,8 @@ class TelemetryReporter(private val context: Context) {
         )
 
         ensureAnonymousLogin(
-            onSuccess = { firebaseUid ->
-                data["firebaseUid"] = firebaseUid
+            onSuccess = { uid ->
+                data["firebaseUid"] = uid
 
                 firestore.collection("testerReports")
                     .add(data)
@@ -172,6 +189,58 @@ class TelemetryReporter(private val context: Context) {
         )
     }
 
+    fun observeOwnReports(
+        onUpdate: (List<TesterReportItem>) -> Unit,
+        onFailure: (Exception) -> Unit
+    ): ListenerRegistration? {
+        var registration: ListenerRegistration? = null
+
+        ensureAnonymousLogin(
+            onSuccess = { uid ->
+                registration = firestore.collection("testerReports")
+                    .whereEqualTo("firebaseUid", uid)
+                    .orderBy("timestamp", Query.Direction.DESCENDING)
+                    .limit(30)
+                    .addSnapshotListener { snapshot, error ->
+                        if (error != null) {
+                            crashlytics.recordException(error)
+                            onFailure(error)
+                            return@addSnapshotListener
+                        }
+
+                        val reports = snapshot?.documents.orEmpty().map { document ->
+                            TesterReportItem(
+                                id = document.id,
+                                title = document.getString("title")
+                                    ?: "Testerbericht",
+                                reportType = document.getString("reportType")
+                                    ?: "Bericht",
+                                status = document.getString("status")
+                                    ?: "Neu",
+                                details = document.getString("details")
+                                    ?: "",
+                                timestamp = document.getTimestamp("timestamp")
+                            )
+                        }
+
+                        onUpdate(reports)
+                    }
+            },
+            onFailure = onFailure
+        )
+
+        return registration
+    }
+
+    fun ensureLogin(
+        onSuccess: (() -> Unit)? = null,
+        onFailure: ((Exception) -> Unit)? = null
+    ) {
+        ensureAnonymousLogin(
+            onSuccess = { onSuccess?.invoke() },
+            onFailure = { onFailure?.invoke(it) }
+        )
+    }
 
     private fun ensureAnonymousLogin(
         onSuccess: (String) -> Unit,
