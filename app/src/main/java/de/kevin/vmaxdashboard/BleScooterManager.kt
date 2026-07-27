@@ -153,7 +153,11 @@ class BleScooterManager(private val context: Context) {
         update {
             it.copy(
                 analysisPhase = label,
-                analysisPhaseNumber = it.analysisPhaseNumber + 1
+                analysisPhaseNumber = it.analysisPhaseNumber + 1,
+                leftIndicator = label.contains("Blinker links", ignoreCase = true),
+                rightIndicator = label.contains("Blinker rechts", ignoreCase = true),
+                lightOn = label.contains("Licht EIN", ignoreCase = true),
+                brakeActive = label.contains("Brems", ignoreCase = true)
             )
         }
         addLog("TESTPHASE: $label – Ausgangswerte gespeichert")
@@ -180,7 +184,11 @@ class BleScooterManager(private val context: Context) {
                 lastCharacteristic = "",
                 lastRawHex = "",
                 analysisPhase = "Leerlauf",
-                analysisPhaseNumber = 0
+                analysisPhaseNumber = 0,
+                leftIndicator = false,
+                rightIndicator = false,
+                lightOn = false,
+                brakeActive = false
             )
         }
         rideStartedAtMs = null

@@ -207,7 +207,16 @@ private fun DashboardScreen(state: ScooterState, connect: () -> Unit, disconnect
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item { Header(state) }
-        item { Speedometer(state.speedKmh ?: 0.0, state.batteryPercent) }
+        item {
+            Speedometer(
+                speed = state.speedKmh ?: 0.0,
+                battery = state.batteryPercent,
+                leftIndicator = state.leftIndicator,
+                rightIndicator = state.rightIndicator,
+                lightOn = state.lightOn,
+                brakeActive = state.brakeActive
+            )
+        }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 ProMetric("🔋", "AKKU", state.batteryPercent?.let { "$it %" } ?: "–", Modifier.weight(1f))
@@ -240,7 +249,14 @@ private fun DashboardScreen(state: ScooterState, connect: () -> Unit, disconnect
 }
 
 @Composable
-private fun Speedometer(speed: Double, battery: Int?) {
+private fun Speedometer(
+    speed: Double,
+    battery: Int?,
+    leftIndicator: Boolean,
+    rightIndicator: Boolean,
+    lightOn: Boolean,
+    brakeActive: Boolean
+) {
     val progress by animateFloatAsState(
         (speed / 25.0).coerceIn(0.0, 1.0).toFloat(),
         animationSpec = tween(650),
@@ -261,6 +277,18 @@ private fun Speedometer(speed: Double, battery: Int?) {
     )
 
     Box(Modifier.fillMaxWidth().height(326.dp), contentAlignment = Alignment.Center) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.Center)
+                .padding(horizontal = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IndicatorArrow("◀", leftIndicator, "Links")
+            IndicatorArrow("▶", rightIndicator, "Rechts")
+        }
+
         Canvas(Modifier.size(300.dp)) {
             val stroke = 22.dp.toPx()
             val inset = stroke / 2
@@ -284,6 +312,25 @@ private fun Speedometer(speed: Double, battery: Int?) {
             Text("NEON SPEED", color = SoftText, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
             Text("%.1f".format(speed), fontSize = 76.sp, fontWeight = FontWeight.Black, letterSpacing = (-4).sp)
             Text("km/h", color = NeonCyan, fontSize = 18.sp, fontWeight = FontWeight.Black)
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    if (lightOn) "● LICHT" else "○ LICHT",
+                    color = if (lightOn) NeonYellow else SoftText,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp
+                )
+                Text(
+                    if (brakeActive) "● BREMSE" else "○ BREMSE",
+                    color = if (brakeActive) VmaxRed else SoftText,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp
+                )
+            }
+
             Spacer(Modifier.height(15.dp))
             Surface(
                 modifier = Modifier.border(1.dp, Brush.horizontalGradient(RainbowColors), RoundedCornerShape(50)),
@@ -291,6 +338,39 @@ private fun Speedometer(speed: Double, battery: Int?) {
             ) {
                 Text("SPORT  •  ${battery?.let { "$it %" } ?: "AKKU –"}", Modifier.padding(horizontal = 18.dp, vertical = 9.dp), fontWeight = FontWeight.Bold, fontSize = 12.sp)
             }
+        }
+    }
+}
+
+@Composable
+private fun IndicatorArrow(
+    symbol: String,
+    active: Boolean,
+    description: String
+) {
+    val infinite = rememberInfiniteTransition(label = "indicator-$description")
+    val blink by infinite.animateFloat(
+        initialValue = 0.25f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(480),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "indicator-alpha-$description"
+    )
+
+    Surface(
+        color = if (active) NeonYellow.copy(alpha = blink) else Panel2,
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.size(52.dp)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = symbol,
+                fontSize = 25.sp,
+                fontWeight = FontWeight.Black,
+                color = if (active) Color.Black else SoftText
+            )
         }
     }
 }
@@ -429,8 +509,28 @@ private fun DiagnoseScreen(state: ScooterState, manager: BleScooterManager, padd
                     PhaseButton("RAD", Modifier.weight(1f)) { manager.setAnalysisPhase("Rad langsam drehen") }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PhaseButton("FAHRT", Modifier.weight(1f)) { manager.setAnalysisPhase("Fahren / Gas") }
-                    PhaseButton("BREMSE", Modifier.weight(1f)) { manager.setAnalysisPhase("Bremsen") }
+                    PhaseButton("FAHRT", Modifier.weight(1f)) {
+                        manager.setAnalysisPhase("Fahren / Gas")
+                    }
+                    PhaseButton("BREMSE", Modifier.weight(1f)) {
+                        manager.setAnalysisPhase("Bremsen")
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PhaseButton("◀ LINKS", Modifier.weight(1f)) {
+                        manager.setAnalysisPhase("Blinker links")
+                    }
+                    PhaseButton("RECHTS ▶", Modifier.weight(1f)) {
+                        manager.setAnalysisPhase("Blinker rechts")
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PhaseButton("LICHT EIN", Modifier.weight(1f)) {
+                        manager.setAnalysisPhase("Licht EIN")
+                    }
+                    PhaseButton("LICHT AUS", Modifier.weight(1f)) {
+                        manager.setAnalysisPhase("Licht AUS")
+                    }
                 }
             }
         }
@@ -747,9 +847,13 @@ private fun TesterLabScreen(
         "05 Gas geben",
         "06 Rollen lassen",
         "07 Bremsen",
-        "08 Licht EIN",
-        "09 Licht AUS",
-        "10 Laden / Abschluss"
+        "08 Blinker links",
+        "09 Blinker aus",
+        "10 Blinker rechts",
+        "11 Blinker aus",
+        "12 Licht EIN",
+        "13 Licht AUS",
+        "14 Abschluss"
     )
 
     fun shareReport() {
