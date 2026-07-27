@@ -38,16 +38,20 @@ class BleScooterManager(private val context: Context) {
 
     private val decoderLab = DecoderLabEngine()
     private val secureStore = SecureTelemetryStore(context)
+    private val learningStore = LearningProfileStore(context)
+    private val historyStore = SessionHistoryStore(context)
     private val previousValues = mutableMapOf<String, ByteArray>()
     private val channelPacketCounts = mutableMapOf<String, Int>()
     private val sessionRows = mutableListOf<String>()
     private val markerRows = mutableListOf<String>()
+    private val telemetryRows = mutableListOf<String>()
+    private val packetTimes = ArrayDeque<Long>()
     private var sessionStartedAt = System.currentTimeMillis()
     private var measurementStartedAt = 0L
     private var recordingActive = false
     private var recordingPaused = false
 
-    private val _state = MutableStateFlow(ScooterState(encryptedReports = secureStore.count()))
+    private val _state = MutableStateFlow(ScooterState(encryptedReports = secureStore.count(), learningProfileCount = learningStore.count(), sessionHistoryCount = historyStore.count()))
     val state: StateFlow<ScooterState> = _state
 
     fun hasRequiredPermissions(): Boolean =
@@ -176,6 +180,7 @@ class BleScooterManager(private val context: Context) {
                     sessionRows.clear()
                     previousValues.clear()
                     channelPacketCounts.clear()
+                    packetTimes.clear()
                     update { it.copy(connected = true, status = "Verbunden – suche Dienste", sessionStartedAt = sessionStartedAt, packetTotal = 0) }
                     addLog("BLE verbunden, Status $status")
                     g.discoverServices()
@@ -301,6 +306,9 @@ class BleScooterManager(private val context: Context) {
 
         val decoded = LiveTelemetryDecoder.decode(short, value)
         val knowledge = VmaxProtocolCatalog.get(short)
+        packetTimes.addLast(now)
+        while (packetTimes.isNotEmpty() && packetTimes.first() < now - 3000L) packetTimes.removeFirst()
+        val packetsPerSecond = packetTimes.size / 3.0
         val changedText = if (changed.isEmpty()) "–" else changed.joinToString(",")
         if (recordingActive && !recordingPaused) {
             val measurementMs = now - measurementStartedAt
@@ -308,7 +316,22 @@ class BleScooterManager(private val context: Context) {
                 measurementMs.toString(), now.toString(), short, knowledge.title,
                 value.size.toString(), count.toString(), changedText, hex
             ).joinToString(";")
+            val snapshot = _state.value
+            val power = if (snapshot.voltageV != null && snapshot.currentA != null) snapshot.voltageV * snapshot.currentA else null
+            telemetryRows += listOf(
+                measurementMs.toString(), now.toString(),
+                (decoded.speedKmh ?: snapshot.speedKmh)?.toString().orEmpty(),
+                (decoded.batteryPercent ?: snapshot.batteryPercent)?.toString().orEmpty(),
+                (decoded.voltageV ?: snapshot.voltageV)?.toString().orEmpty(),
+                (decoded.currentA ?: snapshot.currentA)?.toString().orEmpty(),
+                power?.toString().orEmpty(),
+                (decoded.motorTemperatureC ?: snapshot.motorTemperatureC)?.toString().orEmpty(),
+                (decoded.batteryTemperatureC ?: snapshot.batteryTemperatureC)?.toString().orEmpty(),
+                (decoded.tripDistanceKm ?: snapshot.tripDistanceKm)?.toString().orEmpty(),
+                (decoded.odometerKm ?: snapshot.odometerKm)?.toString().orEmpty(), short
+            ).joinToString(";")
             if (sessionRows.size > 100_000) sessionRows.removeAt(0)
+            if (telemetryRows.size > 100_000) telemetryRows.removeAt(0)
         }
 
         val old = _state.value
@@ -343,7 +366,12 @@ class BleScooterManager(private val context: Context) {
                 lastChangedBytes = changedText,
                 rawPackets = packets,
                 packetTotal = it.packetTotal + 1,
-                recordingPacketCount = if (recordingActive) it.recordingPacketCount + 1 else it.recordingPacketCount,
+                packetsPerSecond = packetsPerSecond,
+                lastPacketAt = now,
+                currentPowerW = if ((decoded.voltageV ?: it.voltageV) != null && (decoded.currentA ?: it.currentA) != null) (decoded.voltageV ?: it.voltageV)!! * (decoded.currentA ?: it.currentA)!! else it.currentPowerW,
+                maxSpeedKmh = maxOf(it.maxSpeedKmh ?: 0.0, decoded.speedKmh ?: it.speedKmh ?: 0.0).takeIf { value -> value > 0.0 },
+                maxPowerW = maxOf(it.maxPowerW ?: 0.0, kotlin.math.abs(if ((decoded.voltageV ?: it.voltageV) != null && (decoded.currentA ?: it.currentA) != null) (decoded.voltageV ?: it.voltageV)!! * (decoded.currentA ?: it.currentA)!! else 0.0)).takeIf { value -> value > 0.0 },
+                recordingPacketCount = if (recordingActive && !recordingPaused) it.recordingPacketCount + 1 else it.recordingPacketCount,
                 channels = channels,
                 analysisPhase = when {
                     it.labRunning -> it.labPhase
@@ -368,6 +396,7 @@ class BleScooterManager(private val context: Context) {
         recordingPaused = false
         sessionRows.clear()
         markerRows.clear()
+        telemetryRows.clear()
         addMarkerInternal("START", measurementStartedAt)
         update {
             it.copy(
@@ -425,8 +454,11 @@ class BleScooterManager(private val context: Context) {
         val stamp = java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", java.util.Locale.GERMANY).format(java.util.Date(measurementStartedAt))
         val folder = "VMAXDashboard/Messfahrt_$stamp"
         val telemetry = "relative_ms;timestamp_ms;channel;meaning;length;packet_no;changed_bytes;hex\n" + sessionRows.joinToString("\n")
+        val liveTelemetry = "relative_ms;timestamp_ms;speed_kmh;battery_percent;voltage_v;current_a;power_w;motor_temp_c;battery_temp_c;trip_km;odometer_km;source_channel\n" + telemetryRows.joinToString("\n")
         val markers = "relative_ms;timestamp_ms;marker\n" + markerRows.joinToString("\n")
         val (findings, analysisReport) = MeasurementAnalyzer.analyze(sessionRows, markerRows)
+        learningStore.merge(findings, _state.value.deviceName, stoppedAt)
+        val learningJson = learningStore.exportJson()
         val summary = buildString {
             appendLine("VMAX Dashboard Messfahrt")
             appendLine("Start: $measurementStartedAt")
@@ -439,11 +471,14 @@ class BleScooterManager(private val context: Context) {
         }
         runCatching {
             writeDownloadFile(folder, "BLE_Rohdaten.csv", "text/csv", telemetry)
+            writeDownloadFile(folder, "Live_Telemetrie.csv", "text/csv", liveTelemetry)
             writeDownloadFile(folder, "Ereignisse.csv", "text/csv", markers)
             writeDownloadFile(folder, "Zusammenfassung.txt", "text/plain", summary)
             writeDownloadFile(folder, "Automatische_Analyse.txt", "text/plain", analysisReport)
+            writeDownloadFile(folder, "Lernprofil.json", "application/json", learningJson)
+            historyStore.add(folder, _state.value.deviceName, measurementStartedAt, stoppedAt, sessionRows.size, markerRows.size, _state.value.channels.map { it.channel })
             val location = "Downloads/$folder"
-            update { it.copy(lastExportMessage = "Messfahrt gespeichert: $location", autoAnalysisFindings = findings) }
+            update { it.copy(lastExportMessage = "Messfahrt gespeichert: $location", autoAnalysisFindings = findings, learningProfileCount = learningStore.count(), sessionHistoryCount = historyStore.count(), lastSessionFolder = location) }
             addLog("Messfahrt gespeichert: $location")
         }.onFailure { error ->
             update { it.copy(lastExportMessage = "Speichern fehlgeschlagen: ${error.message}") }

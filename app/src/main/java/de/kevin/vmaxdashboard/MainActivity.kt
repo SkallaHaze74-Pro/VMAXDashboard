@@ -57,7 +57,7 @@ private fun VmaxApp(manager: BleScooterManager) {
         }
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("VMAX Dashboard • Analyse Edition") }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text("VMAX Dashboard • Live AI Test") }) }) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -95,7 +95,13 @@ private fun VmaxApp(manager: BleScooterManager) {
             item {
                 MetricRow(
                     "Akku-Temp.", state.batteryTemperatureC?.let { "%.1f °C".format(it) } ?: "wird erkannt",
-                    "Pakete", state.packetTotal.toString()
+                    "Pakete/s", "%.1f".format(state.packetsPerSecond)
+                )
+            }
+            item {
+                MetricRow(
+                    "Leistung LIVE", state.currentPowerW?.let { "%.0f W".format(it) } ?: "wird erkannt",
+                    "Max. Leistung", state.maxPowerW?.let { "%.0f W".format(it) } ?: "–"
                 )
             }
 
@@ -159,9 +165,10 @@ private fun VmaxApp(manager: BleScooterManager) {
     Card(shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(state.status, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("${state.deviceName} • VX2 Gear / VX2 4G")
+            Text("${state.deviceName} • Modellprofil wird automatisch gelernt")
             Text(if (state.connected) "● Bluetooth verbunden" else "○ Bluetooth nicht verbunden")
             Text("Analyse: ${state.analysisPhase} • ${state.channels.size} Kanäle")
+            Text("Live: %.1f Pakete/s • Lernkandidaten: ${state.learningProfileCount} • Messfahrten: ${state.sessionHistoryCount}".format(state.packetsPerSecond), style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -241,7 +248,8 @@ private fun yesNoUnknown(value: Boolean, confirmed: Boolean): String =
     Card(shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("● Messfahrt-Aufnahme", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("Speichert BLE-Rohdaten und deine Ereignismarker mit derselben Millisekunden-Zeitbasis.")
+            Text("Speichert BLE-Rohdaten, Live-Telemetrie, Marker und lokale Lernkandidaten mit derselben Millisekunden-Zeitbasis.")
+            Text("Speicherort: Downloads/VMAXDashboard/Messfahrt_Datum_Uhrzeit", style = MaterialTheme.typography.bodySmall)
             Text(timer, style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Black)
             Text("Pakete: ${state.recordingPacketCount} • Marker: ${state.markerCount} • Letzter Marker: ${state.lastMarker.ifBlank { "–" }}")
             if (state.recordingPaused) Text("PAUSIERT", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Black)
@@ -276,6 +284,7 @@ private fun yesNoUnknown(value: Boolean, confirmed: Boolean): String =
                 Text("Aktuelle Live-Daten zusätzlich als CSV")
             }
             if (state.lastExportMessage.isNotBlank()) Text(state.lastExportMessage, style = MaterialTheme.typography.bodySmall)
+            if (state.lastSessionFolder.isNotBlank()) Text("Letzte Messfahrt: ${state.lastSessionFolder}", style = MaterialTheme.typography.bodySmall)
             if (state.autoAnalysisFindings.isNotEmpty()) {
                 HorizontalDivider()
                 Text("Automatische Analyse – beste Treffer", fontWeight = FontWeight.Bold)

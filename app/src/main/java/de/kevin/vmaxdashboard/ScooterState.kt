@@ -50,6 +50,11 @@ data class ScooterState(
     val analysisPhase: String = "Bereit",
     val analysisPhaseNumber: Int = 0,
     val packetTotal: Int = 0,
+    val packetsPerSecond: Double = 0.0,
+    val lastPacketAt: Long = 0L,
+    val currentPowerW: Double? = null,
+    val maxSpeedKmh: Double? = null,
+    val maxPowerW: Double? = null,
     val sessionStartedAt: Long = 0L,
     val channels: List<BleChannelState> = emptyList(),
     val labRunning: Boolean = false,
@@ -65,5 +70,8 @@ data class ScooterState(
     val markerCount: Int = 0,
     val lastMarker: String = "",
     val autoAnalysisFindings: List<MeasurementFinding> = emptyList(),
+    val learningProfileCount: Int = 0,
+    val sessionHistoryCount: Int = 0,
+    val lastSessionFolder: String = "",
     val log: List<String> = emptyList()
 )
