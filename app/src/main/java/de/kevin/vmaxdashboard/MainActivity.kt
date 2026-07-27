@@ -49,17 +49,14 @@ private fun VmaxApp(manager: BleScooterManager) {
     fun connect() {
         if (manager.hasRequiredPermissions()) manager.startScan()
         else {
-            val permissions =
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
-                } else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+            val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+            } else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
             permissionLauncher.launch(permissions)
         }
     }
 
-    Scaffold(
-        topBar = { TopAppBar(title = { Text("VMAX Dashboard • VX2 Gear") }) }
-    ) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text("VMAX Dashboard • Analyse Edition") }) }) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -67,37 +64,55 @@ private fun VmaxApp(manager: BleScooterManager) {
         ) {
             item { StatusCard(state) }
             item { IndicatorDashboard(state) }
+            item { SectionTitle("Fahrt") }
+            item {
+                MetricRow(
+                    "Tempo", state.speedKmh?.let { "%.1f km/h".format(it) } ?: "wird erkannt",
+                    "Tagesstrecke", state.tripDistanceKm?.let { "%.2f km".format(it) } ?: "wird erkannt"
+                )
+            }
+            item {
+                MetricRow(
+                    "Kilometerstand", state.odometerKm?.let { "%.2f km".format(it) } ?: "wird erkannt",
+                    "Signal", state.rssi?.let { "$it dBm" } ?: "–"
+                )
+            }
+
+            item { SectionTitle("Akku & Technik") }
+            item {
+                MetricRow(
+                    "Akku", state.batteryPercent?.let { "$it %" } ?: "–",
+                    "Spannung", state.voltageV?.let { "%.2f V".format(it) } ?: "wird erkannt"
+                )
+            }
+            item {
+                MetricRow(
+                    "Strom", state.currentA?.let { "%.2f A".format(it) } ?: "wird erkannt",
+                    "Motor-Temp.", state.motorTemperatureC?.let { "%.1f °C".format(it) } ?: "wird erkannt"
+                )
+            }
+            item {
+                MetricRow(
+                    "Akku-Temp.", state.batteryTemperatureC?.let { "%.1f °C".format(it) } ?: "wird erkannt",
+                    "Pakete", state.packetTotal.toString()
+                )
+            }
+
+            item { SectionTitle("Zubehör & Status") }
+            item { AccessoryCard(state) }
 
             item {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    MetricCard("Akku", state.batteryPercent?.let { "$it %" } ?: "–", Modifier.weight(1f))
-                    MetricCard("Signal", state.rssi?.let { "$it dBm" } ?: "–", Modifier.weight(1f))
+                    Button(onClick = { connect() }, enabled = !state.scanning && !state.connected, modifier = Modifier.weight(1f)) {
+                        Text(if (state.scanning) "Suche …" else "Verbinden")
+                    }
+                    OutlinedButton(onClick = { manager.disconnect() }, enabled = state.connected || state.scanning, modifier = Modifier.weight(1f)) {
+                        Text("Trennen")
+                    }
                 }
             }
 
-            item {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    MetricCard("Tempo", state.speedKmh?.let { "%.1f km/h".format(it) } ?: "lernt noch", Modifier.weight(1f))
-                    MetricCard("Temperatur", state.temperatureC?.let { "%.1f °C".format(it) } ?: "lernt noch", Modifier.weight(1f))
-                }
-            }
-
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(
-                        onClick = { connect() },
-                        enabled = !state.scanning && !state.connected,
-                        modifier = Modifier.weight(1f)
-                    ) { Text(if (state.scanning) "Suche …" else "Verbinden") }
-
-                    OutlinedButton(
-                        onClick = { manager.disconnect() },
-                        enabled = state.connected || state.scanning,
-                        modifier = Modifier.weight(1f)
-                    ) { Text("Trennen") }
-                }
-            }
-
+            item { MeasurementCard(state, onExport = manager::exportSessionCsv) }
             item {
                 DecoderLabCard(
                     state = state,
@@ -109,11 +124,15 @@ private fun VmaxApp(manager: BleScooterManager) {
                 )
             }
 
-            item { RawDataCard(state) }
-
-            item {
-                Text("Datenprotokoll", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            item { SectionTitle("Bekannte Kanäle & Live-Analyse") }
+            if (state.channels.isEmpty()) {
+                item { InfoCard("Noch keine BLE-Daten", "Nach der Verbindung erscheinen hier alle Kanäle mit bekannter Bedeutung, Rohbytes, Paketanzahl und geänderten Bytepositionen.") }
+            } else {
+                items(state.channels) { ChannelCard(it) }
             }
+
+            item { RawDataCard(state) }
+            item { SectionTitle("Datenprotokoll") }
             items(state.log) { line ->
                 Text(line, style = MaterialTheme.typography.bodySmall)
                 HorizontalDivider()
@@ -122,23 +141,22 @@ private fun VmaxApp(manager: BleScooterManager) {
     }
 }
 
-@Composable
-private fun StatusCard(state: ScooterState) {
+@Composable private fun SectionTitle(text: String) {
+    Text(text, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+}
+
+@Composable private fun StatusCard(state: ScooterState) {
     Card(shape = RoundedCornerShape(22.dp)) {
-        Column(
-            Modifier.fillMaxWidth().padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
+        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(state.status, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text("${state.deviceName} • VX2 Gear / VX2 4G")
             Text(if (state.connected) "● Bluetooth verbunden" else "○ Bluetooth nicht verbunden")
-            Text("Verschlüsselte Berichte auf dem Handy: ${state.encryptedReports}")
+            Text("Analyse: ${state.analysisPhase} • ${state.channels.size} Kanäle")
         }
     }
 }
 
-@Composable
-private fun IndicatorDashboard(state: ScooterState) {
+@Composable private fun IndicatorDashboard(state: ScooterState) {
     Card(shape = RoundedCornerShape(22.dp)) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 18.dp),
@@ -147,26 +165,86 @@ private fun IndicatorDashboard(state: ScooterState) {
         ) {
             Text(if (state.leftIndicator) "◀" else "◁", style = MaterialTheme.typography.displaySmall)
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    state.speedKmh?.let { "%.1f".format(it) } ?: "—",
-                    style = MaterialTheme.typography.displayMedium,
-                    fontWeight = FontWeight.Black
-                )
+                Text(state.speedKmh?.let { "%.1f".format(it) } ?: "—", style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.Black)
                 Text("km/h")
-                Text(
-                    listOfNotNull(
-                        "💡".takeIf { state.lightOn },
-                        "BRAKE".takeIf { state.brakeActive }
-                    ).joinToString("  ").ifBlank { "Live-Telemetrie" }
-                )
+                Text("Live-Telemetrie")
             }
             Text(if (state.rightIndicator) "▶" else "▷", style = MaterialTheme.typography.displaySmall)
         }
     }
 }
 
-@Composable
-private fun DecoderLabCard(
+@Composable private fun MetricRow(title1: String, value1: String, title2: String, value2: String) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        MetricCard(title1, value1, Modifier.weight(1f))
+        MetricCard(title2, value2, Modifier.weight(1f))
+    }
+}
+
+@Composable private fun MetricCard(title: String, value: String, modifier: Modifier = Modifier) {
+    Card(modifier = modifier, shape = RoundedCornerShape(18.dp)) {
+        Column(Modifier.fillMaxWidth().padding(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(title, style = MaterialTheme.typography.labelLarge)
+            Spacer(Modifier.height(6.dp))
+            Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable private fun AccessoryCard(state: ScooterState) {
+    Card(shape = RoundedCornerShape(18.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Erkannte Zustände", fontWeight = FontWeight.Bold)
+            Text("Blinker links: ${yesNoUnknown(state.leftIndicator, false)}")
+            Text("Blinker rechts: ${yesNoUnknown(state.rightIndicator, false)}")
+            Text("Licht: ${yesNoUnknown(state.lightOn, false)}")
+            Text("Bremse: ${yesNoUnknown(state.brakeActive, false)}")
+            Text("Schloss: ${state.lockActive?.let { if (it) "aktiv" else "offen" } ?: "wird erkannt"}")
+            Text("Laden: ${state.charging?.let { if (it) "ja" else "nein" } ?: "wird erkannt"}")
+            Text("Zubehörkanäle 1514–1518 werden vollständig protokolliert.", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+private fun yesNoUnknown(value: Boolean, confirmed: Boolean): String =
+    if (!confirmed) "wird erkannt" else if (value) "aktiv" else "aus"
+
+@Composable private fun MeasurementCard(state: ScooterState, onExport: () -> Unit) {
+    Card(shape = RoundedCornerShape(22.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("🎥 Dauer-Messung", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("Läuft automatisch ab der Verbindung. Für die Bildschirmaufnahme werden Zeit, Kanal, Rohbytes, Paketnummer und geänderte Bytes gespeichert.")
+            Text("Pakete: ${state.packetTotal} • Kanäle: ${state.channels.size}")
+            Button(onClick = onExport, enabled = state.packetTotal > 0, modifier = Modifier.fillMaxWidth()) { Text("CSV in Downloads speichern") }
+            if (state.lastExportMessage.isNotBlank()) Text(state.lastExportMessage, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable private fun ChannelCard(channel: BleChannelState) {
+    Card(shape = RoundedCornerShape(18.dp)) {
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("${channel.channel} • ${channel.title}", fontWeight = FontWeight.Bold)
+                Text(channel.knowledge, style = MaterialTheme.typography.labelMedium)
+            }
+            Text(channel.meaning, style = MaterialTheme.typography.bodySmall)
+            Text("Pakete: ${channel.packetCount} • Geänderte Bytes: ${channel.changedBytes}")
+            Text(channel.hex, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable private fun InfoCard(title: String, text: String) {
+    Card(shape = RoundedCornerShape(18.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Text(title, fontWeight = FontWeight.Bold)
+            Text(text, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable private fun DecoderLabCard(
     state: ScooterState,
     selectedAction: String,
     onActionSelected: (String) -> Unit,
@@ -174,108 +252,50 @@ private fun DecoderLabCard(
     onActive: () -> Unit,
     onFinish: () -> Unit
 ) {
-    val actions = listOf(
-        "Blinker links", "Blinker rechts", "Licht", "Bremse",
-        "Fahrmodus", "Gas", "Rekuperation", "Unbekannt"
-    )
+    val actions = listOf("Blinker links", "Blinker rechts", "Licht", "Bremse", "Fahrmodus", "Gas", "Rekuperation", "Laden", "Schloss", "Unbekannt")
     var expanded by remember { mutableStateOf(false) }
-
     Card(shape = RoundedCornerShape(22.dp)) {
-        Column(
-            Modifier.fillMaxWidth().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("🔬 Decoder Lab", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("Die App vergleicht BLE-Bytes vor und während einer Aktion.")
-
+            Text("Vergleicht stabile Bytes vor und während einer Aktion.")
             ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
                 OutlinedTextField(
-                    value = selectedAction,
-                    onValueChange = {},
-                    readOnly = true,
+                    value = selectedAction, onValueChange = {}, readOnly = true,
                     label = { Text("Test") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
                     modifier = Modifier.menuAnchor().fillMaxWidth()
                 )
                 ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                     actions.forEach { action ->
-                        DropdownMenuItem(
-                            text = { Text(action) },
-                            onClick = {
-                                onActionSelected(action)
-                                expanded = false
-                            }
-                        )
+                        DropdownMenuItem(text = { Text(action) }, onClick = { onActionSelected(action); expanded = false })
                     }
                 }
             }
-
             Text("Phase: ${state.labPhase}")
-
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = onBaseline,
-                    enabled = state.connected && !state.labRunning,
-                    modifier = Modifier.weight(1f)
-                ) { Text("1. Ruhe") }
-                Button(
-                    onClick = onActive,
-                    enabled = state.labRunning && state.labPhase.startsWith("1/2"),
-                    modifier = Modifier.weight(1f)
-                ) { Text("2. Aktion") }
-                Button(
-                    onClick = onFinish,
-                    enabled = state.labRunning && state.labPhase.startsWith("2/2"),
-                    modifier = Modifier.weight(1f)
-                ) { Text("3. Fertig") }
+                Button(onClick = onBaseline, enabled = state.connected && !state.labRunning, modifier = Modifier.weight(1f)) { Text("1. Ruhe") }
+                Button(onClick = onActive, enabled = state.labRunning && state.labPhase.startsWith("1/2"), modifier = Modifier.weight(1f)) { Text("2. Aktion") }
+                Button(onClick = onFinish, enabled = state.labRunning && state.labPhase.startsWith("2/2"), modifier = Modifier.weight(1f)) { Text("3. Fertig") }
             }
-
             AnimatedVisibility(state.labCandidates.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text("Beste Treffer", fontWeight = FontWeight.Bold)
-                    state.labCandidates.take(10).forEach {
-                        Text(
-                            "${it.characteristic} • Byte ${it.byteIndex}: " +
-                                "${it.beforeValue} → ${it.activeValue} • ${it.score}%"
-                        )
+                    state.labCandidates.take(12).forEach {
+                        Text("${it.characteristic} • Byte ${it.byteIndex}: ${it.beforeValue} → ${it.activeValue} • ${it.score}%")
                     }
                 }
             }
-
-            Text(
-                "GPS und Bluetooth-Adresse werden nicht in den verschlüsselten Bericht aufgenommen.",
-                style = MaterialTheme.typography.labelMedium
-            )
         }
     }
 }
 
-@Composable
-private fun MetricCard(title: String, value: String, modifier: Modifier = Modifier) {
-    Card(modifier = modifier, shape = RoundedCornerShape(18.dp)) {
-        Column(
-            Modifier.fillMaxWidth().padding(14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(title, style = MaterialTheme.typography.labelLarge)
-            Spacer(Modifier.height(6.dp))
-            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        }
-    }
-}
-
-@Composable
-private fun RawDataCard(state: ScooterState) {
+@Composable private fun RawDataCard(state: ScooterState) {
     Card(shape = RoundedCornerShape(18.dp)) {
-        Column(
-            Modifier.fillMaxWidth().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(7.dp)
-        ) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Text("Letztes BLE-Paket", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text("Kanal: ${state.lastCharacteristic.ifBlank { "–" }}")
+            Text("Kanal: ${state.lastCharacteristic.ifBlank { "–" }} • Geändert: ${state.lastChangedBytes}")
             Text(state.lastRawHex.ifBlank { "Noch keine Daten empfangen" }, style = MaterialTheme.typography.bodySmall)
-            Text("${state.rawPackets.size} Kanäle zuletzt gesehen")
-            Text("Nur Diagnose: Es werden keine Steuerbefehle an den Scooter gesendet.")
+            Text("Nur Diagnose: Die App sendet keine Steuer- oder Tuningbefehle.")
         }
     }
 }

@@ -6,6 +6,9 @@ import android.bluetooth.*
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.content.Context
+import android.content.ContentValues
+import android.provider.MediaStore
+import android.os.Environment
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.content.ContextCompat
@@ -13,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.util.ArrayDeque
 import java.util.UUID
+import java.io.File
 
 class BleScooterManager(private val context: Context) {
     companion object {
@@ -34,6 +38,10 @@ class BleScooterManager(private val context: Context) {
 
     private val decoderLab = DecoderLabEngine()
     private val secureStore = SecureTelemetryStore(context)
+    private val previousValues = mutableMapOf<String, ByteArray>()
+    private val channelPacketCounts = mutableMapOf<String, Int>()
+    private val sessionRows = mutableListOf<String>()
+    private var sessionStartedAt = System.currentTimeMillis()
 
     private val _state = MutableStateFlow(ScooterState(encryptedReports = secureStore.count()))
     val state: StateFlow<ScooterState> = _state
@@ -73,6 +81,8 @@ class BleScooterManager(private val context: Context) {
     @SuppressLint("MissingPermission")
     fun disconnect() {
         decoderLab.cancel()
+        previousValues.clear()
+        channelPacketCounts.clear()
         notificationQueue.clear()
         descriptorWriteRunning = false
         gatt?.disconnect()
@@ -157,7 +167,11 @@ class BleScooterManager(private val context: Context) {
         override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
-                    update { it.copy(connected = true, status = "Verbunden – suche Dienste") }
+                    sessionStartedAt = System.currentTimeMillis()
+                    sessionRows.clear()
+                    previousValues.clear()
+                    channelPacketCounts.clear()
+                    update { it.copy(connected = true, status = "Verbunden – suche Dienste", sessionStartedAt = sessionStartedAt, packetTotal = 0) }
                     addLog("BLE verbunden, Status $status")
                     g.discoverServices()
                 }
@@ -272,24 +286,103 @@ class BleScooterManager(private val context: Context) {
         decoderLab.record(uuid, value)
         val hex = value.joinToString("-") { "%02X".format(it.toInt() and 0xFF) }
         val short = shortUuid(uuid)
+        val now = System.currentTimeMillis()
+        val relativeMs = now - sessionStartedAt
+        val previous = previousValues[short]
+        val changed = changedByteIndexes(previous, value)
+        previousValues[short] = value.copyOf()
+        val count = (channelPacketCounts[short] ?: 0) + 1
+        channelPacketCounts[short] = count
 
-        var battery = _state.value.batteryPercent
-        if (uuid == BATTERY_CHARACTERISTIC && value.size >= 5) {
-            val candidate = value[4].toInt() and 0xFF
-            if (candidate in 0..100) battery = candidate
-        }
+        val decoded = LiveTelemetryDecoder.decode(short, value)
+        val knowledge = VmaxProtocolCatalog.get(short)
+        val changedText = if (changed.isEmpty()) "–" else changed.joinToString(",")
+        sessionRows += listOf(
+            relativeMs.toString(), now.toString(), short, knowledge.title,
+            value.size.toString(), count.toString(), changedText, hex
+        ).joinToString(";")
+        if (sessionRows.size > 50_000) sessionRows.removeAt(0)
 
-        val packets = (_state.value.rawPackets + (short to hex)).toSortedMap()
+        val old = _state.value
+        val packets = (old.rawPackets + (short to hex)).toSortedMap()
+        val channels = packets.keys.map { channel ->
+            val info = VmaxProtocolCatalog.get(channel)
+            BleChannelState(
+                channel = channel,
+                title = info.title,
+                meaning = info.meaning,
+                knowledge = info.level.label,
+                hex = packets[channel].orEmpty(),
+                changedBytes = if (channel == short) changedText else old.channels.firstOrNull { it.channel == channel }?.changedBytes ?: "–",
+                packetCount = channelPacketCounts[channel] ?: 0,
+                active = channel == short,
+                lastSeenMs = if (channel == short) now else old.channels.firstOrNull { it.channel == channel }?.lastSeenMs ?: 0L
+            )
+        }.sortedBy { it.channel }
+
         update {
             it.copy(
-                batteryPercent = battery,
+                batteryPercent = decoded.batteryPercent ?: it.batteryPercent,
+                speedKmh = decoded.speedKmh ?: it.speedKmh,
+                voltageV = decoded.voltageV ?: it.voltageV,
+                currentA = decoded.currentA ?: it.currentA,
+                motorTemperatureC = decoded.motorTemperatureC ?: it.motorTemperatureC,
+                batteryTemperatureC = decoded.batteryTemperatureC ?: it.batteryTemperatureC,
+                tripDistanceKm = decoded.tripDistanceKm ?: it.tripDistanceKm,
+                odometerKm = decoded.odometerKm ?: it.odometerKm,
                 lastCharacteristic = short,
                 lastRawHex = hex,
+                lastChangedBytes = changedText,
                 rawPackets = packets,
+                packetTotal = it.packetTotal + 1,
+                channels = channels,
+                analysisPhase = if (it.labRunning) it.labPhase else "Dauer-Messung läuft",
                 status = "Live-Daten aktiv"
             )
         }
-        addLog("$short: $hex")
+        if (count <= 3 || changed.isNotEmpty()) addLog("$short [${knowledge.title}] Δ$changedText: $hex")
+    }
+
+    fun exportSessionCsv() {
+        val header = "relative_ms;timestamp_ms;channel;meaning;length;packet_no;changed_bytes;hex\n"
+        val content = header + sessionRows.joinToString("\n")
+        val fileName = "VMAX_Session_${System.currentTimeMillis()}.csv"
+        runCatching {
+            val location = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                    put(MediaStore.Downloads.MIME_TYPE, "text/csv")
+                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/VMAXDashboard")
+                    put(MediaStore.Downloads.IS_PENDING, 1)
+                }
+                val resolver = context.contentResolver
+                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: error("Download-Datei konnte nicht angelegt werden")
+                resolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(content) }
+                    ?: error("Download-Datei konnte nicht geschrieben werden")
+                values.clear()
+                values.put(MediaStore.Downloads.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+                "Downloads/VMAXDashboard"
+            } else {
+                val folder = File(context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), "VMAXDashboard").apply { mkdirs() }
+                File(folder, fileName).writeText(content)
+                folder.absolutePath
+            }
+            update { it.copy(lastExportMessage = "$fileName in $location gespeichert") }
+            addLog("CSV exportiert: $fileName")
+        }.onFailure { error ->
+            update { it.copy(lastExportMessage = "Export fehlgeschlagen: ${error.message}") }
+            addLog("CSV-Export fehlgeschlagen: ${error.message}")
+        }
+    }
+
+    private fun changedByteIndexes(previous: ByteArray?, current: ByteArray): List<Int> {
+        if (previous == null) return current.indices.toList()
+        val max = maxOf(previous.size, current.size)
+        return (0 until max).filter { index ->
+            index >= previous.size || index >= current.size || previous[index] != current[index]
+        }
     }
 
     private fun buildReport(
