@@ -36,10 +36,24 @@ data class BleChannelState(
     val active: Boolean get() = packetCount > 0
 }
 
+data class DiscoveredScooter(
+    val name: String,
+    val address: String,
+    val rssi: Int,
+    val likelyScooter: Boolean = false,
+    val lastSeenMs: Long = System.currentTimeMillis()
+)
+
 data class ScooterState(
     val status: String = "Nicht verbunden",
     val connected: Boolean = false,
     val scanning: Boolean = false,
+    val universalScan: Boolean = false,
+    val discoveredScooters: List<DiscoveredScooter> = emptyList(),
+    val rememberedDeviceName: String = "",
+    val rememberedDeviceAddress: String = "",
+    val autoConnectEnabled: Boolean = true,
+    val reconnectAttempt: Int = 0,
     val deviceName: String = "BT638",
     val address: String = "",
     val batteryPercent: Int? = null,

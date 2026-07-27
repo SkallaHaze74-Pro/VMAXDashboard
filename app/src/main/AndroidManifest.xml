@@ -16,7 +16,7 @@
 
     <application
         android:allowBackup="true"
-        android:label="VMAX Dashboard"
+        android:label="Scooter Telemetry VX"
         android:theme="@style/Theme.VMAXDashboard">
         <activity
             android:name=".MainActivity"

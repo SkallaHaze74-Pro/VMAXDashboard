@@ -8,6 +8,8 @@ import android.bluetooth.le.ScanResult
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,6 +32,12 @@ class BleScooterManager(private val context: Context) {
         context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
     private val adapter: BluetoothAdapter? get() = bluetoothManager.adapter
     private var gatt: BluetoothGatt? = null
+    private val prefs = context.getSharedPreferences("stvx_smart_connect", Context.MODE_PRIVATE)
+    private val handler = Handler(Looper.getMainLooper())
+    private var manualDisconnect = false
+    private var reconnectAttempts = 0
+    private var connectingAddress: String? = null
+    private val reconnectRunnable = Runnable { reconnectRememberedDevice() }
 
     private val notificationQueue = ArrayDeque<BluetoothGattCharacteristic>()
     private var descriptorWriteRunning = false
@@ -46,8 +54,81 @@ class BleScooterManager(private val context: Context) {
     private var speedSampleSum = 0.0
     private var speedSampleCount = 0L
 
-    private val _state = MutableStateFlow(ScooterState())
+    private val _state = MutableStateFlow(
+        ScooterState(
+            rememberedDeviceName = prefs.getString("device_name", "").orEmpty(),
+            rememberedDeviceAddress = prefs.getString("device_address", "").orEmpty(),
+            autoConnectEnabled = prefs.getBoolean("auto_connect", true)
+        )
+    )
     val state: StateFlow<ScooterState> = _state
+
+
+    fun setAutoConnectEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("auto_connect", enabled).apply()
+        update { it.copy(autoConnectEnabled = enabled) }
+        if (enabled) smartConnect() else handler.removeCallbacks(reconnectRunnable)
+    }
+
+    fun forgetRememberedScooter() {
+        handler.removeCallbacks(reconnectRunnable)
+        prefs.edit().remove("device_name").remove("device_address").apply()
+        reconnectAttempts = 0
+        update {
+            it.copy(
+                rememberedDeviceName = "",
+                rememberedDeviceAddress = "",
+                reconnectAttempt = 0,
+                status = if (it.connected) it.status else "Gespeicherter Scooter entfernt"
+            )
+        }
+        addLog("Gespeicherten Scooter vergessen")
+    }
+
+    @SuppressLint("MissingPermission")
+    fun smartConnect() {
+        if (!hasRequiredPermissions()) return
+        if (!_state.value.autoConnectEnabled || _state.value.connected || gatt != null) return
+        val address = _state.value.rememberedDeviceAddress
+        if (address.isBlank()) {
+            startUniversalScan()
+            return
+        }
+        manualDisconnect = false
+        handler.removeCallbacks(reconnectRunnable)
+        update { it.copy(status = "Suche gespeicherten Scooter …") }
+        connectTo(address)
+    }
+
+    private fun rememberDevice(device: BluetoothDevice) {
+        val name = runCatching { device.name }.getOrNull() ?: _state.value.deviceName
+        prefs.edit().putString("device_name", name).putString("device_address", device.address).apply()
+        update {
+            it.copy(
+                rememberedDeviceName = name,
+                rememberedDeviceAddress = device.address,
+                reconnectAttempt = 0
+            )
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun reconnectRememberedDevice() {
+        if (manualDisconnect || !_state.value.autoConnectEnabled || _state.value.connected || gatt != null) return
+        val address = _state.value.rememberedDeviceAddress
+        if (address.isBlank() || adapter?.isEnabled != true || !hasRequiredPermissions()) return
+        reconnectAttempts += 1
+        update { it.copy(status = "Automatische Wiederverbindung #$reconnectAttempts …", reconnectAttempt = reconnectAttempts) }
+        connectTo(address)
+    }
+
+    private fun scheduleReconnect() {
+        if (manualDisconnect || !_state.value.autoConnectEnabled || _state.value.rememberedDeviceAddress.isBlank()) return
+        handler.removeCallbacks(reconnectRunnable)
+        val delay = (2_000L * (reconnectAttempts + 1)).coerceAtMost(15_000L)
+        update { it.copy(status = "Verbindung verloren – neuer Versuch in ${delay / 1000}s") }
+        handler.postDelayed(reconnectRunnable, delay)
+    }
 
     fun setAnalysisPhase(label: String) {
         baselinePackets.clear()
@@ -105,6 +186,16 @@ class BleScooterManager(private val context: Context) {
 
     @SuppressLint("MissingPermission")
     fun startScan() {
+        startScanInternal(universal = false)
+    }
+
+    @SuppressLint("MissingPermission")
+    fun startUniversalScan() {
+        startScanInternal(universal = true)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startScanInternal(universal: Boolean) {
         if (!hasRequiredPermissions()) {
             addLog("Bluetooth-Berechtigungen fehlen")
             return
@@ -114,30 +205,55 @@ class BleScooterManager(private val context: Context) {
             return
         }
 
-        update { it.copy(scanning = true, status = "Suche nach $TARGET_NAME …") }
+        update {
+            it.copy(
+                scanning = true,
+                universalScan = universal,
+                discoveredScooters = if (universal) emptyList() else it.discoveredScooters,
+                status = if (universal) "Suche kompatible BLE-Geräte …" else "Suche nach $TARGET_NAME …"
+            )
+        }
         adapter?.bluetoothLeScanner?.startScan(scanCallback)
+    }
+
+    @SuppressLint("MissingPermission")
+    fun connectTo(address: String) {
+        manualDisconnect = false
+        if (!hasRequiredPermissions()) {
+            addLog("Bluetooth-Berechtigungen fehlen")
+            return
+        }
+        runCatching { adapter?.getRemoteDevice(address) }
+            .onSuccess { device -> if (device != null) connect(device) }
+            .onFailure { addLog("Gerät konnte nicht geöffnet werden: ${it.message}") }
     }
 
     @SuppressLint("MissingPermission")
     fun stopScan() {
         if (!hasRequiredPermissions()) return
         adapter?.bluetoothLeScanner?.stopScan(scanCallback)
-        update { it.copy(scanning = false) }
+        update { it.copy(scanning = false, universalScan = false) }
     }
 
     @SuppressLint("MissingPermission")
     fun disconnect() {
+        manualDisconnect = true
+        handler.removeCallbacks(reconnectRunnable)
+        reconnectAttempts = 0
         notificationQueue.clear()
         descriptorWriteRunning = false
         gatt?.disconnect()
         gatt?.close()
         gatt = null
-        update { it.copy(connected = false, scanning = false, status = "Getrennt") }
+        connectingAddress = null
+        update { it.copy(connected = false, scanning = false, reconnectAttempt = 0, status = "Getrennt") }
     }
 
     @SuppressLint("MissingPermission")
     private fun connect(device: BluetoothDevice) {
         stopScan()
+        handler.removeCallbacks(reconnectRunnable)
+        connectingAddress = device.address
         update {
             it.copy(
                 status = "Verbinde …",
@@ -152,8 +268,31 @@ class BleScooterManager(private val context: Context) {
     private val scanCallback = object : ScanCallback() {
         @SuppressLint("MissingPermission")
         override fun onScanResult(callbackType: Int, result: ScanResult) {
-            val name = result.device.name ?: result.scanRecord?.deviceName
-            if (name == TARGET_NAME) {
+            val name = result.device.name ?: result.scanRecord?.deviceName ?: "Unbekanntes BLE-Gerät"
+            val current = _state.value
+            if (current.universalScan) {
+                val normalized = name.uppercase()
+                val likelyScooter = listOf("VMAX", "VX", "SCOOT", "BT63", "BT64", "E-SCOOTER")
+                    .any { normalized.contains(it) }
+                val candidate = DiscoveredScooter(
+                    name = name,
+                    address = result.device.address,
+                    rssi = result.rssi,
+                    likelyScooter = likelyScooter
+                )
+                val list = (current.discoveredScooters.filterNot { it.address == candidate.address } + candidate)
+                    .sortedWith(compareByDescending<DiscoveredScooter> { it.likelyScooter }.thenByDescending { it.rssi })
+                    .take(40)
+                val likelyCount = list.count { it.likelyScooter }
+                update {
+                    it.copy(
+                        discoveredScooters = list,
+                        status = if (likelyCount > 0)
+                            "$likelyCount mögliche Scooter · ${list.size} BLE-Geräte"
+                        else "${list.size} BLE-Geräte gefunden"
+                    )
+                }
+            } else if (name == TARGET_NAME) {
                 addLog("$TARGET_NAME gefunden: ${result.device.address}")
                 connect(result.device)
             }
@@ -168,7 +307,11 @@ class BleScooterManager(private val context: Context) {
         override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
-                    update { it.copy(connected = true, status = "Verbunden – suche Dienste") }
+                    reconnectAttempts = 0
+                    manualDisconnect = false
+                    connectingAddress = g.device.address
+                    rememberDevice(g.device)
+                    update { it.copy(connected = true, reconnectAttempt = 0, status = "Verbunden – suche Dienste") }
                     addLog("BLE verbunden, Status $status")
                     discoverServicesCompat(g)
                 }
@@ -185,6 +328,8 @@ class BleScooterManager(private val context: Context) {
                     addLog("BLE getrennt, Status $status")
                     g.close()
                     if (gatt === g) gatt = null
+                    connectingAddress = null
+                    scheduleReconnect()
                 }
             }
         }

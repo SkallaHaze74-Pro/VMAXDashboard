@@ -5,6 +5,8 @@ package de.kevin.vmaxdashboard
 import android.Manifest
 import android.os.Build
 import android.os.Bundle
+import android.content.Intent
+import androidx.compose.ui.platform.LocalContext
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -88,19 +90,39 @@ private fun VmaxTheme(content: @Composable () -> Unit) {
 }
 
 private enum class Screen(val label: String, val symbol: String) {
-    Dashboard("Dashboard", "◉"), Ride("Fahrt", "↗"), Diagnose("Diagnose", "⌁"), Settings("Setup", "⚙")
+    Dashboard("Cockpit", "◉"), Tester("Tester Lab", "✦"), Diagnose("Explorer", "⌁"), Settings("Setup", "⚙")
 }
 
 @Composable
 private fun VmaxApp(manager: BleScooterManager) {
     val state by manager.state.collectAsStateWithLifecycle()
     var screen by remember { mutableStateOf(Screen.Dashboard) }
+    var pendingUniversalScan by remember { mutableStateOf(false) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { results -> if (results.values.all { it }) manager.startScan() }
+    ) { results ->
+        if (results.values.all { it }) {
+            if (pendingUniversalScan) manager.startUniversalScan() else manager.smartConnect()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (manager.hasRequiredPermissions()) manager.smartConnect()
+    }
 
     fun connect() {
-        if (manager.hasRequiredPermissions()) manager.startScan()
+        pendingUniversalScan = false
+        if (manager.hasRequiredPermissions()) manager.smartConnect()
+        else permissionLauncher.launch(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) arrayOf(
+                Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT
+            ) else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+        )
+    }
+
+    fun universalScan() {
+        pendingUniversalScan = true
+        if (manager.hasRequiredPermissions()) manager.startUniversalScan()
         else permissionLauncher.launch(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) arrayOf(
                 Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT
@@ -140,9 +162,9 @@ private fun VmaxApp(manager: BleScooterManager) {
     ) { padding ->
         when (screen) {
             Screen.Dashboard -> DashboardScreen(state, ::connect, manager::disconnect, padding)
-            Screen.Ride -> RideScreen(state, padding)
+            Screen.Tester -> TesterLabScreen(state, manager, ::universalScan, padding)
             Screen.Diagnose -> DiagnoseScreen(state, manager, padding)
-            Screen.Settings -> SettingsScreen(state, ::connect, manager::disconnect, padding)
+            Screen.Settings -> SettingsScreen(state, manager, ::connect, manager::disconnect, padding)
         }
     }
     }
@@ -152,8 +174,8 @@ private fun VmaxApp(manager: BleScooterManager) {
 private fun Header(state: ScooterState) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text("VMAX", fontWeight = FontWeight.Black, fontSize = 28.sp, letterSpacing = 2.sp)
-            Text("NEON TELEMETRY", color = NeonCyan, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            Text("VX", fontWeight = FontWeight.Black, fontSize = 28.sp, letterSpacing = 2.sp)
+            Text("SCOOTER TELEMETRY", color = NeonCyan, fontWeight = FontWeight.Bold, fontSize = 12.sp)
         }
         Surface(
             modifier = Modifier.border(1.dp, Brush.horizontalGradient(RainbowColors), RoundedCornerShape(50)),
@@ -565,11 +587,37 @@ private fun ChannelCard(channel: BleChannelState) {
 }
 
 @Composable
-private fun SettingsScreen(state: ScooterState, connect: () -> Unit, disconnect: () -> Unit, padding: PaddingValues) {
+private fun SettingsScreen(state: ScooterState, manager: BleScooterManager, connect: () -> Unit, disconnect: () -> Unit, padding: PaddingValues) {
     LazyColumn(Modifier.fillMaxSize().padding(padding).padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item { Header(state) }
         item { Text("SETUP", fontSize = 28.sp, fontWeight = FontWeight.Black) }
-        item { SettingRow("Automatisch verbinden", "Vorbereitet für BT638", true) }
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(22.dp)) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("SMART CONNECT", fontWeight = FontWeight.Black, color = NeonCyan)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Automatisch verbinden", fontWeight = FontWeight.Bold)
+                            Text("Beim Start und nach einem Verbindungsabbruch.", color = SoftText, fontSize = 11.sp)
+                        }
+                        Switch(checked = state.autoConnectEnabled, onCheckedChange = manager::setAutoConnectEnabled)
+                    }
+                    Text(
+                        if (state.rememberedDeviceAddress.isBlank()) "Noch kein Scooter gespeichert"
+                        else "Gespeichert: ${state.rememberedDeviceName} · ${state.rememberedDeviceAddress}",
+                        color = if (state.rememberedDeviceAddress.isBlank()) SoftText else NeonGreen,
+                        fontSize = 12.sp
+                    )
+                    if (state.reconnectAttempt > 0 && !state.connected) {
+                        Text("Wiederverbindungsversuch #${state.reconnectAttempt}", color = NeonYellow, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = connect, enabled = !state.connected, modifier = Modifier.weight(1f)) { Text("JETZT VERBINDEN", fontSize = 11.sp) }
+                        OutlinedButton(onClick = manager::forgetRememberedScooter, enabled = state.rememberedDeviceAddress.isNotBlank(), modifier = Modifier.weight(1f)) { Text("VERGESSEN", fontSize = 11.sp) }
+                    }
+                }
+            }
+        }
         item { SettingRow("Tacho glätten", "Ruhigere Live-Anzeige", true) }
         item { SettingRow("Dark Performance Theme", "VMAX Night-Ride Design", true) }
         item { SettingRow("Nur Lesemodus", "Keine Steuerbefehle an den Scooter", true) }
@@ -579,7 +627,7 @@ private fun SettingsScreen(state: ScooterState, connect: () -> Unit, disconnect:
                 OutlinedButton(disconnect, enabled = state.connected, modifier = Modifier.weight(1f)) { Text("TRENNEN") }
             }
         }
-        item { InfoPanel("VMAX Dashboard 3.1", "Neon Rainbow Cockpit, flüssiger Tacho, echte Live-Wave, BLE-Kanal-Explorer und Auto-Decoder. Weiterhin sicherer Nur-Lesemodus.") }
+        item { InfoPanel("Scooter Telemetry VX 5.2", "Scooter-Finder, Tester Lab, universeller BLE-Scanner, standardisierte Decoder-Tests, Vergleichsbericht, Neon-Cockpit und sicherer Nur-Lesemodus.") }
     }
 }
 
@@ -603,5 +651,273 @@ private fun InfoPanel(title: String, text: String) {
             Text(title, fontWeight = FontWeight.Black, fontSize = 18.sp)
             Text(text, color = SoftText, lineHeight = 20.sp)
         }
+    }
+}
+
+@Composable
+private fun TesterLabScreen(
+    state: ScooterState,
+    manager: BleScooterManager,
+    universalScan: () -> Unit,
+    padding: PaddingValues
+) {
+    val context = LocalContext.current
+    var scooterModel by remember { mutableStateOf("") }
+    var testerNote by remember { mutableStateOf("") }
+    var consent by remember { mutableStateOf(false) }
+    var autoScanStarted by remember { mutableStateOf(false) }
+    var showAllDevices by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        if (!autoScanStarted && !state.connected && state.discoveredScooters.isEmpty()) {
+            autoScanStarted = true
+            universalScan()
+        }
+    }
+
+    val phases = listOf(
+        "01 Stillstand 20 s",
+        "02 Rad frei drehen / langsam",
+        "03 Konstant langsam",
+        "04 Konstant schnell",
+        "05 Gas geben",
+        "06 Rollen lassen",
+        "07 Bremsen",
+        "08 Licht EIN",
+        "09 Licht AUS",
+        "10 Laden / Abschluss"
+    )
+
+    fun shareReport() {
+        val report = buildTesterReport(state, scooterModel, testerNote)
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "Scooter Telemetry VX Testbericht")
+            putExtra(Intent.EXTRA_TEXT, report)
+        }
+        context.startActivity(Intent.createChooser(intent, "Testbericht teilen"))
+    }
+
+    LazyColumn(
+        Modifier.fillMaxSize().padding(padding).padding(horizontal = 18.dp),
+        contentPadding = PaddingValues(top = 18.dp, bottom = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item { Header(state) }
+        item {
+            InfoPanel(
+                "VX TESTER LAB",
+                "Geführte Aufnahmen machen Daten verschiedener Scooter vergleichbar. Die App sendet nichts automatisch; der Bericht wird erst über Teilen freigegeben."
+            )
+        }
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(22.dp)) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("1 · TESTER & SCOOTER", fontWeight = FontWeight.Black, color = NeonCyan)
+                    OutlinedTextField(
+                        value = scooterModel,
+                        onValueChange = { scooterModel = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Scooter-Modell, z. B. VX2 Pro") },
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = testerNote,
+                        onValueChange = { testerNote = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Firmware, Akkustand oder Besonderheiten") },
+                        minLines = 2
+                    )
+                }
+            }
+        }
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(22.dp)) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Column {
+                            Text("2 · SCOOTER-FINDER", fontWeight = FontWeight.Black, color = NeonPurple)
+                            Text(state.status, color = SoftText, fontSize = 11.sp)
+                        }
+                        Surface(
+                            color = if (state.scanning) NeonPurple.copy(alpha = 0.18f) else Panel2,
+                            shape = RoundedCornerShape(20.dp)
+                        ) {
+                            Text(
+                                if (state.scanning) "● LIVE" else "${state.discoveredScooters.size} GEFUNDEN",
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                color = if (state.scanning) NeonCyan else SoftText,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = universalScan,
+                            enabled = !state.scanning && !state.connected,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(14.dp)
+                        ) { Text(if (state.scanning) "SUCHE …" else "NEU SCANNEN") }
+                        if (state.scanning) {
+                            OutlinedButton(
+                                onClick = { manager.stopScan() },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(14.dp)
+                            ) { Text("STOPP") }
+                        }
+                    }
+
+                    val likelyDevices = state.discoveredScooters.filter { it.likelyScooter }
+                    val displayedDevices = if (showAllDevices || likelyDevices.isEmpty()) {
+                        state.discoveredScooters
+                    } else likelyDevices
+
+                    if (state.scanning && state.discoveredScooters.isEmpty()) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                        Text("Bluetooth-Geräte in der Nähe werden automatisch angezeigt …", color = SoftText, fontSize = 12.sp)
+                    }
+
+                    if (likelyDevices.isNotEmpty()) {
+                        Text(
+                            "${likelyDevices.size} möglicher Scooter erkannt",
+                            color = NeonGreen,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                    }
+
+                    displayedDevices.take(if (showAllDevices) 30 else 12).forEach { device ->
+                        val quality = when {
+                            device.rssi >= -55 -> "SEHR GUT"
+                            device.rssi >= -67 -> "GUT"
+                            device.rssi >= -78 -> "MITTEL"
+                            else -> "SCHWACH"
+                        }
+                        val bars = when {
+                            device.rssi >= -55 -> "▂▄▆█"
+                            device.rssi >= -67 -> "▂▄▆·"
+                            device.rssi >= -78 -> "▂▄··"
+                            else -> "▂···"
+                        }
+                        Surface(
+                            color = if (device.likelyScooter) NeonPurple.copy(alpha = 0.13f) else Panel2,
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .then(
+                                    if (device.likelyScooter) Modifier.border(1.dp, NeonPurple.copy(alpha = 0.55f), RoundedCornerShape(16.dp))
+                                    else Modifier
+                                )
+                        ) {
+                            Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                            Text(device.name, fontWeight = FontWeight.Black, fontSize = 15.sp)
+                                            if (device.likelyScooter) {
+                                                Text("SCOOTER?", color = NeonGreen, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                                            }
+                                        }
+                                        Text(device.address, color = SoftText, fontSize = 10.sp)
+                                    }
+                                    Column(horizontalAlignment = Alignment.End) {
+                                        Text(bars, color = if (device.rssi >= -67) NeonGreen else NeonYellow, fontWeight = FontWeight.Black)
+                                        Text("$quality · ${device.rssi} dBm", color = SoftText, fontSize = 9.sp)
+                                    }
+                                }
+                                Button(
+                                    onClick = { manager.connectTo(device.address) },
+                                    enabled = !state.connected,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) { Text("MIT ${device.name.uppercase()} VERBINDEN", fontSize = 11.sp) }
+                            }
+                        }
+                    }
+
+                    if (state.discoveredScooters.size > likelyDevices.size && likelyDevices.isNotEmpty()) {
+                        TextButton(onClick = { showAllDevices = !showAllDevices }, modifier = Modifier.fillMaxWidth()) {
+                            Text(if (showAllDevices) "NUR MÖGLICHE SCOOTER ZEIGEN" else "ALLE BLE-GERÄTE ANZEIGEN")
+                        }
+                    }
+
+                    if (state.connected) {
+                        Surface(color = NeonGreen.copy(alpha = 0.12f), shape = RoundedCornerShape(14.dp)) {
+                            Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                                Text("● LIVE VERBUNDEN", color = NeonGreen, fontWeight = FontWeight.Black)
+                                Text("${state.deviceName} · ${state.address}", color = SoftText, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(22.dp)) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("3 · GEFÜHRTER DECODER-TEST", fontWeight = FontWeight.Black, color = NeonPink)
+                    Text("Vor jeder Aktion die passende Phase antippen und ungefähr 10–20 Sekunden halten.", color = SoftText, fontSize = 12.sp)
+                    phases.chunked(2).forEach { row ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            row.forEach { phase ->
+                                OutlinedButton(
+                                    onClick = { manager.setAnalysisPhase(phase) },
+                                    enabled = state.connected,
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(12.dp),
+                                    contentPadding = PaddingValues(8.dp)
+                                ) { Text(phase, fontSize = 10.sp, textAlign = TextAlign.Center) }
+                            }
+                            if (row.size == 1) Spacer(Modifier.weight(1f))
+                        }
+                    }
+                    Text("Aktiv: #${state.analysisPhaseNumber} ${state.analysisPhase}", color = NeonYellow, fontWeight = FontWeight.Bold)
+                    Text("${state.packetTotal} Pakete · ${state.channels.count { it.active }} aktive Kanäle", color = SoftText)
+                }
+            }
+        }
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(22.dp)) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("4 · BERICHT FREIGEBEN", fontWeight = FontWeight.Black, color = NeonGreen)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = consent, onCheckedChange = { consent = it })
+                        Text("Ich habe geprüft, dass ich diesen technischen Bericht teilen möchte.", fontSize = 12.sp)
+                    }
+                    Button(
+                        onClick = ::shareReport,
+                        enabled = consent && state.packetTotal > 0,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("STANDARDISIERTEN TESTBERICHT TEILEN") }
+                    OutlinedButton(onClick = manager::resetAnalyzer, modifier = Modifier.fillMaxWidth()) { Text("NEUE TESTSESSION") }
+                    Text("Enthält Geräte-/Android-Version, Modellangabe, UUID-Kanäle und Byte-Statistiken. Kein GPS und keine automatische Übertragung.", color = SoftText, fontSize = 11.sp)
+                }
+            }
+        }
+    }
+}
+
+private fun buildTesterReport(state: ScooterState, scooterModel: String, testerNote: String): String = buildString {
+    appendLine("SCOOTER TELEMETRY VX – TESTER REPORT v5.2")
+    appendLine("Report-Schema: STVX-1")
+    appendLine("App: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+    appendLine("Android: ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT}")
+    appendLine("Telefon: ${Build.MANUFACTURER} ${Build.MODEL}")
+    appendLine("Scooter-Modell: ${scooterModel.ifBlank { "nicht angegeben" }}")
+    appendLine("BLE-Gerät: ${state.deviceName} ${state.address}")
+    appendLine("Tester-Notiz: ${testerNote.ifBlank { "–" }}")
+    appendLine("Phase #${state.analysisPhaseNumber}: ${state.analysisPhase}")
+    appendLine("Pakete gesamt: ${state.packetTotal}")
+    appendLine("Kanäle gefunden: ${state.channels.size}; aktiv: ${state.channels.count { it.active }}")
+    appendLine("Messwerte: speed=${state.speedKmh ?: "?"}; battery=${state.batteryPercent ?: "?"}; voltage=${state.voltageV ?: "?"}; temp=${state.temperatureC ?: "?"}")
+    appendLine()
+    state.channels.forEach { channel ->
+        appendLine("SERVICE=${channel.service};CHANNEL=${channel.channel};PROPS=${channel.properties};PACKETS=${channel.packetCount};HZ=${"%.3f".format(channel.packetsPerSecond)};LEN=${channel.packetLength}")
+        appendLine("HEX=${channel.hex}")
+        channel.byteStats.forEach { stat ->
+            appendLine("BYTE=${stat.index};NOW=${stat.current};MIN=${stat.min};MAX=${stat.max};RANGE=${stat.range};CHANGES=${stat.changeCount};DELTA=${stat.deltaFromBaseline ?: 0}")
+        }
+        appendLine("END_CHANNEL")
     }
 }

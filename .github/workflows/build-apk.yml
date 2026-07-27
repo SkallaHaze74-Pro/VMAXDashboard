@@ -1,4 +1,4 @@
-name: Signierte VMAX Update-APK
+name: Scooter Telemetry VX Test-Build
 
 on:
   workflow_dispatch:
@@ -42,15 +42,18 @@ jobs:
           test -n "$SIGNING_KEY_ALIAS" || (echo "GitHub Secret SIGNING_KEY_ALIAS fehlt" && exit 1)
           test -n "$SIGNING_KEY_PASSWORD" || (echo "GitHub Secret SIGNING_KEY_PASSWORD fehlt" && exit 1)
 
-          export VERSION_CODE=$((4000 + GITHUB_RUN_NUMBER))
-          export VERSION_NAME="4.0.${GITHUB_RUN_NUMBER}"
+          export VERSION_CODE=$((5200 + GITHUB_RUN_NUMBER))
+          export VERSION_NAME="5.2.${GITHUB_RUN_NUMBER}"
 
-          gradle assembleRelease --stacktrace
-          cp app/build/outputs/apk/release/app-release.apk "VMAX-Dashboard-v${VERSION_NAME}.apk"
+          gradle assembleRelease bundleRelease --stacktrace
+          cp app/build/outputs/apk/release/app-release.apk "Scooter-Telemetry-VX-v${VERSION_NAME}.apk"
+          cp app/build/outputs/bundle/release/app-release.aab "Scooter-Telemetry-VX-v${VERSION_NAME}.aab"
 
       - name: Update-APK bereitstellen
         uses: actions/upload-artifact@v4
         with:
-          name: VMAX-Dashboard-Update-APK
-          path: VMAX-Dashboard-v*.apk
+          name: Scooter-Telemetry-VX-Test-Build
+          path: |
+            Scooter-Telemetry-VX-v*.apk
+            Scooter-Telemetry-VX-v*.aab
           if-no-files-found: error
