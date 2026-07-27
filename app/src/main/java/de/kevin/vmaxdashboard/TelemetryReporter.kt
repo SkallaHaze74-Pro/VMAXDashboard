@@ -3,6 +3,7 @@ package de.kevin.vmaxdashboard
 import android.content.Context
 import android.os.Build
 import com.google.firebase.Timestamp
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.google.firebase.firestore.FirebaseFirestore
 import java.security.MessageDigest
@@ -15,6 +16,7 @@ class TelemetryReporter(private val context: Context) {
 
     private val firestore by lazy { FirebaseFirestore.getInstance() }
     private val crashlytics by lazy { FirebaseCrashlytics.getInstance() }
+    private val auth by lazy { FirebaseAuth.getInstance() }
 
     val testerId: String =
         prefs.getString("tester_id", null)
@@ -78,11 +80,20 @@ class TelemetryReporter(private val context: Context) {
             "appVersionCode" to BuildConfig.VERSION_CODE
         )
 
-        firestore.collection("bleTelemetry")
-            .add(data)
-            .addOnFailureListener { error ->
+        ensureAnonymousLogin(
+            onSuccess = { firebaseUid ->
+                data["firebaseUid"] = firebaseUid
+
+                firestore.collection("bleTelemetry")
+                    .add(data)
+                    .addOnFailureListener { error ->
+                        crashlytics.recordException(error)
+                    }
+            },
+            onFailure = { error ->
                 crashlytics.recordException(error)
             }
+        )
     }
 
     fun reportProblem(
@@ -140,14 +151,56 @@ class TelemetryReporter(private val context: Context) {
             "appVersionCode" to BuildConfig.VERSION_CODE
         )
 
-        firestore.collection("testerReports")
-            .add(data)
-            .addOnSuccessListener {
-                onSuccess?.invoke()
+        ensureAnonymousLogin(
+            onSuccess = { firebaseUid ->
+                data["firebaseUid"] = firebaseUid
+
+                firestore.collection("testerReports")
+                    .add(data)
+                    .addOnSuccessListener {
+                        onSuccess?.invoke()
+                    }
+                    .addOnFailureListener { error ->
+                        crashlytics.recordException(error)
+                        onFailure?.invoke(error)
+                    }
+            },
+            onFailure = { error ->
+                crashlytics.recordException(error)
+                onFailure?.invoke(error)
+            }
+        )
+    }
+
+
+    private fun ensureAnonymousLogin(
+        onSuccess: (String) -> Unit,
+        onFailure: (Exception) -> Unit
+    ) {
+        val currentUser = auth.currentUser
+
+        if (currentUser != null) {
+            onSuccess(currentUser.uid)
+            return
+        }
+
+        auth.signInAnonymously()
+            .addOnSuccessListener { result ->
+                val uid = result.user?.uid
+
+                if (uid != null) {
+                    onSuccess(uid)
+                } else {
+                    onFailure(
+                        IllegalStateException(
+                            "Keine anonyme Firebase-Benutzer-ID erhalten."
+                        )
+                    )
+                }
             }
             .addOnFailureListener { error ->
                 crashlytics.recordException(error)
-                onFailure?.invoke(error)
+                onFailure(error)
             }
     }
 
