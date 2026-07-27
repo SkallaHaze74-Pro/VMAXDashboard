@@ -328,7 +328,13 @@ class BleScooterManager(private val context: Context) {
                 (decoded.motorTemperatureC ?: snapshot.motorTemperatureC)?.toString().orEmpty(),
                 (decoded.batteryTemperatureC ?: snapshot.batteryTemperatureC)?.toString().orEmpty(),
                 (decoded.tripDistanceKm ?: snapshot.tripDistanceKm)?.toString().orEmpty(),
-                (decoded.odometerKm ?: snapshot.odometerKm)?.toString().orEmpty(), short
+                (decoded.odometerKm ?: snapshot.odometerKm)?.toString().orEmpty(),
+                (decoded.driveRaw ?: snapshot.driveRaw)?.toString().orEmpty(),
+                (decoded.motorLoadRaw ?: snapshot.motorLoadRaw)?.toString().orEmpty(),
+                (decoded.batteryStateRaw ?: snapshot.batteryStateRaw)?.toString().orEmpty(),
+                (decoded.accessoryByte0 ?: snapshot.accessoryByte0)?.toString().orEmpty(),
+                (decoded.accessoryByte3 ?: snapshot.accessoryByte3)?.toString().orEmpty(),
+                short
             ).joinToString(";")
             if (sessionRows.size > 100_000) sessionRows.removeAt(0)
             if (telemetryRows.size > 100_000) telemetryRows.removeAt(0)
@@ -355,6 +361,11 @@ class BleScooterManager(private val context: Context) {
             it.copy(
                 batteryPercent = decoded.batteryPercent ?: it.batteryPercent,
                 speedKmh = decoded.speedKmh ?: it.speedKmh,
+                driveRaw = decoded.driveRaw ?: it.driveRaw,
+                motorLoadRaw = decoded.motorLoadRaw ?: it.motorLoadRaw,
+                batteryStateRaw = decoded.batteryStateRaw ?: it.batteryStateRaw,
+                accessoryByte0 = decoded.accessoryByte0 ?: it.accessoryByte0,
+                accessoryByte3 = decoded.accessoryByte3 ?: it.accessoryByte3,
                 voltageV = decoded.voltageV ?: it.voltageV,
                 currentA = decoded.currentA ?: it.currentA,
                 motorTemperatureC = decoded.motorTemperatureC ?: it.motorTemperatureC,
@@ -454,7 +465,7 @@ class BleScooterManager(private val context: Context) {
         val stamp = java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", java.util.Locale.GERMANY).format(java.util.Date(measurementStartedAt))
         val folder = "VMAXDashboard/Messfahrt_$stamp"
         val telemetry = "relative_ms;timestamp_ms;channel;meaning;length;packet_no;changed_bytes;hex\n" + sessionRows.joinToString("\n")
-        val liveTelemetry = "relative_ms;timestamp_ms;speed_kmh;battery_percent;voltage_v;current_a;power_w;motor_temp_c;battery_temp_c;trip_km;odometer_km;source_channel\n" + telemetryRows.joinToString("\n")
+        val liveTelemetry = "relative_ms;timestamp_ms;speed_kmh_candidate;battery_percent;voltage_v;current_a;power_w;motor_temp_c;battery_temp_c;trip_km;odometer_km;drive_raw_1505_b7;motor_load_raw_be;battery_state_raw_1509_b6;accessory_raw_b0;accessory_raw_b3;source_channel\n" + telemetryRows.joinToString("\n")
         val markers = "relative_ms;timestamp_ms;marker\n" + markerRows.joinToString("\n")
         val (findings, analysisReport) = MeasurementAnalyzer.analyze(sessionRows, markerRows)
         learningStore.merge(findings, _state.value.deviceName, stoppedAt)

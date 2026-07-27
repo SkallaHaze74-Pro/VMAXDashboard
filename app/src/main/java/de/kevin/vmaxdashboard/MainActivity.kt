@@ -57,19 +57,25 @@ private fun VmaxApp(manager: BleScooterManager) {
         }
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("VMAX Dashboard • Live AI Test") }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text("VMAX Dashboard • Live AI 6.2") }) }) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(vertical = 14.dp)
         ) {
             item { StatusCard(state) }
+            item {
+                InfoCard(
+                    "Decoder nach zwei Prüfstandstests",
+                    "Akku ist bestätigt. Fahrwert, Motorlast und Zubehör werden zusätzlich als RAW angezeigt. Spannung/Strom bleiben aus, bis die Skalierung sicher bestätigt ist."
+                )
+            }
             item { IndicatorDashboard(state) }
             item { SectionTitle("Fahrt") }
             item {
                 MetricRow(
-                    "Tempo", state.speedKmh?.let { "%.1f km/h".format(it) } ?: "wird erkannt",
-                    "Tagesstrecke", state.tripDistanceKm?.let { "%.2f km".format(it) } ?: "wird erkannt"
+                    "Tempo Kandidat", state.speedKmh?.let { "%.1f km/h".format(it) } ?: "–",
+                    "Fahrwert RAW", state.driveRaw?.toString() ?: "–"
                 )
             }
             item {
@@ -83,13 +89,13 @@ private fun VmaxApp(manager: BleScooterManager) {
             item {
                 MetricRow(
                     "Akku", state.batteryPercent?.let { "$it %" } ?: "–",
-                    "Spannung", state.voltageV?.let { "%.2f V".format(it) } ?: "wird erkannt"
+                    "Akku/Last RAW", state.batteryStateRaw?.toString() ?: "–"
                 )
             }
             item {
                 MetricRow(
-                    "Strom", state.currentA?.let { "%.2f A".format(it) } ?: "wird erkannt",
-                    "Motor-Temp.", state.motorTemperatureC?.let { "%.1f °C".format(it) } ?: "wird erkannt"
+                    "Motorlast RAW", state.motorLoadRaw?.toString() ?: "–",
+                    "Motor-Temp.", state.motorTemperatureC?.let { "%.1f °C".format(it) } ?: "noch unbekannt"
                 )
             }
             item {
@@ -100,8 +106,8 @@ private fun VmaxApp(manager: BleScooterManager) {
             }
             item {
                 MetricRow(
-                    "Leistung LIVE", state.currentPowerW?.let { "%.0f W".format(it) } ?: "wird erkannt",
-                    "Max. Leistung", state.maxPowerW?.let { "%.0f W".format(it) } ?: "–"
+                    "Zubehör RAW 0", state.accessoryByte0?.toString() ?: "–",
+                    "Zubehör RAW 3", state.accessoryByte3?.toString() ?: "–"
                 )
             }
 
