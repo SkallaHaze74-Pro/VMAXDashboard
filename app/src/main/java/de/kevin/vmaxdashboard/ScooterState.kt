@@ -58,5 +58,12 @@ data class ScooterState(
     val labCandidates: List<ByteCandidate> = emptyList(),
     val encryptedReports: Int = 0,
     val lastExportMessage: String = "",
+    val recordingActive: Boolean = false,
+    val recordingPaused: Boolean = false,
+    val recordingStartedAt: Long = 0L,
+    val recordingPacketCount: Int = 0,
+    val markerCount: Int = 0,
+    val lastMarker: String = "",
+    val autoAnalysisFindings: List<MeasurementFinding> = emptyList(),
     val log: List<String> = emptyList()
 )

@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     private lateinit var bleManager: BleScooterManager
@@ -112,7 +113,16 @@ private fun VmaxApp(manager: BleScooterManager) {
                 }
             }
 
-            item { MeasurementCard(state, onExport = manager::exportSessionCsv) }
+            item {
+                MeasurementCard(
+                    state = state,
+                    onStart = manager::startMeasurement,
+                    onStop = manager::stopMeasurementAndExport,
+                    onPause = manager::toggleMeasurementPause,
+                    onMarker = manager::addMeasurementMarker,
+                    onExport = manager::exportSessionCsv
+                )
+            }
             item {
                 DecoderLabCard(
                     state = state,
@@ -209,16 +219,80 @@ private fun VmaxApp(manager: BleScooterManager) {
 private fun yesNoUnknown(value: Boolean, confirmed: Boolean): String =
     if (!confirmed) "wird erkannt" else if (value) "aktiv" else "aus"
 
-@Composable private fun MeasurementCard(state: ScooterState, onExport: () -> Unit) {
-    Card(shape = RoundedCornerShape(22.dp)) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("🎥 Dauer-Messung", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("Läuft automatisch ab der Verbindung. Für die Bildschirmaufnahme werden Zeit, Kanal, Rohbytes, Paketnummer und geänderte Bytes gespeichert.")
-            Text("Pakete: ${state.packetTotal} • Kanäle: ${state.channels.size}")
-            Button(onClick = onExport, enabled = state.packetTotal > 0, modifier = Modifier.fillMaxWidth()) { Text("CSV in Downloads speichern") }
-            if (state.lastExportMessage.isNotBlank()) Text(state.lastExportMessage, style = MaterialTheme.typography.bodySmall)
+@Composable private fun MeasurementCard(
+    state: ScooterState,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
+    onPause: () -> Unit,
+    onMarker: (String) -> Unit,
+    onExport: () -> Unit
+) {
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(state.recordingActive, state.recordingStartedAt) {
+        while (state.recordingActive) {
+            now = System.currentTimeMillis()
+            delay(100)
         }
     }
+    val elapsed = if (state.recordingActive) (now - state.recordingStartedAt).coerceAtLeast(0L) else 0L
+    val timer = formatElapsed(elapsed)
+    val markers = listOf("Stillstand", "Anfahren", "Langsam", "Vollgas", "Rollen", "Bremse", "Licht", "Links", "Rechts", "Fahrmodus", "Laden", "Sonstiges")
+
+    Card(shape = RoundedCornerShape(22.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("● Messfahrt-Aufnahme", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("Speichert BLE-Rohdaten und deine Ereignismarker mit derselben Millisekunden-Zeitbasis.")
+            Text(timer, style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Black)
+            Text("Pakete: ${state.recordingPacketCount} • Marker: ${state.markerCount} • Letzter Marker: ${state.lastMarker.ifBlank { "–" }}")
+            if (state.recordingPaused) Text("PAUSIERT", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Black)
+
+            if (!state.recordingActive) {
+                Button(onClick = onStart, enabled = state.connected, modifier = Modifier.fillMaxWidth()) {
+                    Text("Messfahrt starten")
+                }
+            } else {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onPause, modifier = Modifier.weight(1f)) {
+                        Text(if (state.recordingPaused) "Fortsetzen" else "Pause")
+                    }
+                    Button(onClick = onStop, modifier = Modifier.weight(1f)) {
+                        Text("Stop & speichern")
+                    }
+                }
+                Text("Ereignis jetzt markieren", fontWeight = FontWeight.Bold)
+                markers.chunked(3).forEach { row ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        row.forEach { marker ->
+                            OutlinedButton(onClick = { onMarker(marker) }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)) {
+                                Text(marker, style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                        repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+            }
+
+            OutlinedButton(onClick = onExport, enabled = state.packetTotal > 0 && !state.recordingActive, modifier = Modifier.fillMaxWidth()) {
+                Text("Aktuelle Live-Daten zusätzlich als CSV")
+            }
+            if (state.lastExportMessage.isNotBlank()) Text(state.lastExportMessage, style = MaterialTheme.typography.bodySmall)
+            if (state.autoAnalysisFindings.isNotEmpty()) {
+                HorizontalDivider()
+                Text("Automatische Analyse – beste Treffer", fontWeight = FontWeight.Bold)
+                state.autoAnalysisFindings.take(8).forEach { finding ->
+                    Text(finding.description, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
+}
+
+private fun formatElapsed(ms: Long): String {
+    val hours = ms / 3_600_000
+    val minutes = (ms / 60_000) % 60
+    val seconds = (ms / 1_000) % 60
+    val millis = ms % 1_000
+    return "%02d:%02d:%02d.%03d".format(hours, minutes, seconds, millis)
 }
 
 @Composable private fun ChannelCard(channel: BleChannelState) {

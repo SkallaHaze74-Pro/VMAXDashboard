@@ -41,7 +41,11 @@ class BleScooterManager(private val context: Context) {
     private val previousValues = mutableMapOf<String, ByteArray>()
     private val channelPacketCounts = mutableMapOf<String, Int>()
     private val sessionRows = mutableListOf<String>()
+    private val markerRows = mutableListOf<String>()
     private var sessionStartedAt = System.currentTimeMillis()
+    private var measurementStartedAt = 0L
+    private var recordingActive = false
+    private var recordingPaused = false
 
     private val _state = MutableStateFlow(ScooterState(encryptedReports = secureStore.count()))
     val state: StateFlow<ScooterState> = _state
@@ -81,6 +85,7 @@ class BleScooterManager(private val context: Context) {
     @SuppressLint("MissingPermission")
     fun disconnect() {
         decoderLab.cancel()
+        if (recordingActive) stopMeasurementAndExport()
         previousValues.clear()
         channelPacketCounts.clear()
         notificationQueue.clear()
@@ -297,11 +302,14 @@ class BleScooterManager(private val context: Context) {
         val decoded = LiveTelemetryDecoder.decode(short, value)
         val knowledge = VmaxProtocolCatalog.get(short)
         val changedText = if (changed.isEmpty()) "–" else changed.joinToString(",")
-        sessionRows += listOf(
-            relativeMs.toString(), now.toString(), short, knowledge.title,
-            value.size.toString(), count.toString(), changedText, hex
-        ).joinToString(";")
-        if (sessionRows.size > 50_000) sessionRows.removeAt(0)
+        if (recordingActive && !recordingPaused) {
+            val measurementMs = now - measurementStartedAt
+            sessionRows += listOf(
+                measurementMs.toString(), now.toString(), short, knowledge.title,
+                value.size.toString(), count.toString(), changedText, hex
+            ).joinToString(";")
+            if (sessionRows.size > 100_000) sessionRows.removeAt(0)
+        }
 
         val old = _state.value
         val packets = (old.rawPackets + (short to hex)).toSortedMap()
@@ -335,12 +343,135 @@ class BleScooterManager(private val context: Context) {
                 lastChangedBytes = changedText,
                 rawPackets = packets,
                 packetTotal = it.packetTotal + 1,
+                recordingPacketCount = if (recordingActive) it.recordingPacketCount + 1 else it.recordingPacketCount,
                 channels = channels,
-                analysisPhase = if (it.labRunning) it.labPhase else "Dauer-Messung läuft",
+                analysisPhase = when {
+                    it.labRunning -> it.labPhase
+                    recordingActive && recordingPaused -> "Messfahrt pausiert"
+                    recordingActive -> "Messfahrt wird aufgezeichnet"
+                    else -> "Live-Analyse bereit"
+                },
                 status = "Live-Daten aktiv"
             )
         }
         if (count <= 3 || changed.isNotEmpty()) addLog("$short [${knowledge.title}] Δ$changedText: $hex")
+    }
+
+
+    fun startMeasurement() {
+        if (!_state.value.connected) {
+            addLog("Messfahrt benötigt eine BLE-Verbindung")
+            return
+        }
+        measurementStartedAt = System.currentTimeMillis()
+        recordingActive = true
+        recordingPaused = false
+        sessionRows.clear()
+        markerRows.clear()
+        addMarkerInternal("START", measurementStartedAt)
+        update {
+            it.copy(
+                recordingActive = true,
+                recordingPaused = false,
+                recordingStartedAt = measurementStartedAt,
+                recordingPacketCount = 0,
+                markerCount = 1,
+                lastMarker = "START",
+                lastExportMessage = "",
+                autoAnalysisFindings = emptyList(),
+                analysisPhase = "Messfahrt wird aufgezeichnet"
+            )
+        }
+        addLog("Messfahrt gestartet")
+    }
+
+
+    fun toggleMeasurementPause() {
+        if (!recordingActive) return
+        recordingPaused = !recordingPaused
+        val label = if (recordingPaused) "PAUSE" else "FORTSETZEN"
+        addMarkerInternal(label, System.currentTimeMillis())
+        update { it.copy(recordingPaused = recordingPaused, lastMarker = label, markerCount = it.markerCount + 1) }
+        addLog(if (recordingPaused) "Messfahrt pausiert" else "Messfahrt fortgesetzt")
+    }
+
+    fun addMeasurementMarker(label: String) {
+        if (!recordingActive) {
+            addLog("Erst Messfahrt starten")
+            return
+        }
+        val now = System.currentTimeMillis()
+        addMarkerInternal(label, now)
+        update { it.copy(markerCount = it.markerCount + 1, lastMarker = label) }
+        addLog("Marker: $label")
+    }
+
+    fun stopMeasurementAndExport() {
+        if (!recordingActive) return
+        val stoppedAt = System.currentTimeMillis()
+        addMarkerInternal("STOP", stoppedAt)
+        recordingActive = false
+        recordingPaused = false
+        update { it.copy(recordingActive = false, recordingPaused = false, markerCount = it.markerCount + 1, lastMarker = "STOP", analysisPhase = "Messfahrt beendet") }
+        exportMeasurementBundle(stoppedAt)
+    }
+
+    private fun addMarkerInternal(label: String, now: Long) {
+        val relative = if (measurementStartedAt > 0L) now - measurementStartedAt else 0L
+        markerRows += listOf(relative.toString(), now.toString(), label).joinToString(";")
+    }
+
+    private fun exportMeasurementBundle(stoppedAt: Long) {
+        val stamp = java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", java.util.Locale.GERMANY).format(java.util.Date(measurementStartedAt))
+        val folder = "VMAXDashboard/Messfahrt_$stamp"
+        val telemetry = "relative_ms;timestamp_ms;channel;meaning;length;packet_no;changed_bytes;hex\n" + sessionRows.joinToString("\n")
+        val markers = "relative_ms;timestamp_ms;marker\n" + markerRows.joinToString("\n")
+        val (findings, analysisReport) = MeasurementAnalyzer.analyze(sessionRows, markerRows)
+        val summary = buildString {
+            appendLine("VMAX Dashboard Messfahrt")
+            appendLine("Start: $measurementStartedAt")
+            appendLine("Ende: $stoppedAt")
+            appendLine("Dauer_ms: ${stoppedAt - measurementStartedAt}")
+            appendLine("BLE_Pakete: ${sessionRows.size}")
+            appendLine("Marker: ${markerRows.size}")
+            appendLine("Gerät: ${_state.value.deviceName}")
+            appendLine("Kanäle: ${_state.value.channels.joinToString(",") { it.channel }}")
+        }
+        runCatching {
+            writeDownloadFile(folder, "BLE_Rohdaten.csv", "text/csv", telemetry)
+            writeDownloadFile(folder, "Ereignisse.csv", "text/csv", markers)
+            writeDownloadFile(folder, "Zusammenfassung.txt", "text/plain", summary)
+            writeDownloadFile(folder, "Automatische_Analyse.txt", "text/plain", analysisReport)
+            val location = "Downloads/$folder"
+            update { it.copy(lastExportMessage = "Messfahrt gespeichert: $location", autoAnalysisFindings = findings) }
+            addLog("Messfahrt gespeichert: $location")
+        }.onFailure { error ->
+            update { it.copy(lastExportMessage = "Speichern fehlgeschlagen: ${error.message}") }
+            addLog("Messfahrt-Export fehlgeschlagen: ${error.message}")
+        }
+    }
+
+    private fun writeDownloadFile(relativeFolder: String, fileName: String, mimeType: String, content: String) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, mimeType)
+                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/" + relativeFolder)
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            }
+            val resolver = context.contentResolver
+            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: error("Datei $fileName konnte nicht angelegt werden")
+            resolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(content) }
+                ?: error("Datei $fileName konnte nicht geschrieben werden")
+            values.clear()
+            values.put(MediaStore.Downloads.IS_PENDING, 0)
+            resolver.update(uri, values, null, null)
+        } else {
+            val base = context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS) ?: error("Speicher nicht verfügbar")
+            val folder = File(base, relativeFolder).apply { mkdirs() }
+            File(folder, fileName).writeText(content)
+        }
     }
 
     fun exportSessionCsv() {
