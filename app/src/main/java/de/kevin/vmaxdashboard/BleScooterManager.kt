@@ -34,6 +34,7 @@ class BleScooterManager(private val context: Context) {
     private var gatt: BluetoothGatt? = null
     private val prefs = context.getSharedPreferences("stvx_smart_connect", Context.MODE_PRIVATE)
     private val handler = Handler(Looper.getMainLooper())
+    private val telemetryReporter = TelemetryReporter(context)
     private var manualDisconnect = false
     private var reconnectAttempts = 0
     private var connectingAddress: String? = null
@@ -58,11 +59,27 @@ class BleScooterManager(private val context: Context) {
         ScooterState(
             rememberedDeviceName = prefs.getString("device_name", "").orEmpty(),
             rememberedDeviceAddress = prefs.getString("device_address", "").orEmpty(),
-            autoConnectEnabled = prefs.getBoolean("auto_connect", true)
+            autoConnectEnabled = prefs.getBoolean("auto_connect", true),
+            telemetryUploadEnabled = telemetryReporter.uploadEnabled,
+            testerId = telemetryReporter.testerId
         )
     )
     val state: StateFlow<ScooterState> = _state
 
+
+    fun setTelemetryUploadEnabled(enabled: Boolean) {
+        telemetryReporter.uploadEnabled = enabled
+        update { it.copy(telemetryUploadEnabled = enabled) }
+        addLog(
+            if (enabled) "Testdaten-Upload aktiviert"
+            else "Testdaten-Upload deaktiviert"
+        )
+    }
+
+    fun sendTesterReport(title: String, details: String) {
+        telemetryReporter.reportProblem(title, details, _state.value)
+        addLog("Testerbericht gesendet: $title")
+    }
 
     fun setAutoConnectEnabled(enabled: Boolean) {
         prefs.edit().putBoolean("auto_connect", enabled).apply()
@@ -569,6 +586,17 @@ class BleScooterManager(private val context: Context) {
                 status = "Live-Daten aktiv"
             )
         }
+        telemetryReporter.recordPacket(
+            channel = short,
+            service = channel.service,
+            hex = hex,
+            packetLength = value.size,
+            packetCount = channel.packetCount,
+            packetsPerSecond = channel.packetsPerSecond,
+            analysisPhase = _state.value.analysisPhase,
+            deviceName = _state.value.deviceName,
+            deviceAddress = _state.value.address
+        )
         addLog("$short: $hex")
     }
 

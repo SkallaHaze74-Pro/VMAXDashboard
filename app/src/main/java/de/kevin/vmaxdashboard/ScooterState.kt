@@ -54,6 +54,8 @@ data class ScooterState(
     val rememberedDeviceAddress: String = "",
     val autoConnectEnabled: Boolean = true,
     val reconnectAttempt: Int = 0,
+    val telemetryUploadEnabled: Boolean = false,
+    val testerId: String = "",
     val deviceName: String = "BT638",
     val address: String = "",
     val batteryPercent: Int? = null,
