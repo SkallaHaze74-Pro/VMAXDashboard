@@ -1,0 +1,79 @@
+name: Scooter Telemetry VX Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Projekt laden
+        uses: actions/checkout@v4
+
+      - name: Java 17 einrichten
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Gradle einrichten
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Debug-APK bauen
+        run: |
+          gradle assembleDebug --stacktrace
+          cp app/build/outputs/apk/debug/app-debug.apk \
+            Scooter-Telemetry-VX-Debug.apk
+
+      - name: Debug-APK bereitstellen
+        uses: actions/upload-artifact@v4
+        with:
+          name: Scooter-Telemetry-VX-Debug
+          path: Scooter-Telemetry-VX-Debug.apk
+          if-no-files-found: error
+
+      - name: Signierte Release-Version bauen
+        env:
+          SIGNING_KEY_BASE64: ${{ secrets.SIGNING_KEY_BASE64 }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          if [ -z "$SIGNING_KEY_BASE64" ] || \
+             [ -z "$SIGNING_STORE_PASSWORD" ] || \
+             [ -z "$SIGNING_KEY_ALIAS" ] || \
+             [ -z "$SIGNING_KEY_PASSWORD" ]; then
+            echo "Signatur-Secrets fehlen – Release-Build wird übersprungen."
+            exit 0
+          fi
+
+          echo "$SIGNING_KEY_BASE64" | base64 --decode \
+            > "$RUNNER_TEMP/vmax-release-key.jks"
+
+          export SIGNING_STORE_FILE="$RUNNER_TEMP/vmax-release-key.jks"
+          export VERSION_CODE=$((5200 + GITHUB_RUN_NUMBER))
+          export VERSION_NAME="5.2.${GITHUB_RUN_NUMBER}"
+
+          gradle assembleRelease bundleRelease --stacktrace
+
+          cp app/build/outputs/apk/release/app-release.apk \
+            "Scooter-Telemetry-VX-Release-${VERSION_NAME}.apk"
+
+          cp app/build/outputs/bundle/release/app-release.aab \
+            "Scooter-Telemetry-VX-Release-${VERSION_NAME}.aab"
+
+      - name: Release-Dateien bereitstellen
+        if: ${{ hashFiles('Scooter-Telemetry-VX-Release-*.apk') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Scooter-Telemetry-VX-Release
+          path: |
+            Scooter-Telemetry-VX-Release-*.apk
+            Scooter-Telemetry-VX-Release-*.aab
+          if-no-files-found: error
