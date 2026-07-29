@@ -56,7 +56,7 @@ private fun VmaxApp(manager: BleScooterManager) {
         }
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("VMAX Dashboard • Native Telemetrie") }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text("VMAX Dashboard • Bestätigte Telemetrie") }) }) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -95,7 +95,7 @@ private fun VmaxApp(manager: BleScooterManager) {
             }
             item {
                 MetricRow(
-                    "Kilometerstand", state.odometerKm?.let { "%.2f km".format(it) } ?: "noch zu bestätigen",
+                    "Kilometerstand", state.odometerKm?.let { "%.1f km".format(it) } ?: "–",
                     "Signal", state.rssi?.let { "$it dBm" } ?: "–"
                 )
             }
@@ -234,19 +234,22 @@ private fun MetricCard(title: String, value: String, modifier: Modifier = Modifi
 
 @Composable
 private fun AccessoryCard(state: ScooterState) {
+    val lightText = when (state.accessoryByte0) {
+        0 -> "aus"
+        1 -> "an"
+        else -> "unbekannt"
+    }
     Card(shape = RoundedCornerShape(18.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Zubehör & Status", fontWeight = FontWeight.Bold)
-            Text("Blinker links: ${unknownBoolean(state.leftIndicator)} • rechts: ${unknownBoolean(state.rightIndicator)}")
-            Text("Licht/Blinker RAW 1508: ${state.accessoryByte0 ?: "–"} • Fahrstufe RAW: ${state.accessoryByte3 ?: "–"}")
-            Text("Bremse: wird mit dem Standtest erkannt")
+            Text("Licht: $lightText • Fahrstufe: ${state.accessoryByte3 ?: "–"}")
+            Text("Blinker links/rechts: noch nicht identifiziert")
+            Text("Bremse: noch nicht identifiziert")
             Text("Schloss: ${state.lockActive?.let { if (it) "aktiv" else "offen" } ?: "wird erkannt"}")
             Text("Laden: ${state.charging?.let { if (it) "ja" else "nein" } ?: "wird erkannt"}")
         }
     }
 }
-
-private fun unknownBoolean(value: Boolean): String = if (value) "aktiv" else "wird erkannt"
 
 @Composable
 private fun MeasurementCard(
