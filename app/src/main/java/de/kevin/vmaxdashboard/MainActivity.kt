@@ -41,6 +41,27 @@ class MainActivity : ComponentActivity() {
 private fun VmaxApp(manager: BleScooterManager) {
     val state by manager.state.collectAsStateWithLifecycle()
     var selectedAction by remember { mutableStateOf("Blinker links") }
+    var realtimeNow by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var realtimeResult by remember { mutableStateOf<RealtimeBleResult?>(null) }
+
+    LaunchedEffect(state.connected) {
+        if (!state.connected) {
+            realtimeResult = null
+            realtimeNow = System.currentTimeMillis()
+        } else {
+            while (true) {
+                realtimeNow = System.currentTimeMillis()
+                delay(100)
+            }
+        }
+    }
+
+    LaunchedEffect(state.status) {
+        if (state.connected && state.status == "Live-Daten aktiv") {
+            delay(250)
+            realtimeResult = manager.enableRealtimeBleMode()
+        }
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -56,14 +77,14 @@ private fun VmaxApp(manager: BleScooterManager) {
         }
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("VMAX Dashboard • Bestätigte Telemetrie") }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text("VMAX Dashboard • Echtzeit-Test") }) }) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(vertical = 14.dp)
         ) {
-            item { StatusCard(state) }
-            item { IndicatorDashboard(state) }
+            item { StatusCard(state, realtimeResult) }
+            item { IndicatorDashboard(state, realtimeNow) }
 
             item { SectionTitle("Fahrt & Technik") }
             item {
@@ -153,9 +174,9 @@ private fun VmaxApp(manager: BleScooterManager) {
 
             item { SectionTitle("Bekannte Kanäle & Live-Analyse") }
             if (state.channels.isEmpty()) {
-                item { InfoCard("Noch keine BLE-Daten", "Nach der Verbindung erscheinen hier Rohbytes, Paketanzahl und geänderte Bytepositionen.") }
+                item { InfoCard("Noch keine BLE-Daten", "Nach der Verbindung erscheinen hier Rohbytes, Paketanzahl, Paketalter und geänderte Bytepositionen.") }
             } else {
-                items(state.channels) { ChannelCard(it) }
+                items(state.channels) { ChannelCard(it, realtimeNow) }
             }
 
             item { RawDataCard(state) }
@@ -174,7 +195,7 @@ private fun SectionTitle(text: String) {
 }
 
 @Composable
-private fun StatusCard(state: ScooterState) {
+private fun StatusCard(state: ScooterState, realtimeResult: RealtimeBleResult?) {
     Card(shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(state.status, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -186,12 +207,18 @@ private fun StatusCard(state: ScooterState) {
                     .format(state.packetsPerSecond),
                 style = MaterialTheme.typography.bodySmall
             )
+            Text(
+                realtimeResult?.message ?: if (state.connected) "Echtzeitmodus wird nach Live-Start angefordert" else "Echtzeitmodus wartet auf Verbindung",
+                style = MaterialTheme.typography.bodySmall
+            )
         }
     }
 }
 
 @Composable
-private fun IndicatorDashboard(state: ScooterState) {
+private fun IndicatorDashboard(state: ScooterState, now: Long) {
+    val speedLastSeen = state.channels.firstOrNull { it.channel == "1505" }?.lastSeenMs ?: 0L
+    val speedAge = if (speedLastSeen > 0L) (now - speedLastSeen).coerceAtLeast(0L) else null
     Card(shape = RoundedCornerShape(22.dp)) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 18.dp),
@@ -206,7 +233,7 @@ private fun IndicatorDashboard(state: ScooterState) {
                     fontWeight = FontWeight.Black
                 )
                 Text("km/h")
-                Text("Live-Telemetrie")
+                Text(speedAge?.let { "1505 zuletzt vor ${formatPacketAge(it)}" } ?: "Warte auf Geschwindigkeitskanal")
             }
             Text(if (state.rightIndicator) "▶" else "▷", style = MaterialTheme.typography.displaySmall)
         }
@@ -317,6 +344,12 @@ private fun formatElapsed(ms: Long): String {
     return "%02d:%02d:%02d.%03d".format(hours, minutes, seconds, millis)
 }
 
+private fun formatPacketAge(ms: Long): String = when {
+    ms < 1_000L -> "$ms ms"
+    ms < 10_000L -> "%.1f s".format(ms / 1_000.0)
+    else -> "${ms / 1_000L} s"
+}
+
 @Composable
 private fun DecoderLabCard(
     state: ScooterState,
@@ -353,7 +386,8 @@ private fun DecoderLabCard(
 }
 
 @Composable
-private fun ChannelCard(channel: BleChannelState) {
+private fun ChannelCard(channel: BleChannelState, now: Long) {
+    val packetAge = if (channel.lastSeenMs > 0L) (now - channel.lastSeenMs).coerceAtLeast(0L) else null
     Card(shape = RoundedCornerShape(18.dp)) {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -361,7 +395,7 @@ private fun ChannelCard(channel: BleChannelState) {
                 Text(channel.knowledge, style = MaterialTheme.typography.labelMedium)
             }
             Text(channel.meaning, style = MaterialTheme.typography.bodySmall)
-            Text("Pakete: ${channel.packetCount} • Geänderte Bytes: ${channel.changedBytes}")
+            Text("Pakete: ${channel.packetCount} • zuletzt vor ${packetAge?.let(::formatPacketAge) ?: "–"} • geändert: ${channel.changedBytes}")
             Text(channel.hex, style = MaterialTheme.typography.bodySmall)
         }
     }
@@ -384,7 +418,7 @@ private fun RawDataCard(state: ScooterState) {
             Text("Letztes BLE-Paket", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text("Kanal: ${state.lastCharacteristic.ifBlank { "–" }} • Geändert: ${state.lastChangedBytes}")
             Text(state.lastRawHex.ifBlank { "Noch keine Daten empfangen" }, style = MaterialTheme.typography.bodySmall)
-            Text("Motor-Tuning sendet ausschließlich nach Sicherheitsbestätigung und prüft die 160C-Rückmeldung.")
+            Text("Echtzeit-Test verändert keine Scooter-Einstellungen. Motor-Tuning sendet nur nach separater Sicherheitsbestätigung.")
         }
     }
 }
