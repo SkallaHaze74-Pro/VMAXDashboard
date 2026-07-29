@@ -10,15 +10,15 @@ class LearningProfileStore(context: Context) {
     private val file = File(dir, "decoder_candidates.json")
 
     fun merge(findings: List<MeasurementFinding>, model: String, createdAt: Long) {
-        if (findings.isEmpty()) return
-        val root = if (file.exists()) runCatching { JSONObject(file.readText()) }.getOrElse { JSONObject() } else JSONObject()
+        val root = loadSanitizedRoot(createdAt)
         val candidates = root.optJSONArray("candidates") ?: JSONArray()
         val byKey = linkedMapOf<String, JSONObject>()
         for (i in 0 until candidates.length()) {
             val item = candidates.optJSONObject(i) ?: continue
             byKey[item.optString("key")] = item
         }
-        findings.forEach { finding ->
+
+        findings.filter(::isAllowedFinding).forEach { finding ->
             val key = "${finding.marker}|${finding.channel}|${finding.byteIndex}"
             val old = byKey[key]
             val observations = (old?.optInt("observations", 0) ?: 0) + 1
@@ -38,20 +38,58 @@ class LearningProfileStore(context: Context) {
                 put("status", old?.optString("status", "candidate") ?: "candidate")
             }
         }
+
+        writeRoot(byKey.values.toList(), createdAt)
+    }
+
+    fun count(): Int {
+        val root = loadSanitizedRoot(System.currentTimeMillis())
+        return root.optJSONArray("candidates")?.length() ?: 0
+    }
+
+    fun exportJson(): String = loadSanitizedRoot(System.currentTimeMillis()).toString(2)
+
+    private fun loadSanitizedRoot(updatedAt: Long): JSONObject {
+        val existing = if (file.exists()) {
+            runCatching { JSONObject(file.readText()) }.getOrElse { JSONObject() }
+        } else JSONObject()
+        val source = existing.optJSONArray("candidates") ?: JSONArray()
+        val kept = mutableListOf<JSONObject>()
+        for (i in 0 until source.length()) {
+            val item = source.optJSONObject(i) ?: continue
+            if (isAllowedCandidate(item)) kept += item
+        }
+        val root = JSONObject().apply {
+            put("format", "VMAX_LEARNING_PROFILE_V1")
+            put("updatedAt", updatedAt)
+            put("candidates", JSONArray(kept))
+        }
+        file.writeText(root.toString(2))
+        return root
+    }
+
+    private fun writeRoot(candidates: List<JSONObject>, updatedAt: Long) {
         val out = JSONObject().apply {
             put("format", "VMAX_LEARNING_PROFILE_V1")
-            put("updatedAt", createdAt)
-            put("candidates", JSONArray(byKey.values.toList()))
+            put("updatedAt", updatedAt)
+            put("candidates", JSONArray(candidates))
         }
         file.writeText(out.toString(2))
     }
 
-    fun count(): Int = runCatching {
-        if (!file.exists()) 0 else JSONObject(file.readText()).optJSONArray("candidates")?.length() ?: 0
-    }.getOrDefault(0)
+    private fun isAllowedFinding(finding: MeasurementFinding): Boolean =
+        isAllowed(finding.marker, finding.channel, finding.byteIndex)
 
-    fun exportJson(): String = if (file.exists()) file.readText() else JSONObject().apply {
-        put("format", "VMAX_LEARNING_PROFILE_V1")
-        put("candidates", JSONArray())
-    }.toString(2)
+    private fun isAllowedCandidate(item: JSONObject): Boolean =
+        isAllowed(item.optString("label"), item.optString("channel"), item.optInt("byteIndex", -1))
+
+    private fun isAllowed(label: String, channel: String, byteIndex: Int): Boolean = when (channel) {
+        "1505", "1506", "1509", "150A", "150C" -> false
+        "1508" -> when (byteIndex) {
+            0 -> label == "Licht"
+            3 -> label == "Fahrmodus"
+            else -> true
+        }
+        else -> true
+    }
 }

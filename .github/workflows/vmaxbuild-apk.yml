@@ -1,7 +1,10 @@
-name: VMAX Dashboard Motor-Lab Build
+name: VMAX Dashboard Telemetrie Build
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - main
 
 jobs:
   build:
@@ -24,14 +27,63 @@ jobs:
 
       - name: Debug-APK bauen
         run: |
-          export VERSION_CODE=$((6400 + GITHUB_RUN_NUMBER))
-          export VERSION_NAME="6.4.${GITHUB_RUN_NUMBER}-motor-lab"
+          export VERSION_CODE=$((6600 + GITHUB_RUN_NUMBER))
+          export VERSION_NAME="6.6.${GITHUB_RUN_NUMBER}-native-telemetry"
           gradle assembleDebug --stacktrace
           cp app/build/outputs/apk/debug/app-debug.apk "VMAXDashboard-v${VERSION_NAME}-Debug.apk"
 
       - name: Debug-APK bereitstellen
         uses: actions/upload-artifact@v4
         with:
-          name: VMAXDashboard-Motor-Lab-Debug
+          name: VMAXDashboard-Native-Telemetrie-Debug
           path: VMAXDashboard-v*-Debug.apk
+          if-no-files-found: error
+
+      - name: Release-Signatur prüfen
+        id: signing
+        env:
+          SIGNING_KEY_BASE64: ${{ secrets.SIGNING_KEY_BASE64 }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          if [ -n "$SIGNING_KEY_BASE64" ] && \
+             [ -n "$SIGNING_STORE_PASSWORD" ] && \
+             [ -n "$SIGNING_KEY_ALIAS" ] && \
+             [ -n "$SIGNING_KEY_PASSWORD" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Signatur-Secrets fehlen – Debug-APK bleibt trotzdem verfügbar."
+          fi
+
+      - name: Signaturschlüssel wiederherstellen
+        if: steps.signing.outputs.available == 'true'
+        env:
+          SIGNING_KEY_BASE64: ${{ secrets.SIGNING_KEY_BASE64 }}
+        run: |
+          echo "$SIGNING_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/vmax-release-key.jks"
+
+      - name: Signierte Release-APK bauen
+        if: steps.signing.outputs.available == 'true'
+        env:
+          SIGNING_STORE_FILE: ${{ runner.temp }}/vmax-release-key.jks
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          export VERSION_CODE=$((6600 + GITHUB_RUN_NUMBER))
+          export VERSION_NAME="6.6.${GITHUB_RUN_NUMBER}-native-telemetry"
+          gradle assembleRelease bundleRelease --stacktrace
+          cp app/build/outputs/apk/release/app-release.apk "VMAXDashboard-v${VERSION_NAME}-Release.apk"
+          cp app/build/outputs/bundle/release/app-release.aab "VMAXDashboard-v${VERSION_NAME}-Release.aab"
+
+      - name: Release-Dateien bereitstellen
+        if: steps.signing.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: VMAXDashboard-Native-Telemetrie-Release
+          path: |
+            VMAXDashboard-v*-Release.apk
+            VMAXDashboard-v*-Release.aab
           if-no-files-found: error

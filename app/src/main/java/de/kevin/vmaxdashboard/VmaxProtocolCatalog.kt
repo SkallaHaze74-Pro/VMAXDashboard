@@ -15,23 +15,28 @@ data class ChannelKnowledge(
 
 object VmaxProtocolCatalog {
     private val entries = listOf(
-        ChannelKnowledge("1502", "System-/Statusdaten", "Wiederkehrender Statusblock; genaue Felder werden noch zugeordnet.", KnowledgeLevel.STRONG_CANDIDATE),
-        ChannelKnowledge("1505", "Sensoren", "Sensorwerte, wahrscheinlich Temperatur-, Schalter- oder Zubehörstatus.", KnowledgeLevel.STRONG_CANDIDATE),
-        ChannelKnowledge("1506", "Fahr-/Systemdaten", "Live- oder Systemdaten; genaue Bytebelegung noch offen.", KnowledgeLevel.STRONG_CANDIDATE),
-        ChannelKnowledge("1508", "Live-Daten", "Dynamischer Datenkanal; wird automatisch auf Änderungen untersucht.", KnowledgeLevel.UNKNOWN),
-        ChannelKnowledge("1509", "Akkuänderung", "Akkustand/Änderungsdaten. Byte 4 wird als Prozentwert geprüft.", KnowledgeLevel.CONFIRMED),
-        ChannelKnowledge("150A", "Motor-Livedaten", "Motorbezogene Livewerte, wahrscheinlich Geschwindigkeit/Leistung/Strom.", KnowledgeLevel.STRONG_CANDIDATE),
-        ChannelKnowledge("150B", "Motorinformationen", "Motor-/Controllerinformationen; genaue Struktur noch offen.", KnowledgeLevel.STRONG_CANDIDATE),
-        ChannelKnowledge("150C", "Fahrt-/Tripdaten", "Wahrscheinlicher Trip- oder Fahrdatenblock.", KnowledgeLevel.STRONG_CANDIDATE),
-        ChannelKnowledge("150D", "Statistik", "Statistik-/Gesamtwerte, wahrscheinlich Strecke oder Betriebsdaten.", KnowledgeLevel.STRONG_CANDIDATE),
-        ChannelKnowledge("1514", "Ereignis/Zubehör", "Notify-only Ereigniskanal, geeignet für Taster/Zubehörstatus.", KnowledgeLevel.UNKNOWN),
-        ChannelKnowledge("1515", "Ereignis/Zubehör", "Notify-only Ereigniskanal, geeignet für Taster/Zubehörstatus.", KnowledgeLevel.UNKNOWN),
-        ChannelKnowledge("1516", "Ereignis/Zubehör", "Notify-only Ereigniskanal, geeignet für Taster/Zubehörstatus.", KnowledgeLevel.UNKNOWN),
-        ChannelKnowledge("1517", "Ereignis/Zubehör", "Notify-only Ereigniskanal, geeignet für Taster/Zubehörstatus.", KnowledgeLevel.UNKNOWN),
-        ChannelKnowledge("1518", "Ereignis/Zubehör", "Notify-only Ereigniskanal, geeignet für Taster/Zubehörstatus.", KnowledgeLevel.UNKNOWN),
+        ChannelKnowledge("1501", "Fahrzeuginformationen", "Statische Fahrzeug- und Modellinformationen.", KnowledgeLevel.CONFIRMED),
+        ChannelKnowledge("1502", "Akkuinformationen", "Statische Akku-, Kapazitäts- und Zustandsinformationen.", KnowledgeLevel.CONFIRMED),
+        ChannelKnowledge("1503", "Motorinformationen", "Statische Motor- und Controllerinformationen.", KnowledgeLevel.CONFIRMED),
+        ChannelKnowledge("1504", "Firmware-ID", "Firmware- und Komponentenkennung.", KnowledgeLevel.CONFIRMED),
+        ChannelKnowledge("1505", "Fahrleistung", "Leistung, Drehmoment, Geschwindigkeit, Drehzahl und Streckenfeld; Geschwindigkeit liegt in Byte 6-7 als km/h ×10.", KnowledgeLevel.CONFIRMED),
+        ChannelKnowledge("1506", "Kilometer & Fahrzeit", "BT638 bestätigt: Byte 0-3 ist der Kilometerstand ×10, Byte 4-7 die Gesamtfahr-/Betriebszeit in Sekunden.", KnowledgeLevel.CONFIRMED),
+        ChannelKnowledge("1507", "Gesamtfahrdaten", "Weitere Gesamtfahr- und Statistikdaten; genaue Feldbelegung noch offen.", KnowledgeLevel.STRONG_CANDIDATE),
+        ChannelKnowledge("1508", "Licht & Fahrstufe", "BT638 bestätigt: Byte 0 ist 0=Licht aus und 1=Licht an; Byte 3 ist die Fahrstufe. Blinker bleiben offen.", KnowledgeLevel.CONFIRMED),
+        ChannelKnowledge("1509", "Akku-Livedaten", "Strom, Akkutemperatur, Prozent, Spannung und direkte Leistung.", KnowledgeLevel.CONFIRMED),
+        ChannelKnowledge("150A", "Motor-Livedaten", "Motorstrom, Motorspannung, Drehzahl, Drehmoment und Motortemperatur.", KnowledgeLevel.CONFIRMED),
+        ChannelKnowledge("150B", "Motorinformationen", "Weiterer Motor-/Controllerblock; genaue Struktur noch offen.", KnowledgeLevel.STRONG_CANDIDATE),
+        ChannelKnowledge("150C", "Zell- & Temperaturdaten", "Zell-/Sensorindex, Zellspannung und bis zu drei Temperaturwerte.", KnowledgeLevel.CONFIRMED),
+        ChannelKnowledge("150D", "Statistik", "Statistik-/Gesamtwerte; genaue VR2-Feldbelegung wird noch bestätigt.", KnowledgeLevel.STRONG_CANDIDATE),
+        ChannelKnowledge("1514", "Fehlercodes", "Numerische Fehler- und Warncodes.", KnowledgeLevel.CONFIRMED),
+        ChannelKnowledge("1516", "Seriennummern", "Serien- und Komponentenkennungen.", KnowledgeLevel.CONFIRMED),
+        ChannelKnowledge("1517", "Fehlertext", "Textuelle Fehler- oder Statusmeldung.", KnowledgeLevel.CONFIRMED),
+        ChannelKnowledge("1518", "Debug-Protokoll", "Debug- und Diagnosemeldungen des Controllers.", KnowledgeLevel.CONFIRMED),
         ChannelKnowledge("151D", "Status-/Ereignisdaten", "Dynamischer Statuskanal; wird automatisch analysiert.", KnowledgeLevel.UNKNOWN),
-        ChannelKnowledge("160C", "Motor-Tuning Rückmeldung", "Vom originalen GPST-SDK gelesener Profilrahmen FD … FE und Bestätigung nach einem Schreibvorgang.", KnowledgeLevel.CONFIRMED),
-        ChannelKnowledge("160D", "Motor-Tuning Schreiben", "Vom originalen GPST-SDK verwendeter Schreibkanal für Profilindex und Tuningwerte.", KnowledgeLevel.CONFIRMED)
+        ChannelKnowledge("1E03", "Funkfernbedienung", "Statusdaten einer drahtlosen Lenker- oder Zubehörfernbedienung.", KnowledgeLevel.CONFIRMED),
+        ChannelKnowledge("1E04", "Fernbedienungsaktion", "Aktionen einer drahtlosen Lenker- oder Zubehörfernbedienung.", KnowledgeLevel.CONFIRMED),
+        ChannelKnowledge("160C", "Motor-Tuning Rückmeldung", "Profilrahmen FD … FE und Bestätigung nach einem Schreibvorgang.", KnowledgeLevel.CONFIRMED),
+        ChannelKnowledge("160D", "Motor-Tuning Schreiben", "Schreibkanal für Profilindex und Motorparameter.", KnowledgeLevel.CONFIRMED)
     ).associateBy { it.channel }
 
     fun get(channel: String): ChannelKnowledge = entries[channel]

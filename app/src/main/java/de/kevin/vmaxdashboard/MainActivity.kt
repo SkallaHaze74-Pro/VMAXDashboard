@@ -56,7 +56,7 @@ private fun VmaxApp(manager: BleScooterManager) {
         }
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("VMAX Dashboard • Motor Lab 6.4") }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text("VMAX Dashboard • Bestätigte Telemetrie") }) }) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -68,26 +68,47 @@ private fun VmaxApp(manager: BleScooterManager) {
             item { SectionTitle("Fahrt & Technik") }
             item {
                 MetricRow(
-                    "Tempo Kandidat", state.speedKmh?.let { "%.1f km/h".format(it) } ?: "–",
+                    "Geschwindigkeit", state.speedKmh?.let { "%.1f km/h".format(it) } ?: "–",
                     "Akku", state.batteryPercent?.let { "$it %" } ?: "–"
                 )
             }
             item {
                 MetricRow(
-                    "Fahrwert RAW", state.driveRaw?.toString() ?: "–",
-                    "Motorlast RAW", state.motorLoadRaw?.toString() ?: "–"
+                    "Akkuspannung", state.voltageV?.let { "%.1f V".format(it) } ?: "–",
+                    "Akkustrom", state.currentA?.let { "%.2f A".format(it) } ?: "–"
                 )
             }
             item {
                 MetricRow(
-                    "Kilometerstand", state.odometerKm?.let { "%.2f km".format(it) } ?: "wird erkannt",
+                    "Leistung",
+                    state.motorLoadRaw?.let { "$it W" }
+                        ?: state.currentPowerW?.let { "%.0f W".format(it) }
+                        ?: "–",
+                    "Trip", state.tripDistanceKm?.let { "%.1f km".format(it) } ?: "wird geprüft"
+                )
+            }
+            item {
+                MetricRow(
+                    "Geschw. RAW", state.driveRaw?.toString() ?: "–",
+                    "Leistung RAW", state.motorLoadRaw?.toString() ?: "–"
+                )
+            }
+            item {
+                MetricRow(
+                    "Kilometerstand", state.odometerKm?.let { "%.1f km".format(it) } ?: "–",
                     "Signal", state.rssi?.let { "$it dBm" } ?: "–"
                 )
             }
             item {
                 MetricRow(
-                    "Motor-Temp.", state.motorTemperatureC?.let { "%.1f °C".format(it) } ?: "noch unbekannt",
-                    "Pakete/s", "%.1f".format(state.packetsPerSecond)
+                    "Motor-Temp.", state.motorTemperatureC?.let { "%.1f °C".format(it) } ?: "–",
+                    "Akku-Temp.", state.batteryTemperatureC?.let { "%.1f °C".format(it) } ?: "–"
+                )
+            }
+            item {
+                MetricRow(
+                    "Pakete/s", "%.1f".format(state.packetsPerSecond),
+                    "Pakete gesamt", state.packetTotal.toString()
                 )
             }
 
@@ -161,7 +182,7 @@ private fun StatusCard(state: ScooterState) {
             Text(if (state.connected) "● Bluetooth verbunden" else "○ Bluetooth nicht verbunden")
             Text("Analyse: ${state.analysisPhase} • ${state.channels.size} Kanäle")
             Text(
-                "Live: %.1f Pakete/s • Lernkandidaten: ${state.learningProfileCount} • Messfahrten: ${state.sessionHistoryCount}"
+                "Live: %.1f Pakete/s • Lernkandidaten: ${state.learningProfileCount} • Messungen: ${state.sessionHistoryCount}"
                     .format(state.packetsPerSecond),
                 style = MaterialTheme.typography.bodySmall
             )
@@ -213,18 +234,22 @@ private fun MetricCard(title: String, value: String, modifier: Modifier = Modifi
 
 @Composable
 private fun AccessoryCard(state: ScooterState) {
+    val lightText = when (state.accessoryByte0) {
+        0 -> "aus"
+        1 -> "an"
+        else -> "unbekannt"
+    }
     Card(shape = RoundedCornerShape(18.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Zubehör & Status", fontWeight = FontWeight.Bold)
-            Text("Blinker links: ${unknownBoolean(state.leftIndicator)} • rechts: ${unknownBoolean(state.rightIndicator)}")
-            Text("Licht: wird erkannt • Bremse: wird erkannt")
+            Text("Licht: $lightText • Fahrstufe: ${state.accessoryByte3 ?: "–"}")
+            Text("Blinker links/rechts: noch nicht identifiziert")
+            Text("Bremse: noch nicht identifiziert")
             Text("Schloss: ${state.lockActive?.let { if (it) "aktiv" else "offen" } ?: "wird erkannt"}")
             Text("Laden: ${state.charging?.let { if (it) "ja" else "nein" } ?: "wird erkannt"}")
         }
     }
 }
-
-private fun unknownBoolean(value: Boolean): String = if (value) "aktiv" else "wird erkannt"
 
 @Composable
 private fun MeasurementCard(
@@ -248,12 +273,12 @@ private fun MeasurementCard(
 
     Card(shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("● Messfahrt-Aufnahme", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("● Messaufnahme", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(formatElapsed(elapsed), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Black)
             Text("Pakete: ${state.recordingPacketCount} • Marker: ${state.markerCount} • Letzter: ${state.lastMarker.ifBlank { "–" }}")
             if (!state.recordingActive) {
                 Button(onClick = onStart, enabled = state.connected, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
-                    Text(if (state.connected) "● MESSFAHRT STARTEN" else "ZUERST VERBINDEN", fontWeight = FontWeight.Black)
+                    Text(if (state.connected) "● AUFNAHME STARTEN" else "ZUERST VERBINDEN", fontWeight = FontWeight.Black)
                 }
             } else {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

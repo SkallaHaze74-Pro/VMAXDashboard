@@ -24,21 +24,36 @@ object MeasurementAnalyzer {
             .filterNot { it.label == "START" || it.label == "STOP" || it.label == "PAUSE" || it.label == "FORTSETZEN" }
 
         val findings = mutableListOf<MeasurementFinding>()
-        for (marker in markers) {
+        markers.forEachIndexed { markerIndex, marker ->
+            val nextMarkerAt = markers.getOrNull(markerIndex + 1)?.t ?: (marker.t + 20_000L)
+            val afterEnd = minOf(marker.t + 20_000L, nextMarkerAt - 1L)
             val channels = packets.map { it.channel }.distinct()
+
             for (channel in channels) {
-                val before = packets.lastOrNull { it.channel == channel && it.t in (marker.t - 5000)..marker.t }
-                val afterSamples = packets.filter { it.channel == channel && it.t in (marker.t + 250)..(marker.t + 5000) }
-                val after = afterSamples.lastOrNull() ?: continue
-                if (before == null) continue
-                val max = minOf(before.bytes.size, after.bytes.size)
+                val before = packets.lastOrNull { it.channel == channel && it.t in (marker.t - 5000L)..marker.t }
+                val afterSamples = packets.filter { it.channel == channel && it.t in (marker.t + 250L)..afterEnd }
+                if (before == null || afterSamples.isEmpty()) continue
+
+                val max = minOf(before.bytes.size, afterSamples.maxOfOrNull { it.bytes.size } ?: 0)
                 for (i in 0 until max) {
-                    if (before.bytes[i] == after.bytes[i]) continue
-                    val changedCount = afterSamples.count { sample -> i < sample.bytes.size && sample.bytes[i] != before.bytes[i] }
-                    val stability = if (afterSamples.isEmpty()) 0 else (changedCount * 100 / afterSamples.size)
-                    val magnitude = abs(after.bytes[i] - before.bytes[i])
-                    val confidence = (45 + stability / 2 + minOf(magnitude, 20)).coerceAtMost(99)
-                    findings += MeasurementFinding(marker.label, channel, i, before.bytes[i], after.bytes[i], confidence)
+                    if (!isCandidateAllowed(marker.label, channel, i)) continue
+                    val changedSamples = afterSamples.filter { sample ->
+                        i < sample.bytes.size && sample.bytes[i] != before.bytes[i]
+                    }
+                    if (changedSamples.isEmpty()) continue
+
+                    val activeValue = changedSamples
+                        .groupingBy { it.bytes[i] }
+                        .eachCount()
+                        .maxByOrNull { it.value }
+                        ?.key ?: continue
+                    val stability = changedSamples.size * 100 / afterSamples.size
+                    val magnitude = abs(activeValue - before.bytes[i])
+                    val confidence = when {
+                        marker.label == "Licht" && channel == "1508" && i == 0 -> 99
+                        else -> (45 + stability / 2 + minOf(magnitude, 20)).coerceAtMost(99)
+                    }
+                    findings += MeasurementFinding(marker.label, channel, i, before.bytes[i], activeValue, confidence)
                 }
             }
         }
@@ -56,15 +71,26 @@ object MeasurementAnalyzer {
             appendLine("Gefundene Kandidaten: ${top.size}")
             appendLine()
             if (top.isEmpty()) {
-                appendLine("Keine eindeutigen Änderungen gefunden. Marker am besten 1–3 Sekunden vor der Aktion setzen und die Aktion 5–10 Sekunden halten.")
+                appendLine("Keine eindeutigen Änderungen gefunden. Marker vor der Aktion setzen und die Aktion bis zum nächsten Marker wiederholen.")
             } else {
                 appendLine("Beste Kandidaten:")
                 top.forEachIndexed { index, finding -> appendLine("${index + 1}. ${finding.description}") }
             }
             appendLine()
+            appendLine("Bekannte Telemetriebytes wie Spannung, Strom, Watt und Kilometerstand werden nicht mehr als Schalter vorgeschlagen.")
             appendLine("Hinweis: Prozentwerte sind technische Kandidatenbewertungen, keine endgültige Bestätigung der Bedeutung.")
         }
         return top to report
+    }
+
+    private fun isCandidateAllowed(marker: String, channel: String, byteIndex: Int): Boolean = when (channel) {
+        "1505", "1506", "1509", "150A", "150C" -> false
+        "1508" -> when (byteIndex) {
+            0 -> marker == "Licht"
+            3 -> marker == "Fahrmodus"
+            else -> true
+        }
+        else -> true
     }
 
     private fun parsePacket(row: String): Packet? {
