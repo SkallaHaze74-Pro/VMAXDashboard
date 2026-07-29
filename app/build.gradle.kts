@@ -10,15 +10,15 @@ val signingStoreFile = System.getenv("SIGNING_STORE_FILE")
 val signingStorePassword = System.getenv("SIGNING_STORE_PASSWORD")
 val signingKeyAlias = System.getenv("SIGNING_KEY_ALIAS")
 val signingKeyPassword = System.getenv("SIGNING_KEY_PASSWORD")
-val ciVersionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 6400
-val ciVersionName = System.getenv("VERSION_NAME") ?: "6.4.0-motor-lab-beta"
+val ciVersionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 6700
+val ciVersionName = System.getenv("VERSION_NAME") ?: "6.7.0-native-parallel-test"
 
 android {
     namespace = "de.kevin.vmaxdashboard"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "de.kevin.vmaxdashboard"
+        applicationId = "de.kevin.vmaxdashboard.nativetest"
         minSdk = 26
         targetSdk = 35
         versionCode = ciVersionCode
