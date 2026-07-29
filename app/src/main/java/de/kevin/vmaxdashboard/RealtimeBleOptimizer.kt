@@ -4,11 +4,11 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothGatt
 
 /**
- * Test-only BLE tuning for the parallel "Aktuell" app.
+ * Read-only BLE tuning for the parallel "Aktuell" test app.
  *
- * This does not write any scooter setting or characteristic. It only asks
- * Android for a low-latency connection and a larger MTU. The scooter remains
- * free to choose its own notification interval.
+ * No scooter characteristic or setting is written. Android is only asked to
+ * prefer a low-latency BLE connection. The scooter still controls how often
+ * it sends notifications.
  */
 @SuppressLint("MissingPermission")
 fun BleScooterManager.enableRealtimeBleMode(): RealtimeBleResult {
@@ -16,26 +16,23 @@ fun BleScooterManager.enableRealtimeBleMode(): RealtimeBleResult {
         val field = BleScooterManager::class.java.getDeclaredField("gatt")
         field.isAccessible = true
         val gatt = field.get(this) as? BluetoothGatt
-            ?: return RealtimeBleResult(false, false, "BLE-GATT noch nicht bereit")
+            ?: return RealtimeBleResult(false, "BLE-Verbindung noch nicht bereit")
 
-        val priorityAccepted = gatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
-        val mtuAccepted = gatt.requestMtu(247)
-        val message = when {
-            priorityAccepted && mtuAccepted -> "Hohe BLE-Priorität + MTU 247 angefordert"
-            priorityAccepted -> "Hohe BLE-Priorität aktiv; MTU-Anfrage abgelehnt"
-            mtuAccepted -> "MTU 247 angefordert; Prioritätsanfrage abgelehnt"
-            else -> "Android hat beide Echtzeitanfragen abgelehnt"
-        }
-        RealtimeBleResult(priorityAccepted, mtuAccepted, message)
+        val accepted = gatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
+        RealtimeBleResult(
+            highPriorityRequested = accepted,
+            message = if (accepted) {
+                "Hohe BLE-Priorität angefordert – keine Scooter-Einstellung verändert"
+            } else {
+                "Android hat die hohe BLE-Priorität abgelehnt"
+            }
+        )
     }.getOrElse { error ->
-        RealtimeBleResult(false, false, "Echtzeitmodus nicht verfügbar: ${error.message ?: error.javaClass.simpleName}")
+        RealtimeBleResult(false, "Echtzeitmodus nicht verfügbar: ${error.message ?: error.javaClass.simpleName}")
     }
 }
 
 data class RealtimeBleResult(
     val highPriorityRequested: Boolean,
-    val mtuRequested: Boolean,
     val message: String
-) {
-    val active: Boolean get() = highPriorityRequested || mtuRequested
-}
+)
