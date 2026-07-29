@@ -9,7 +9,7 @@
       "client_info": {
         "mobilesdk_app_id": "1:554390854180:android:060ee54c9d40cce7ea96b1",
         "android_client_info": {
-          "package_name": "de.kevin.vmaxdashboard"
+          "package_name": "de.kevin.vmaxdashboard.nativetest"
         }
       },
       "oauth_client": [],
