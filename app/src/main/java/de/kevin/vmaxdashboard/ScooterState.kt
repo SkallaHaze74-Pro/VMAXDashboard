@@ -78,5 +78,16 @@ data class ScooterState(
     val learningProfileCount: Int = 0,
     val sessionHistoryCount: Int = 0,
     val lastSessionFolder: String = "",
+    val motorTuningSupported: Boolean = false,
+    val motorTuningReadAvailable: Boolean = false,
+    val motorTuningWriteAvailable: Boolean = false,
+    val motorTuningBusy: Boolean = false,
+    val motorTuningStatus: String = "Noch nicht geprüft",
+    val motorTuningProtocol: MotorTuningProtocolMode = MotorTuningProtocolMode.UNKNOWN,
+    val motorTuningProfiles: List<MotorTuningProfile> = emptyList(),
+    val motorTuningOriginalProfiles: List<MotorTuningProfile> = emptyList(),
+    val motorTuningLastPacket: String = "",
+    val motorTuningLastReadRaw: String = "",
+    val motorTuningLastVerified: Boolean? = null,
     val log: List<String> = emptyList()
 )

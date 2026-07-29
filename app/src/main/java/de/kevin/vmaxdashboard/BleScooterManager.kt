@@ -5,18 +5,21 @@ import android.annotation.SuppressLint
 import android.bluetooth.*
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
-import android.content.Context
 import android.content.ContentValues
-import android.provider.MediaStore
-import android.os.Environment
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Environment
+import android.os.Handler
+import android.os.Looper
+import android.provider.MediaStore
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import java.io.File
 import java.util.ArrayDeque
 import java.util.UUID
-import java.io.File
+import kotlin.math.abs
 
 class BleScooterManager(private val context: Context) {
     companion object {
@@ -24,10 +27,24 @@ class BleScooterManager(private val context: Context) {
             UUID.fromString("da1a1500-d532-4285-be94-b07a3e11a098")
         val BATTERY_CHARACTERISTIC: UUID =
             UUID.fromString("da1a1509-d532-4285-be94-b07a3e11a098")
+        val SERVICE_MOTOR_TUNING: UUID =
+            UUID.fromString("da1a1600-d532-4285-be94-b07a3e11a098")
+        val MOTOR_TUNING_READ_CHARACTERISTIC: UUID =
+            UUID.fromString("da1a160c-d532-4285-be94-b07a3e11a098")
+        val MOTOR_TUNING_WRITE_CHARACTERISTIC: UUID =
+            UUID.fromString("da1a160d-d532-4285-be94-b07a3e11a098")
         val CCCD: UUID =
             UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
         const val TARGET_NAME = "BT638"
     }
+
+    private data class PendingMotorTuningWrite(
+        val profileIndex: Int,
+        val expectedValues: Map<MotorTuningParameter, Int>,
+        val packetHex: String,
+        val reset: Boolean,
+        val startedAt: Long
+    )
 
     private val bluetoothManager =
         context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
@@ -51,14 +68,25 @@ class BleScooterManager(private val context: Context) {
     private var recordingActive = false
     private var recordingPaused = false
 
-    private val _state = MutableStateFlow(ScooterState(encryptedReports = secureStore.count(), learningProfileCount = learningStore.count(), sessionHistoryCount = historyStore.count()))
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val motorTuningBuffer = mutableListOf<Byte>()
+    private var pendingMotorTuningWrite: PendingMotorTuningWrite? = null
+    private var lastMotorTuningReadRequestAt = 0L
+
+    private val _state = MutableStateFlow(
+        ScooterState(
+            encryptedReports = secureStore.count(),
+            learningProfileCount = learningStore.count(),
+            sessionHistoryCount = historyStore.count()
+        )
+    )
     val state: StateFlow<ScooterState> = _state
 
     fun hasRequiredPermissions(): Boolean =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_SCAN) ==
                 PackageManager.PERMISSION_GRANTED &&
-            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) ==
+                ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) ==
                 PackageManager.PERMISSION_GRANTED
         } else {
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
@@ -90,6 +118,10 @@ class BleScooterManager(private val context: Context) {
     fun disconnect() {
         decoderLab.cancel()
         if (recordingActive) stopMeasurementAndExport()
+        mainHandler.removeCallbacksAndMessages(null)
+        pendingMotorTuningWrite = null
+        lastMotorTuningReadRequestAt = 0L
+        motorTuningBuffer.clear()
         previousValues.clear()
         channelPacketCounts.clear()
         notificationQueue.clear()
@@ -97,7 +129,22 @@ class BleScooterManager(private val context: Context) {
         gatt?.disconnect()
         gatt?.close()
         gatt = null
-        update { it.copy(connected = false, scanning = false, status = "Getrennt", labRunning = false) }
+        update {
+            it.copy(
+                connected = false,
+                scanning = false,
+                status = "Getrennt",
+                labRunning = false,
+                motorTuningSupported = false,
+                motorTuningReadAvailable = false,
+                motorTuningWriteAvailable = false,
+                motorTuningBusy = false,
+                motorTuningStatus = "Nicht verbunden",
+                motorTuningProfiles = emptyList(),
+                motorTuningOriginalProfiles = emptyList(),
+                motorTuningLastVerified = null
+            )
+        }
     }
 
     fun startLabBaseline(action: String) {
@@ -149,7 +196,11 @@ class BleScooterManager(private val context: Context) {
             it.copy(
                 status = "Verbinde …",
                 deviceName = device.name ?: TARGET_NAME,
-                address = device.address
+                address = device.address,
+                motorTuningProfiles = emptyList(),
+                motorTuningOriginalProfiles = emptyList(),
+                motorTuningStatus = "Prüfe Motor-Tuning-Dienst",
+                motorTuningLastVerified = null
             )
         }
         gatt?.close()
@@ -181,19 +232,33 @@ class BleScooterManager(private val context: Context) {
                     previousValues.clear()
                     channelPacketCounts.clear()
                     packetTimes.clear()
-                    update { it.copy(connected = true, status = "Verbunden – suche Dienste", sessionStartedAt = sessionStartedAt, packetTotal = 0) }
+                    motorTuningBuffer.clear()
+                    pendingMotorTuningWrite = null
+                    update {
+                        it.copy(
+                            connected = true,
+                            status = "Verbunden – suche Dienste",
+                            sessionStartedAt = sessionStartedAt,
+                            packetTotal = 0,
+                            motorTuningStatus = "Prüfe 160C/160D",
+                            motorTuningBusy = false
+                        )
+                    }
                     addLog("BLE verbunden, Status $status")
                     g.discoverServices()
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     descriptorWriteRunning = false
                     notificationQueue.clear()
+                    pendingMotorTuningWrite = null
                     update {
                         it.copy(
                             connected = false,
                             scanning = false,
                             status = "Verbindung getrennt (Status $status)",
-                            labRunning = false
+                            labRunning = false,
+                            motorTuningBusy = false,
+                            motorTuningStatus = "Verbindung getrennt"
                         )
                     }
                     addLog("BLE getrennt, Status $status")
@@ -208,22 +273,55 @@ class BleScooterManager(private val context: Context) {
                 update { it.copy(status = "Dienste konnten nicht gelesen werden: $status") }
                 return
             }
-            val service = g.getService(SERVICE_TELEMETRY)
-            if (service == null) {
+            val telemetryService = g.getService(SERVICE_TELEMETRY)
+            if (telemetryService == null) {
                 update { it.copy(status = "Telemetrie-Dienst nicht gefunden") }
                 return
             }
 
-            val notifyChars = service.characteristics.filter {
-                val p = it.properties
-                p and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0 ||
-                    p and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0
-            }
+            val tuningService = g.getService(SERVICE_MOTOR_TUNING)
+            val tuningRead = tuningService?.getCharacteristic(MOTOR_TUNING_READ_CHARACTERISTIC)
+            val tuningWrite = tuningService?.getCharacteristic(MOTOR_TUNING_WRITE_CHARACTERISTIC)
+            val readAvailable = tuningRead != null
+            val writeAvailable = tuningWrite != null &&
+                (tuningWrite.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0 ||
+                    tuningWrite.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0)
+            val supported = readAvailable && writeAvailable
+
+            val notifyChars = buildList {
+                addAll(telemetryService.characteristics.filter { characteristic ->
+                    val p = characteristic.properties
+                    p and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0 ||
+                        p and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0
+                })
+                tuningService?.characteristics?.filterTo(this) { characteristic ->
+                    val p = characteristic.properties
+                    p and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0 ||
+                        p and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0
+                }
+            }.distinctBy { it.uuid }
 
             notificationQueue.clear()
-            notificationQueue.addAll(notifyChars.sortedByDescending { it.uuid == BATTERY_CHARACTERISTIC })
+            notificationQueue.addAll(
+                notifyChars.sortedWith(
+                    compareByDescending<BluetoothGattCharacteristic> { it.uuid == BATTERY_CHARACTERISTIC }
+                        .thenByDescending { it.uuid == MOTOR_TUNING_READ_CHARACTERISTIC }
+                )
+            )
             addLog("${notifyChars.size} Datenkanäle gefunden")
-            update { it.copy(status = "Verbunden – aktiviere Live-Daten") }
+            addLog(
+                if (supported) "Motor-Tuning-Kanäle 160C/160D gefunden"
+                else "Motor-Tuning nicht vollständig verfügbar: Lesen=$readAvailable, Schreiben=$writeAvailable"
+            )
+            update {
+                it.copy(
+                    status = "Verbunden – aktiviere Live-Daten",
+                    motorTuningSupported = supported,
+                    motorTuningReadAvailable = readAvailable,
+                    motorTuningWriteAvailable = writeAvailable,
+                    motorTuningStatus = if (supported) "Kanäle gefunden – lese Originalwerte" else "160C/160D nicht vollständig verfügbar"
+                )
+            }
             enableNextNotification(g)
         }
 
@@ -240,6 +338,47 @@ class BleScooterManager(private val context: Context) {
             handleValue(characteristic.uuid, value)
         }
 
+        @Deprecated("Deprecated in API 33")
+        override fun onCharacteristicRead(
+            g: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            status: Int
+        ) {
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                handleValue(characteristic.uuid, characteristic.value ?: byteArrayOf())
+            } else if (characteristic.uuid == MOTOR_TUNING_READ_CHARACTERISTIC) {
+                finishMotorTuningFailure("Lesen von 160C fehlgeschlagen: $status")
+            }
+        }
+
+        override fun onCharacteristicRead(
+            g: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            value: ByteArray,
+            status: Int
+        ) {
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                handleValue(characteristic.uuid, value)
+            } else if (characteristic.uuid == MOTOR_TUNING_READ_CHARACTERISTIC) {
+                finishMotorTuningFailure("Lesen von 160C fehlgeschlagen: $status")
+            }
+        }
+
+        override fun onCharacteristicWrite(
+            g: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            status: Int
+        ) {
+            if (characteristic.uuid != MOTOR_TUNING_WRITE_CHARACTERISTIC) return
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                update { it.copy(motorTuningStatus = "Paket gesendet – lese Bestätigung über 160C") }
+                addLog("Motor-Tuning 160D geschrieben, lese nach 1 Sekunde zurück")
+                mainHandler.postDelayed({ readMotorTuningValues(verificationRead = true) }, 1_000L)
+            } else {
+                finishMotorTuningFailure("Schreiben auf 160D fehlgeschlagen: $status")
+            }
+        }
+
         override fun onDescriptorWrite(g: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
             descriptorWriteRunning = false
             if (status != BluetoothGatt.GATT_SUCCESS) addLog("Notify-Aktivierung fehlgeschlagen: $status")
@@ -254,6 +393,7 @@ class BleScooterManager(private val context: Context) {
         if (characteristic == null) {
             update { it.copy(status = "Live-Daten aktiv") }
             addLog("Alle verfügbaren Benachrichtigungen aktiviert")
+            if (_state.value.motorTuningReadAvailable) readMotorTuningValues()
             return
         }
 
@@ -292,7 +432,291 @@ class BleScooterManager(private val context: Context) {
         }
     }
 
+    @SuppressLint("MissingPermission")
+    fun readMotorTuningValues(verificationRead: Boolean = false) {
+        val g = gatt
+        val characteristic = g?.getService(SERVICE_MOTOR_TUNING)
+            ?.getCharacteristic(MOTOR_TUNING_READ_CHARACTERISTIC)
+        if (g == null || characteristic == null) {
+            finishMotorTuningFailure("Motor-Tuning-Lesekanal 160C nicht verfügbar")
+            return
+        }
+        if (characteristic.properties and BluetoothGattCharacteristic.PROPERTY_READ == 0) {
+            update {
+                it.copy(
+                    motorTuningBusy = pendingMotorTuningWrite != null,
+                    motorTuningStatus = "160C ist nur Notify – warte auf Controllerdaten"
+                )
+            }
+            return
+        }
+
+        motorTuningBuffer.clear()
+        val requestAt = System.currentTimeMillis()
+        lastMotorTuningReadRequestAt = requestAt
+        update {
+            it.copy(
+                motorTuningBusy = true,
+                motorTuningStatus = if (verificationRead) "Prüfe über 160C …" else "Lese Originalwerte über 160C …",
+                motorTuningLastVerified = if (verificationRead) null else it.motorTuningLastVerified
+            )
+        }
+        val started = g.readCharacteristic(characteristic)
+        if (!started) {
+            finishMotorTuningFailure("Lesevorgang für 160C konnte nicht gestartet werden")
+            return
+        }
+        mainHandler.postDelayed({
+            if (lastMotorTuningReadRequestAt == requestAt && _state.value.motorTuningBusy) {
+                finishMotorTuningFailure("Keine vollständige 160C-Antwort empfangen")
+            }
+        }, 5_000L)
+    }
+
+    fun writeMotorTuning(profileIndex: Int, requestedValues: Map<MotorTuningParameter, Int>) {
+        val snapshot = _state.value
+        val profile = snapshot.motorTuningProfiles.firstOrNull { it.index == profileIndex }
+        val original = snapshot.motorTuningOriginalProfiles.firstOrNull { it.index == profileIndex }
+        if (profile == null || original == null) {
+            finishMotorTuningFailure("Erst Originalwerte lesen und sichern")
+            return
+        }
+        if (!canStartMotorTuningWrite()) return
+
+        val merged = profile.values.toMutableMap().apply { putAll(requestedValues) }
+        val changed = merged.filter { (parameter, value) -> profile.values[parameter] != value }
+        if (changed.isEmpty()) {
+            update { it.copy(motorTuningStatus = "Keine Änderung zum gelesenen Profil") }
+            return
+        }
+
+        for ((parameter, value) in merged) {
+            if (value !in 0..parameter.sdkMaximum) {
+                finishMotorTuningFailure("${parameter.label}: Wert $value außerhalb 0–${parameter.sdkMaximum}")
+                return
+            }
+        }
+        for ((parameter, value) in changed) {
+            val originalValue = original.values[parameter] ?: profile.values[parameter] ?: continue
+            if (parameter == MotorTuningParameter.MaxSpeed && value > originalValue) {
+                finishMotorTuningFailure("Erster Test: MaxSpeed darf nur gesenkt oder auf Original gestellt werden")
+                return
+            }
+            if (abs(value - originalValue) > 5) {
+                finishMotorTuningFailure("Erster Test: ${parameter.label} höchstens ±5 vom Original verändern")
+                return
+            }
+        }
+        writeMotorTuningInternal(profile, merged, reset = false)
+    }
+
+    fun restoreOriginalMotorTuning(profileIndex: Int) {
+        if (!canStartMotorTuningWrite()) return
+        val current = _state.value.motorTuningProfiles.firstOrNull { it.index == profileIndex }
+        val original = _state.value.motorTuningOriginalProfiles.firstOrNull { it.index == profileIndex }
+        if (current == null || original == null) {
+            finishMotorTuningFailure("Kein gesichertes Originalprofil vorhanden")
+            return
+        }
+        writeMotorTuningInternal(current, original.values, reset = false)
+    }
+
+    fun resetMotorTuning(profileIndex: Int) {
+        if (!canStartMotorTuningWrite()) return
+        val profile = _state.value.motorTuningProfiles.firstOrNull { it.index == profileIndex }
+        if (profile == null) {
+            finishMotorTuningFailure("Profil $profileIndex wurde nicht gelesen")
+            return
+        }
+        val packet = MotorTuningProtocol.buildResetPacket(profileIndex, _state.value.motorTuningProtocol)
+        writeMotorTuningPacket(profileIndex, emptyMap(), packet, reset = true)
+    }
+
+    private fun canStartMotorTuningWrite(): Boolean {
+        val snapshot = _state.value
+        return when {
+            !snapshot.connected -> {
+                finishMotorTuningFailure("Scooter nicht verbunden"); false
+            }
+            !snapshot.motorTuningSupported -> {
+                finishMotorTuningFailure("160C/160D wurden nicht vollständig erkannt"); false
+            }
+            snapshot.motorTuningBusy || pendingMotorTuningWrite != null -> {
+                update { it.copy(motorTuningStatus = "Motor-Tuning-Vorgang läuft bereits") }
+                false
+            }
+            recordingActive -> {
+                finishMotorTuningFailure("Während einer Messfahrt wird nicht geschrieben"); false
+            }
+            (snapshot.speedKmh ?: 0.0) > 0.5 -> {
+                finishMotorTuningFailure("Schreiben nur im Stillstand"); false
+            }
+            else -> true
+        }
+    }
+
+    private fun writeMotorTuningInternal(
+        profile: MotorTuningProfile,
+        values: Map<MotorTuningParameter, Int>,
+        reset: Boolean
+    ) {
+        val packet = if (reset) {
+            MotorTuningProtocol.buildResetPacket(profile.index, _state.value.motorTuningProtocol)
+        } else {
+            MotorTuningProtocol.buildWritePacket(profile, values, _state.value.motorTuningProtocol)
+        }
+        writeMotorTuningPacket(profile.index, values, packet, reset)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun writeMotorTuningPacket(
+        profileIndex: Int,
+        expectedValues: Map<MotorTuningParameter, Int>,
+        packet: ByteArray,
+        reset: Boolean
+    ) {
+        val g = gatt
+        val characteristic = g?.getService(SERVICE_MOTOR_TUNING)
+            ?.getCharacteristic(MOTOR_TUNING_WRITE_CHARACTERISTIC)
+        if (g == null || characteristic == null) {
+            finishMotorTuningFailure("Motor-Tuning-Schreibkanal 160D nicht verfügbar")
+            return
+        }
+
+        val writeType = when {
+            characteristic.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0 ->
+                BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+            characteristic.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0 ->
+                BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+            else -> {
+                finishMotorTuningFailure("160D besitzt keine Schreibberechtigung")
+                return
+            }
+        }
+
+        val packetHex = MotorTuningProtocol.packetHex(packet)
+        val pending = PendingMotorTuningWrite(
+            profileIndex = profileIndex,
+            expectedValues = expectedValues,
+            packetHex = packetHex,
+            reset = reset,
+            startedAt = System.currentTimeMillis()
+        )
+        pendingMotorTuningWrite = pending
+        update {
+            it.copy(
+                motorTuningBusy = true,
+                motorTuningStatus = if (reset) "Werkprofil-Befehl wird übertragen …" else "Testwerte werden übertragen …",
+                motorTuningLastPacket = packetHex,
+                motorTuningLastVerified = null
+            )
+        }
+        addLog("Motor-Tuning TX 160D: $packetHex")
+
+        val started = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            g.writeCharacteristic(characteristic, packet, writeType) == BluetoothStatusCodes.SUCCESS
+        } else {
+            @Suppress("DEPRECATION")
+            run {
+                characteristic.writeType = writeType
+                characteristic.value = packet
+                g.writeCharacteristic(characteristic)
+            }
+        }
+        if (!started) {
+            finishMotorTuningFailure("Schreibvorgang auf 160D konnte nicht gestartet werden")
+            return
+        }
+
+        mainHandler.postDelayed({
+            if (pendingMotorTuningWrite?.startedAt == pending.startedAt) {
+                finishMotorTuningFailure("Keine bestätigte Rückmeldung vom Controller")
+            }
+        }, 8_000L)
+    }
+
+    private fun handleMotorTuningValue(value: ByteArray) {
+        if (value.isEmpty()) return
+        motorTuningBuffer.addAll(value.toList())
+        if (motorTuningBuffer.size > 512) {
+            motorTuningBuffer.subList(0, motorTuningBuffer.size - 512).clear()
+        }
+
+        while (true) {
+            val start = motorTuningBuffer.indexOfFirst { (it.toInt() and 0xFF) == 0xFD }
+            val end = motorTuningBuffer.indexOfFirst { (it.toInt() and 0xFF) == 0xFE }
+            if (end >= 0 && (start < 0 || end < start)) {
+                motorTuningBuffer.subList(0, end + 1).clear()
+                continue
+            }
+            if (start < 0 || end <= start) return
+            val frame = motorTuningBuffer.subList(start, end + 1).toByteArray()
+            motorTuningBuffer.subList(0, end + 1).clear()
+            val parsed = MotorTuningProtocol.parseFrame(frame)
+            if (parsed == null) {
+                addLog("160C-Rahmen konnte nicht dekodiert werden: ${MotorTuningProtocol.packetHex(frame)}")
+                continue
+            }
+            applyMotorTuningResult(parsed)
+        }
+    }
+
+    private fun applyMotorTuningResult(result: MotorTuningParseResult) {
+        lastMotorTuningReadRequestAt = 0L
+        val pending = pendingMotorTuningWrite
+        val original = if (_state.value.motorTuningOriginalProfiles.isEmpty()) result.profiles else _state.value.motorTuningOriginalProfiles
+
+        var verified: Boolean? = null
+        var resultStatus = "${result.profiles.size} Motorprofil(e) gelesen und Original gesichert"
+        if (pending != null) {
+            val returnedProfile = result.profiles.firstOrNull { it.index == pending.profileIndex }
+            verified = if (pending.reset) {
+                returnedProfile != null
+            } else {
+                returnedProfile != null && pending.expectedValues.all { (parameter, expected) ->
+                    returnedProfile.values[parameter] == expected
+                }
+            }
+            resultStatus = when {
+                verified == true && pending.reset -> "Werkprofil wurde zurückgelesen"
+                verified == true -> "✓ Übertragung bestätigt – Werte stimmen mit 160C überein"
+                else -> "✕ Controller-Antwort stimmt nicht mit den gesendeten Werten überein"
+            }
+            addLog("Motor-Tuning RX 160C: ${result.frameHex}")
+            addLog("Motor-Tuning Prüfung: $resultStatus")
+            pendingMotorTuningWrite = null
+        } else {
+            addLog("Motor-Tuning gelesen: ${result.mode.label}, ${result.profiles.size} Profil(e)")
+        }
+
+        update {
+            it.copy(
+                motorTuningBusy = false,
+                motorTuningStatus = resultStatus,
+                motorTuningProtocol = result.mode,
+                motorTuningProfiles = result.profiles,
+                motorTuningOriginalProfiles = original,
+                motorTuningLastReadRaw = result.frameHex,
+                motorTuningLastVerified = verified ?: it.motorTuningLastVerified
+            )
+        }
+    }
+
+    private fun finishMotorTuningFailure(message: String) {
+        pendingMotorTuningWrite = null
+        lastMotorTuningReadRequestAt = 0L
+        update {
+            it.copy(
+                motorTuningBusy = false,
+                motorTuningStatus = "✕ $message",
+                motorTuningLastVerified = false
+            )
+        }
+        addLog("Motor-Tuning: $message")
+    }
+
     private fun handleValue(uuid: UUID, value: ByteArray) {
+        if (uuid == MOTOR_TUNING_READ_CHARACTERISTIC) handleMotorTuningValue(value)
         decoderLab.record(uuid, value)
         val hex = value.joinToString("-") { "%02X".format(it.toInt() and 0xFF) }
         val short = shortUuid(uuid)
@@ -381,7 +805,7 @@ class BleScooterManager(private val context: Context) {
                 lastPacketAt = now,
                 currentPowerW = if ((decoded.voltageV ?: it.voltageV) != null && (decoded.currentA ?: it.currentA) != null) (decoded.voltageV ?: it.voltageV)!! * (decoded.currentA ?: it.currentA)!! else it.currentPowerW,
                 maxSpeedKmh = maxOf(it.maxSpeedKmh ?: 0.0, decoded.speedKmh ?: it.speedKmh ?: 0.0).takeIf { value -> value > 0.0 },
-                maxPowerW = maxOf(it.maxPowerW ?: 0.0, kotlin.math.abs(if ((decoded.voltageV ?: it.voltageV) != null && (decoded.currentA ?: it.currentA) != null) (decoded.voltageV ?: it.voltageV)!! * (decoded.currentA ?: it.currentA)!! else 0.0)).takeIf { value -> value > 0.0 },
+                maxPowerW = maxOf(it.maxPowerW ?: 0.0, abs(if ((decoded.voltageV ?: it.voltageV) != null && (decoded.currentA ?: it.currentA) != null) (decoded.voltageV ?: it.voltageV)!! * (decoded.currentA ?: it.currentA)!! else 0.0)).takeIf { value -> value > 0.0 },
                 recordingPacketCount = if (recordingActive && !recordingPaused) it.recordingPacketCount + 1 else it.recordingPacketCount,
                 channels = channels,
                 analysisPhase = when {
@@ -395,7 +819,6 @@ class BleScooterManager(private val context: Context) {
         }
         if (count <= 3 || changed.isNotEmpty()) addLog("$short [${knowledge.title}] Δ$changedText: $hex")
     }
-
 
     fun startMeasurement() {
         if (!_state.value.connected) {
@@ -424,7 +847,6 @@ class BleScooterManager(private val context: Context) {
         }
         addLog("Messfahrt gestartet")
     }
-
 
     fun toggleMeasurementPause() {
         if (!recordingActive) return
@@ -585,7 +1007,7 @@ class BleScooterManager(private val context: Context) {
         uuid.toString().substring(4, 8).uppercase()
 
     private fun addLog(message: String) {
-        update { it.copy(log = (listOf(message) + it.log).take(60)) }
+        update { it.copy(log = (listOf(message) + it.log).take(80)) }
     }
 
     private inline fun update(block: (ScooterState) -> ScooterState) {

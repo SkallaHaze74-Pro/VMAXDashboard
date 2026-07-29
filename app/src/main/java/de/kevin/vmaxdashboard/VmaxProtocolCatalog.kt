@@ -29,7 +29,9 @@ object VmaxProtocolCatalog {
         ChannelKnowledge("1516", "Ereignis/Zubehör", "Notify-only Ereigniskanal, geeignet für Taster/Zubehörstatus.", KnowledgeLevel.UNKNOWN),
         ChannelKnowledge("1517", "Ereignis/Zubehör", "Notify-only Ereigniskanal, geeignet für Taster/Zubehörstatus.", KnowledgeLevel.UNKNOWN),
         ChannelKnowledge("1518", "Ereignis/Zubehör", "Notify-only Ereigniskanal, geeignet für Taster/Zubehörstatus.", KnowledgeLevel.UNKNOWN),
-        ChannelKnowledge("151D", "Status-/Ereignisdaten", "Dynamischer Statuskanal; wird automatisch analysiert.", KnowledgeLevel.UNKNOWN)
+        ChannelKnowledge("151D", "Status-/Ereignisdaten", "Dynamischer Statuskanal; wird automatisch analysiert.", KnowledgeLevel.UNKNOWN),
+        ChannelKnowledge("160C", "Motor-Tuning Rückmeldung", "Vom originalen GPST-SDK gelesener Profilrahmen FD … FE und Bestätigung nach einem Schreibvorgang.", KnowledgeLevel.CONFIRMED),
+        ChannelKnowledge("160D", "Motor-Tuning Schreiben", "Vom originalen GPST-SDK verwendeter Schreibkanal für Profilindex und Tuningwerte.", KnowledgeLevel.CONFIRMED)
     ).associateBy { it.channel }
 
     fun get(channel: String): ChannelKnowledge = entries[channel]
