@@ -1,7 +1,10 @@
-name: VMAX Dashboard Motor-Lab Build
+name: VMAX Dashboard Telemetrie Build
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - main
 
 jobs:
   build:
@@ -24,14 +27,14 @@ jobs:
 
       - name: Debug-APK bauen
         run: |
-          export VERSION_CODE=$((6400 + GITHUB_RUN_NUMBER))
-          export VERSION_NAME="6.4.${GITHUB_RUN_NUMBER}-motor-lab"
+          export VERSION_CODE=$((6500 + GITHUB_RUN_NUMBER))
+          export VERSION_NAME="6.5.${GITHUB_RUN_NUMBER}-native-telemetry"
           gradle assembleDebug --stacktrace
           cp app/build/outputs/apk/debug/app-debug.apk "VMAXDashboard-v${VERSION_NAME}-Debug.apk"
 
       - name: Debug-APK bereitstellen
         uses: actions/upload-artifact@v4
         with:
-          name: VMAXDashboard-Motor-Lab-Debug
+          name: VMAXDashboard-Native-Telemetrie-Debug
           path: VMAXDashboard-v*-Debug.apk
           if-no-files-found: error
