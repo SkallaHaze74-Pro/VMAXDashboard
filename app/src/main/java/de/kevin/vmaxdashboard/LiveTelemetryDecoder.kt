@@ -26,9 +26,9 @@ data class DecodedTelemetry(
 /**
  * Decoder für die GPST/VMAX-Telemetrie.
  *
- * Die Belegung von 1505, 1508, 1509, 150A und 150C wurde mit den Parsern aus
- * libble-sdk-native-lib.so abgeglichen. Werte mit dem Protokollplatzhalter
- * 0xFFFF bzw. 0x8000 werden bewusst nicht als Messwert angezeigt.
+ * Die Belegung von 1505, 1506, 1508, 1509, 150A und 150C wurde mit der
+ * nativen GPST-Bibliothek und BT638-Messungen abgeglichen. Werte mit dem
+ * Protokollplatzhalter 0xFFFF bzw. 0x8000 werden nicht als Messwert angezeigt.
  */
 object LiveTelemetryDecoder {
     fun decode(channel: String, value: ByteArray): DecodedTelemetry {
@@ -58,18 +58,26 @@ object LiveTelemetryDecoder {
                     notes += "Geschwindigkeit: 1505 Byte 6-7, Big Endian, /10 km/h"
                 }
                 validUnsigned16BE(value, 10)?.let { raw ->
-                    // Das native SDK bezeichnet dieses Feld als km. Ob es beim
-                    // VR2 Trip oder Gesamtstrecke ist, wird erst nach Display-
-                    // Vergleich festgelegt; vorläufig als Tripwert geführt.
                     tripDistanceKm = raw.toDouble()
                     notes += "Streckenfeld: 1505 Byte 10-11 (SDK-Einheit km)"
+                }
+            }
+
+            "1506" -> {
+                // BT638 bestätigt: 00001A8E = 6798 -> 679,8 km.
+                unsigned32BE(value, 0)?.takeIf { it in 0..100_000_000L }?.let { raw ->
+                    odometerKm = rounded(raw / 10.0)
+                    notes += "Kilometerstand: 1506 Byte 0-3, Big Endian, /10 km"
+                }
+                unsigned32BE(value, 4)?.takeIf { it in 0..100_000_000L }?.let { seconds ->
+                    notes += "Gesamtfahr-/Betriebszeit: 1506 Byte 4-7, $seconds s"
                 }
             }
 
             "1508" -> {
                 accessoryByte0 = u8(value, 0)
                 if (value.size >= 4) accessoryByte3 = u8(value, 3)
-                notes += "1508 Byte 0 = LightState, Byte 3 = AssistLevelChange"
+                notes += "1508 Byte 0: 0=Licht aus, 1=Licht an; Byte 3=Fahrstufe"
             }
 
             "1509" -> {
@@ -107,15 +115,9 @@ object LiveTelemetryDecoder {
                     motorTemperatureC = temp
                     notes += "Motortemperatur: 150A Byte 8-9, /10 °C"
                 }
-                validUnsigned16BE(value, 0)?.let {
-                    notes += "Motorstrom RAW: $it mA"
-                }
-                validUnsigned16BE(value, 2)?.let {
-                    notes += "Motorspannung RAW: $it mV"
-                }
-                validUnsigned16BE(value, 4)?.let {
-                    notes += "Motordrehzahl RAW: $it rpm"
-                }
+                validUnsigned16BE(value, 0)?.let { notes += "Motorstrom RAW: $it mA" }
+                validUnsigned16BE(value, 2)?.let { notes += "Motorspannung RAW: $it mV" }
+                validUnsigned16BE(value, 4)?.let { notes += "Motordrehzahl RAW: $it rpm" }
             }
 
             "150C" -> {
@@ -163,6 +165,14 @@ object LiveTelemetryDecoder {
                 (u8(value, index + 1).toLong() shl 8) or
                 (u8(value, index + 2).toLong() shl 16) or
                 (u8(value, index + 3).toLong() shl 24)
+        } else null
+
+    fun unsigned32BE(value: ByteArray, index: Int): Long? =
+        if (index + 3 < value.size) {
+            (u8(value, index).toLong() shl 24) or
+                (u8(value, index + 1).toLong() shl 16) or
+                (u8(value, index + 2).toLong() shl 8) or
+                u8(value, index + 3).toLong()
         } else null
 
     fun scaled(raw: Number, divisor: Double): Double = rounded(raw.toDouble() / divisor)
