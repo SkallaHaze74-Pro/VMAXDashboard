@@ -1,8 +1,10 @@
-name: Scooter Telemetry VX Motor-Lab Test-Build
+name: VMAX Dashboard Fahrdaten Build
 
 on:
   workflow_dispatch:
   push:
+    branches: [ "main" ]
+  pull_request:
     branches: [ "main" ]
 
 jobs:
@@ -26,15 +28,15 @@ jobs:
 
       - name: Debug-APK bauen
         run: |
-          export VERSION_CODE=$((6400 + GITHUB_RUN_NUMBER))
-          export VERSION_NAME="6.4.${GITHUB_RUN_NUMBER}-motor-lab"
+          export VERSION_CODE=$((7000 + GITHUB_RUN_NUMBER))
+          export VERSION_NAME="7.0.${GITHUB_RUN_NUMBER}-fahrdaten"
           gradle assembleDebug --stacktrace
           cp app/build/outputs/apk/debug/app-debug.apk "VMAXDashboard-v${VERSION_NAME}-Debug.apk"
 
       - name: Debug-APK bereitstellen
         uses: actions/upload-artifact@v4
         with:
-          name: VMAXDashboard-Motor-Lab-Debug
+          name: VMAXDashboard-Fahrdaten-Debug
           path: VMAXDashboard-v*-Debug.apk
           if-no-files-found: error
 
@@ -71,18 +73,15 @@ jobs:
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: |
-          export VERSION_CODE=$((6400 + GITHUB_RUN_NUMBER))
-          export VERSION_NAME="6.4.${GITHUB_RUN_NUMBER}-motor-lab"
-          gradle assembleRelease bundleRelease --stacktrace
+          export VERSION_CODE=$((7000 + GITHUB_RUN_NUMBER))
+          export VERSION_NAME="7.0.${GITHUB_RUN_NUMBER}-fahrdaten"
+          gradle assembleRelease --stacktrace
           cp app/build/outputs/apk/release/app-release.apk "VMAXDashboard-v${VERSION_NAME}-Release.apk"
-          cp app/build/outputs/bundle/release/app-release.aab "VMAXDashboard-v${VERSION_NAME}-Release.aab"
 
-      - name: Release-Dateien bereitstellen
+      - name: Release-APK bereitstellen
         if: steps.signing.outputs.available == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: VMAXDashboard-Motor-Lab-Release
-          path: |
-            VMAXDashboard-v*-Release.apk
-            VMAXDashboard-v*-Release.aab
+          name: VMAXDashboard-Fahrdaten-Release
+          path: VMAXDashboard-v*-Release.apk
           if-no-files-found: error
