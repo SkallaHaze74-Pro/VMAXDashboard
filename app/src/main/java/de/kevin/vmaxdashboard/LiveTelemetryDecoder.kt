@@ -3,8 +3,8 @@ package de.kevin.vmaxdashboard
 import kotlin.math.round
 
 /**
- * Bereits dekodierte Livewerte. Unbestätigte Felder bleiben null und die
- * vollständigen Rohpakete werden weiterhin separat gespeichert.
+ * Ausschließlich bestätigte Livewerte. Unbestätigte Felder bleiben null und
+ * die vollständigen Rohpakete werden weiterhin separat gespeichert.
  */
 data class DecodedTelemetry(
     val batteryPercent: Int? = null,
@@ -24,11 +24,16 @@ data class DecodedTelemetry(
 )
 
 /**
- * Decoder für die GPST/VMAX-Telemetrie.
+ * Bestätigter BT638-Decoder aus den langen Messfahrten.
  *
- * Die Belegung von 1505, 1506, 1508, 1509, 150A und 150C wurde mit der
- * nativen GPST-Bibliothek und BT638-Messungen abgeglichen. Werte mit dem
- * Protokollplatzhalter 0xFFFF bzw. 0x8000 werden nicht als Messwert angezeigt.
+ * Fest bestätigt:
+ * - 1505 Byte 6-7: Geschwindigkeit, Big Endian, /10 km/h
+ * - 1506 Byte 0-3: Kilometerstand, Big Endian, /10 km
+ * - 1508 Byte 0: Lichtstatus; Byte 3: Fahrstufe als Rohwert
+ * - 1509 Byte 0-1: Strom mA; Byte 4: Akku %;
+ *   Byte 5-6: Spannung mV; Byte 9-10: direkte Leistung W
+ *
+ * Temperatur, Trip, Bremse, Blinker und 1506 Byte 4-7 bleiben offen.
  */
 object LiveTelemetryDecoder {
     fun decode(channel: String, value: ByteArray): DecodedTelemetry {
@@ -39,64 +44,47 @@ object LiveTelemetryDecoder {
         var speedKmh: Double? = null
         var driveRaw: Int? = null
         var motorLoadRaw: Int? = null
-        var batteryStateRaw: Int? = null
         var accessoryByte0: Int? = null
         var accessoryByte3: Int? = null
         var voltageV: Double? = null
         var currentA: Double? = null
-        var motorTemperatureC: Double? = null
-        var batteryTemperatureC: Double? = null
-        var tripDistanceKm: Double? = null
         var odometerKm: Double? = null
 
         when (channel) {
             "1505" -> {
-                // BikePerformance: W/10, W/10, Nm/100, km/h/10, rpm, km.
                 validUnsigned16BE(value, 6)?.let { raw ->
                     driveRaw = raw
                     speedKmh = rounded(raw / 10.0)
                     notes += "Geschwindigkeit: 1505 Byte 6-7, Big Endian, /10 km/h"
                 }
-                validUnsigned16BE(value, 10)?.let { raw ->
-                    tripDistanceKm = raw.toDouble()
-                    notes += "Streckenfeld: 1505 Byte 10-11 (SDK-Einheit km)"
-                }
             }
 
             "1506" -> {
-                // BT638 bestätigt: 00001A8E = 6798 -> 679,8 km.
-                unsigned32BE(value, 0)?.takeIf { it in 0..100_000_000L }?.let { raw ->
-                    odometerKm = rounded(raw / 10.0)
-                    notes += "Kilometerstand: 1506 Byte 0-3, Big Endian, /10 km"
-                }
-                unsigned32BE(value, 4)?.takeIf { it in 0..100_000_000L }?.let { seconds ->
-                    notes += "Gesamtfahr-/Betriebszeit: 1506 Byte 4-7, $seconds s"
+                unsigned32BE(value, 0)
+                    ?.takeIf { it in 0..100_000_000L }
+                    ?.let { raw ->
+                        odometerKm = rounded(raw / 10.0)
+                        notes += "Kilometerstand: 1506 Byte 0-3, Big Endian, /10 km"
+                    }
+                unsigned32BE(value, 4)?.let { raw ->
+                    notes += "1506 Byte 4-7 bleibt Betriebs-/Fahrzeitzähler RAW: $raw"
                 }
             }
 
             "1508" -> {
-                accessoryByte0 = u8(value, 0)
-                if (value.size >= 4) accessoryByte3 = u8(value, 3)
-                notes += "1508 Byte 0: 0=Licht aus, 1=Licht an; Byte 3=Fahrstufe"
+                accessoryByte0 = u8OrNull(value, 0)
+                accessoryByte3 = u8OrNull(value, 3)
+                notes += "1508 Byte 0: 0=Licht aus, 1=Licht an; Byte 3=Fahrstufe RAW"
             }
 
             "1509" -> {
-                // BatteryUpdate: current, battery temperature, SoC, voltage,
-                // second current value and direct power.
                 signed16BE(value, 0)?.let { raw ->
                     currentA = rounded(raw / 1000.0)
                     notes += "Akkustrom: 1509 Byte 0-1, mA"
                 }
-                temperatureTenths(value, 2)?.let { temp ->
-                    batteryTemperatureC = temp
-                    notes += "Akkutemperatur: 1509 Byte 2-3, /10 °C"
-                }
-                if (value.size >= 5) {
-                    val percent = u8(value, 4)
-                    if (percent in 0..100) {
-                        batteryPercent = percent
-                        notes += "Akkustand: 1509 Byte 4"
-                    }
+                u8OrNull(value, 4)?.takeIf { it in 0..100 }?.let { percent ->
+                    batteryPercent = percent
+                    notes += "Akkustand: 1509 Byte 4"
                 }
                 validUnsigned16BE(value, 5)?.let { raw ->
                     voltageV = rounded(raw / 1000.0)
@@ -107,32 +95,6 @@ object LiveTelemetryDecoder {
                     notes += "Direkte Leistung: 1509 Byte 9-10, W"
                 }
             }
-
-            "150A" -> {
-                // MotorUpdate: current mA, voltage mV, rpm, torque Nm/100,
-                // motor temperature °C/10.
-                temperatureTenths(value, 8)?.let { temp ->
-                    motorTemperatureC = temp
-                    notes += "Motortemperatur: 150A Byte 8-9, /10 °C"
-                }
-                validUnsigned16BE(value, 0)?.let { notes += "Motorstrom RAW: $it mA" }
-                validUnsigned16BE(value, 2)?.let { notes += "Motorspannung RAW: $it mV" }
-                validUnsigned16BE(value, 4)?.let { notes += "Motordrehzahl RAW: $it rpm" }
-            }
-
-            "150C" -> {
-                // BatteryCellUpdate: index, cell voltage, three temperatures.
-                temperatureTenths(value, 3)?.let { temp ->
-                    batteryTemperatureC = temp
-                    notes += "Zell-/Akkutemperatur 1: 150C Byte 3-4, /10 °C"
-                }
-                if (value.size >= 3) {
-                    val index = u8(value, 0)
-                    validUnsigned16BE(value, 1)?.let { millivolts ->
-                        notes += "Zelle/Sensor $index: $millivolts mV"
-                    }
-                }
-            }
         }
 
         return DecodedTelemetry(
@@ -140,14 +102,10 @@ object LiveTelemetryDecoder {
             speedKmh = speedKmh,
             driveRaw = driveRaw,
             motorLoadRaw = motorLoadRaw,
-            batteryStateRaw = batteryStateRaw,
             accessoryByte0 = accessoryByte0,
             accessoryByte3 = accessoryByte3,
             voltageV = voltageV,
             currentA = currentA,
-            motorTemperatureC = motorTemperatureC,
-            batteryTemperatureC = batteryTemperatureC,
-            tripDistanceKm = tripDistanceKm,
             odometerKm = odometerKm,
             notes = notes
         )
@@ -179,20 +137,17 @@ object LiveTelemetryDecoder {
 
     private fun validUnsigned16BE(value: ByteArray, index: Int): Int? {
         val raw = unsigned16BE(value, index) ?: return null
-        return raw.takeUnless { it == 0xFFFF }
+        return raw.takeUnless { it == 0xFFFF || it == 0x8000 }
     }
 
     private fun signed16BE(value: ByteArray, index: Int): Int? {
         val raw = unsigned16BE(value, index) ?: return null
+        if (raw == 0xFFFF || raw == 0x8000) return null
         return raw.toShort().toInt()
     }
 
-    private fun temperatureTenths(value: ByteArray, index: Int): Double? {
-        val raw = unsigned16BE(value, index) ?: return null
-        if (raw == 0xFFFF || raw == 0x8000) return null
-        val temperature = raw.toShort().toInt() / 10.0
-        return rounded(temperature).takeIf { it in -50.0..180.0 }
-    }
+    private fun u8OrNull(value: ByteArray, index: Int): Int? =
+        if (index in value.indices) u8(value, index) else null
 
     private fun rounded(value: Double): Double = round(value * 100.0) / 100.0
 
