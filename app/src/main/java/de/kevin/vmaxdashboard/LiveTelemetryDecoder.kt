@@ -2,10 +2,6 @@ package de.kevin.vmaxdashboard
 
 import kotlin.math.round
 
-/**
- * Ausschließlich bestätigte Livewerte. Unbestätigte Felder bleiben null und
- * die vollständigen Rohpakete werden weiterhin separat gespeichert.
- */
 data class DecodedTelemetry(
     val batteryPercent: Int? = null,
     val speedKmh: Double? = null,
@@ -23,18 +19,6 @@ data class DecodedTelemetry(
     val notes: List<String> = emptyList()
 )
 
-/**
- * Bestätigter BT638-Decoder aus den langen Messfahrten.
- *
- * Fest bestätigt:
- * - 1505 Byte 6-7: Geschwindigkeit, Big Endian, /10 km/h
- * - 1506 Byte 0-3: Kilometerstand, Big Endian, /10 km
- * - 1508 Byte 0: Lichtstatus; Byte 3: Fahrstufe als Rohwert
- * - 1509 Byte 0-1: Strom mA; Byte 4: Akku %;
- *   Byte 5-6: Spannung mV; Byte 9-10: direkte Leistung W
- *
- * Temperatur, Trip, Bremse, Blinker und 1506 Byte 4-7 bleiben offen.
- */
 object LiveTelemetryDecoder {
     fun decode(channel: String, value: ByteArray): DecodedTelemetry {
         if (value.isEmpty()) return DecodedTelemetry()
@@ -51,12 +35,21 @@ object LiveTelemetryDecoder {
         var odometerKm: Double? = null
 
         when (channel) {
+            "1502" -> {
+                validUnsigned16BE(value, 0)?.let { notes += "Akku-Info RAW A: $it" }
+                validUnsigned16BE(value, 6)?.let { notes += "Akku-Info RAW B: $it" }
+                if (isAllPlaceholder(value)) notes += "Akku-Infoblock enthält nur Platzhalter"
+            }
+
             "1505" -> {
+                validUnsigned16BE(value, 0)?.let { notes += "Fahrleistungswert A RAW: $it" }
+                validUnsigned16BE(value, 2)?.let { notes += "Fahrleistungswert B RAW: $it" }
                 validUnsigned16BE(value, 6)?.let { raw ->
                     driveRaw = raw
                     speedKmh = rounded(raw / 10.0)
                     notes += "Geschwindigkeit: 1505 Byte 6-7, Big Endian, /10 km/h"
                 }
+                validUnsigned16BE(value, 10)?.let { notes += "1505 Byte 10-11 RAW: $it" }
             }
 
             "1506" -> {
@@ -67,7 +60,7 @@ object LiveTelemetryDecoder {
                         notes += "Kilometerstand: 1506 Byte 0-3, Big Endian, /10 km"
                     }
                 unsigned32BE(value, 4)?.let { raw ->
-                    notes += "1506 Byte 4-7 bleibt Betriebs-/Fahrzeitzähler RAW: $raw"
+                    notes += "Betriebs-/Fahrzeitzähler RAW: $raw; Skalierung offen"
                 }
             }
 
@@ -94,6 +87,25 @@ object LiveTelemetryDecoder {
                     motorLoadRaw = raw
                     notes += "Direkte Leistung: 1509 Byte 9-10, W"
                 }
+            }
+
+            "150A" -> {
+                validUnsigned16BE(value, 0)?.let { notes += "Motorstrom-/Last-Kandidat RAW: $it" }
+                if (value.size > 2 && value.drop(2).all { (it.toInt() and 0xFF) == 0xFF }) {
+                    notes += "150A Byte 2-${value.lastIndex} werden vom BT638 aktuell nicht geliefert"
+                }
+            }
+
+            "150B" -> {
+                if (isAllPlaceholder(value)) notes += "150B wird vom BT638 aktuell nicht unterstützt (nur 0xFF)"
+            }
+
+            "150D" -> {
+                validUnsigned16BE(value, 0)?.let { raw ->
+                    speedKmh = rounded(raw / 10.0)
+                    notes += "Zweite bestätigte Geschwindigkeit: 150D Byte 0-1, /10 km/h"
+                }
+                validUnsigned16BE(value, 2)?.let { notes += "150D Byte 2-3 Statistikwert RAW: $it" }
             }
         }
 
@@ -145,6 +157,9 @@ object LiveTelemetryDecoder {
         if (raw == 0xFFFF || raw == 0x8000) return null
         return raw.toShort().toInt()
     }
+
+    private fun isAllPlaceholder(value: ByteArray): Boolean =
+        value.isNotEmpty() && value.all { (it.toInt() and 0xFF) == 0xFF }
 
     private fun u8OrNull(value: ByteArray, index: Int): Int? =
         if (index in value.indices) u8(value, index) else null
