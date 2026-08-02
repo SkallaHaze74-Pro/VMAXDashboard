@@ -91,11 +91,6 @@ object MeasurementAnalyzer {
         return findings
     }
 
-    /**
-     * Läuft ohne Bedienung während langer Fahrten. Die bestätigte Geschwindigkeit
-     * teilt die Aufnahme in Ruhe (<0,5 km/h) und Fahrt (>5 km/h). Anschließend
-     * werden nur unbekannte Kanäle/Bytes auf stabile Zustandsunterschiede geprüft.
-     */
     private fun analyzeLongRideAutomatically(packets: List<Packet>): List<MeasurementFinding> {
         if (packets.size < 120) return emptyList()
         val speedTimeline = packets
@@ -112,10 +107,11 @@ object MeasurementAnalyzer {
         val moving = mutableMapOf<String, MutableList<Packet>>()
         packets.forEach { packet ->
             if (packet.channel == "1505") return@forEach
-            when (speedAt(packet.t)) {
-                null -> Unit
-                in 0.0..0.49 -> stopped.getOrPut(packet.channel) { mutableListOf() }.add(packet)
-                in 5.0..200.0 -> moving.getOrPut(packet.channel) { mutableListOf() }.add(packet)
+            val speed = speedAt(packet.t)
+            when {
+                speed == null -> Unit
+                speed in 0.0..0.49 -> stopped.getOrPut(packet.channel) { mutableListOf() }.add(packet)
+                speed in 5.0..200.0 -> moving.getOrPut(packet.channel) { mutableListOf() }.add(packet)
             }
         }
 
