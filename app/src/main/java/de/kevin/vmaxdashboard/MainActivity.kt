@@ -42,6 +42,7 @@ class MainActivity : ComponentActivity() {
 private fun VmaxApp(manager: BleScooterManager) {
     val state by manager.state.collectAsStateWithLifecycle()
     var selectedAction by remember { mutableStateOf("Bremse") }
+    var expertMode by remember { mutableStateOf(true) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -57,7 +58,7 @@ private fun VmaxApp(manager: BleScooterManager) {
         }
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("VMAX Dashboard • Version 7") }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text("VMAX Dashboard • Version 7 Expert") }) }) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -82,10 +83,24 @@ private fun VmaxApp(manager: BleScooterManager) {
             item {
                 MetricRow(
                     "Leistung direkt", state.motorLoadRaw?.let { "$it W" } ?: "–",
-                    "Signal", state.rssi?.let { "$it dBm" } ?: "–"
+                    "Leistung V×A", state.currentPowerW?.let { "%.0f W".format(it) } ?: "–"
                 )
             }
+            item {
+                MetricRow(
+                    "Max. Tempo", state.maxSpeedKmh?.let { "%.1f km/h".format(it) } ?: "–",
+                    "Max. Leistung", state.maxPowerW?.let { "%.0f W".format(it) } ?: "–"
+                )
+            }
+            item {
+                MetricRow(
+                    "Signal", state.rssi?.let { "$it dBm" } ?: "–",
+                    "Pakete/s", "%.1f".format(state.packetsPerSecond)
+                )
+            }
+
             item { AccessoryCard(state) }
+            item { TemperatureAndTripCard(state) }
 
             item {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -126,14 +141,44 @@ private fun VmaxApp(manager: BleScooterManager) {
                 )
             }
 
-            item { SectionTitle("Bekannte Kanäle & Live-Analyse") }
-            if (state.channels.isEmpty()) {
-                item { InfoCard("Noch keine BLE-Daten", "Nach der Verbindung erscheinen Rohbytes, Paketanzahl und geänderte Bytepositionen.") }
-            } else {
-                items(state.channels) { ChannelCard(it) }
+            item {
+                Card(shape = RoundedCornerShape(18.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Expertenmodus", fontWeight = FontWeight.Bold)
+                            Text("Alle Kanäle, Rohwerte, Kandidaten und Platzhalter anzeigen", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Switch(checked = expertMode, onCheckedChange = { expertMode = it })
+                    }
+                }
             }
 
-            item { RawDataCard(state) }
+            if (expertMode) {
+                item { SectionTitle("Controller & Diagnose") }
+                item { ConfirmedRawCard(state) }
+                item { DeviceControllerCard(state) }
+                item { SectionTitle("Alle BLE-Kanäle") }
+                if (state.channels.isEmpty()) {
+                    item { InfoCard("Noch keine BLE-Daten", "Nach der Verbindung erscheinen Rohbytes, Paketanzahl und geänderte Bytepositionen.") }
+                } else {
+                    items(state.channels) { ChannelCard(it) }
+                }
+                item { RawDataCard(state) }
+            }
+
+            item { SectionTitle("Automatische Lernanalyse") }
+            if (state.autoAnalysisFindings.isEmpty()) {
+                item { InfoCard("Noch keine Kandidaten", "Lange Fahrten werden automatisch verglichen. Für Bremse, Blinker und Licht helfen die Marker beim eindeutigen Zuordnen.") }
+            } else {
+                items(state.autoAnalysisFindings.take(20)) { finding ->
+                    InfoCard(finding.marker, finding.description)
+                }
+            }
+
             item { SectionTitle("Datenprotokoll") }
             items(state.log) { line ->
                 Text(line, style = MaterialTheme.typography.bodySmall)
@@ -144,13 +189,19 @@ private fun VmaxApp(manager: BleScooterManager) {
 }
 
 @Composable
+private fun SectionTitle(text: String) {
+    Text(text, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+}
+
+@Composable
 private fun StatusCard(state: ScooterState) {
     Card(shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(state.status, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text("${state.deviceName} • Automatisches Langfahrt-Profil aktiv")
             Text(if (state.connected) "● Bluetooth verbunden" else "○ Bluetooth nicht verbunden")
-            Text("Live: %.1f Pakete/s • ${state.channels.size} Kanäle".format(state.packetsPerSecond))
+            Text("Live: %.1f Pakete/s • ${state.channels.size} Kanäle • ${state.packetTotal} Pakete".format(state.packetsPerSecond))
+            Text("Lernprofil: ${state.learningProfileCount} Kandidaten • Messungen: ${state.sessionHistoryCount}", style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -166,10 +217,13 @@ private fun SpeedDashboard(state: ScooterState) {
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Text(state.speedKmh?.let { "%.1f".format(it) } ?: "—", style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.Black)
-            Text("km/h • Hauptquelle 1505")
+            Text("km/h • Hauptquelle 1505 Byte 6–7")
             Text("150D Vergleich: ${speed150d?.let { "%.1f km/h".format(it) } ?: "–"}")
-            if (difference != null && difference > 1.0) {
-                Text("⚠ Abweichung: %.1f km/h".format(difference), style = MaterialTheme.typography.labelLarge)
+            if (difference != null) {
+                Text(
+                    if (difference <= 1.0) "✓ Quellen stimmen überein" else "⚠ Abweichung: %.1f km/h".format(difference),
+                    style = MaterialTheme.typography.labelLarge
+                )
             }
         }
     }
@@ -194,7 +248,60 @@ private fun AccessoryCard(state: ScooterState) {
             Text("Licht & Fahrmodus", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text("💡 Licht: $light  •  RAW 1508/0: ${state.accessoryByte0 ?: "–"}")
             Text("⚡ Fahrmodus: $mode  •  RAW 1508/3: ${state.accessoryByte3 ?: "–"}")
-            Text("Zuordnung für BT638: 1 = ECO, 2 = SPORT. Andere Modelle bleiben über RAW erkennbar.", style = MaterialTheme.typography.bodySmall)
+            Text("BT638: 1 = ECO, 2 = SPORT. Andere Modelle bleiben über RAW erkennbar.", style = MaterialTheme.typography.bodySmall)
+            Text("Blinker und Bremse bleiben bis zum Markertest offen.", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun TemperatureAndTripCard(state: ScooterState) {
+    Card(shape = RoundedCornerShape(18.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Text("Weitere Decoderfelder", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("Motor-Temperatur: ${state.motorTemperatureC?.let { "%.1f °C".format(it) } ?: "nicht geliefert"}")
+            Text("Akku-Temperatur: ${state.batteryTemperatureC?.let { "%.1f °C".format(it) } ?: "nicht geliefert"}")
+            Text("Trip: ${state.tripDistanceKm?.let { "%.1f km".format(it) } ?: "noch offen"}")
+            Text("Nicht verfügbare Werte werden nicht erfunden; FF/FFFF bleibt als nicht unterstützt sichtbar.", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun ConfirmedRawCard(state: ScooterState) {
+    val p1505 = parseHex(state.rawPackets["1505"])
+    val p1502 = parseHex(state.rawPackets["1502"])
+    val p150a = parseHex(state.rawPackets["150A"])
+    val p150d = parseHex(state.rawPackets["150D"])
+    Card(shape = RoundedCornerShape(18.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Bestätigte & starke RAW-Felder", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("🟢 1505 Leistung A RAW: ${u16be(p1505, 0) ?: "–"}")
+            Text("🟢 1505 Leistung B RAW: ${u16be(p1505, 2) ?: "–"}")
+            Text("🟢 1505 Geschwindigkeit RAW: ${u16be(p1505, 6) ?: state.driveRaw ?: "–"}")
+            Text("🟢 150D Geschwindigkeit RAW: ${u16be(p150d, 0) ?: "–"}")
+            Text("🟡 150D zweites Statistikfeld: ${u16be(p150d, 2) ?: "–"}")
+            Text("🟡 150A Motorstrom-Kandidat RAW: ${u16be(p150a, 0) ?: "–"}")
+            Text("🟡 1502 statischer Wert A: ${u16be(p1502, 0) ?: "–"}")
+            Text("🟡 1502 statischer Wert B: ${u16be(p1502, 6) ?: "–"}")
+            Text("🟢 bestätigt • 🟡 starker Kandidat • Bedeutung bleibt bis zur Referenzmessung RAW", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun DeviceControllerCard(state: ScooterState) {
+    val staticChannels = listOf("1501", "1502", "1503", "1504", "1507", "1514", "1516", "1517", "1518")
+    Card(shape = RoundedCornerShape(18.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Gerät & Controller", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("Gerät: ${state.deviceName} • Adresse: ${state.address.ifBlank { "–" }}")
+            Text("Erkannte Kanäle: ${state.channels.joinToString { it.channel }.ifBlank { "–" }}")
+            staticChannels.forEach { channel ->
+                val raw = state.rawPackets[channel]
+                if (raw != null) Text("$channel: $raw", style = MaterialTheme.typography.bodySmall)
+            }
+            Text("Der sichere READ-Scan liest nur vorhandene lesbare Characteristics; es werden keine Scooter-Einstellungen geschrieben.", style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -247,8 +354,8 @@ private fun BrakePushTestCard(state: ScooterState, onMarker: (String) -> Unit) {
     Card(shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("🛴 Schiebe-/Brems-Test", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("1. Langfahrt starten. 2. Scooter ohne Gas gleichmäßig schieben. 3. Marker „Schieben frei“. 4. Weiter schieben und direkt vor dem Bremshebel Marker „Bremse beim Schieben“ drücken.")
-            Text("Spannung, Strom und Watt werden mitgespeichert, aber nicht automatisch als Bremssignal gewertet. Gesucht wird ein eigenes stabiles Statusbyte.")
+            Text("Langfahrt starten, gleichmäßig ohne Gas schieben, zuerst „Schieben frei“ markieren und direkt vor dem Bremshebel „Bremse“ drücken.")
+            Text("Spannung, Strom und Watt werden mitgespeichert, aber nicht automatisch als Bremsschalter bewertet. Gesucht wird ein zusätzliches stabiles Statusbyte.")
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilledTonalButton(
                     onClick = { onMarker("Schieben frei") },
@@ -325,12 +432,21 @@ private fun DecoderLabCard(
 
 @Composable
 private fun ChannelCard(channel: BleChannelState) {
-    val unsupported = channel.hex.split("-").filter { it.isNotBlank() }.all { it.equals("FF", ignoreCase = true) }
+    val bytes = channel.hex.split("-").filter { it.isNotBlank() }
+    val unsupported = bytes.isNotEmpty() && bytes.all { it.equals("FF", ignoreCase = true) }
+    val status = when {
+        unsupported -> "🔴 nicht unterstützt"
+        channel.knowledge.contains("Bestätigt", ignoreCase = true) -> "🟢 bestätigt"
+        channel.knowledge.contains("Kandidat", ignoreCase = true) -> "🟡 Kandidat"
+        else -> "⚪ unbekannt"
+    }
     Card(shape = RoundedCornerShape(18.dp)) {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text("${channel.channel} • ${channel.title}", fontWeight = FontWeight.Bold)
-            Text(if (unsupported) "Nicht unterstützt: nur FF-Platzhalter" else channel.knowledge)
-            Text(channel.meaning, style = MaterialTheme.typography.bodySmall)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("${channel.channel} • ${channel.title}", fontWeight = FontWeight.Bold)
+                Text(status, style = MaterialTheme.typography.labelMedium)
+            }
+            Text(if (unsupported) "Nur FF-Platzhalter – dieses Modell liefert hier keine Werte." else channel.meaning, style = MaterialTheme.typography.bodySmall)
             Text("Pakete: ${channel.packetCount} • geändert: ${channel.changedBytes}")
             Text(channel.hex, style = MaterialTheme.typography.bodySmall)
         }
@@ -344,7 +460,7 @@ private fun RawDataCard(state: ScooterState) {
             Text("Letztes BLE-Paket", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text("Kanal: ${state.lastCharacteristic.ifBlank { "–" }} • Geändert: ${state.lastChangedBytes}")
             Text(state.lastRawHex.ifBlank { "Noch keine Daten empfangen" }, style = MaterialTheme.typography.bodySmall)
-            Text("Die App schreibt keine Motor-Tuning-Werte an den Scooter.")
+            Text("Diese Version liest Telemetrie und Diagnosewerte. Motor-Tuning bleibt aus der Oberfläche entfernt.", style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -369,14 +485,9 @@ private fun MetricCard(title: String, value: String, modifier: Modifier = Modifi
 }
 
 @Composable
-private fun SectionTitle(text: String) {
-    Text(text, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-}
-
-@Composable
 private fun InfoCard(title: String, text: String) {
     Card(shape = RoundedCornerShape(18.dp)) {
-        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(title, fontWeight = FontWeight.Bold)
             Text(text, style = MaterialTheme.typography.bodySmall)
         }
@@ -384,11 +495,18 @@ private fun InfoCard(title: String, text: String) {
 }
 
 private fun decode150dSpeed(hex: String?): Double? {
-    val bytes = hex?.split("-")?.mapNotNull { it.toIntOrNull(16) } ?: return null
-    if (bytes.size < 2) return null
-    val raw = (bytes[0] shl 8) or bytes[1]
+    val bytes = parseHex(hex)
+    val raw = u16be(bytes, 0) ?: return null
     if (raw == 0xFFFF) return null
     return raw / 10.0
+}
+
+private fun parseHex(hex: String?): List<Int> =
+    hex.orEmpty().split('-', ' ', ':').mapNotNull { token -> token.trim().takeIf { it.length == 2 }?.toIntOrNull(16) }
+
+private fun u16be(bytes: List<Int>, index: Int): Int? {
+    if (index < 0 || index + 1 >= bytes.size) return null
+    return (bytes[index] shl 8) or bytes[index + 1]
 }
 
 private fun formatElapsed(ms: Long): String {
