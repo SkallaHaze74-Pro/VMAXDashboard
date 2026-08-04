@@ -47,6 +47,12 @@ private fun VmaxApp(manager: BleScooterManager) {
     val scope = rememberCoroutineScope()
     var expertMode by remember { mutableStateOf(true) }
     var selectedAction by remember { mutableStateOf("Bremse") }
+    var chargeMode by remember { mutableStateOf(false) }
+    var chargeStartedAt by remember { mutableLongStateOf(0L) }
+    var lastRealBattery by remember { mutableStateOf<Int?>(null) }
+    var lastRealVoltage by remember { mutableStateOf<Double?>(null) }
+    var lastRealValueAt by remember { mutableLongStateOf(0L) }
+    var previousConnected by remember { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -62,41 +68,61 @@ private fun VmaxApp(manager: BleScooterManager) {
         }
     }
 
-    fun directMarker(label: String) {
+    fun marker(label: String, requireConnection: Boolean = true) {
         scope.launch {
-            if (!state.recordingActive) {
+            if (!state.recordingActive && state.connected) {
                 manager.startMeasurement()
                 delay(150)
             }
-            manager.addMeasurementMarker(label)
+            if (manager.state.value.recordingActive && (!requireConnection || manager.state.value.connected)) {
+                manager.addMeasurementMarker(label)
+            }
+        }
+    }
+
+    LaunchedEffect(state.batteryPercent, state.voltageV, state.lastPacketAt) {
+        if (state.connected && state.lastPacketAt > 0L) {
+            state.batteryPercent?.let { lastRealBattery = it }
+            state.voltageV?.let { lastRealVoltage = it }
+            lastRealValueAt = state.lastPacketAt
         }
     }
 
     LaunchedEffect(state.connected) {
         if (state.connected) {
-            delay(900)
+            delay(700)
             if (!manager.state.value.recordingActive) manager.startMeasurement()
-            delay(1_800)
+            delay(1_400)
             gattScanner.scanAndRead()
+            if (chargeMode && !previousConnected) marker("BLE beim Laden wieder verbunden", false)
         } else {
             gattScanner.reset()
+            if (chargeMode && previousConnected && manager.state.value.recordingActive) {
+                manager.addMeasurementMarker("BLE beim Laden getrennt")
+            }
+        }
+        previousConnected = state.connected
+    }
+
+    LaunchedEffect(chargeMode, state.connected) {
+        while (chargeMode && !manager.state.value.connected) {
+            if (!manager.state.value.scanning && manager.hasRequiredPermissions()) manager.startScan()
+            delay(15_000)
         }
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("VMAX Dashboard • Version 7.1 Decoder AI") }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text("VMAX Dashboard • Version 7.2 Lade-Diagnose") }) }) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(vertical = 14.dp)
         ) {
-            item { StatusCard(state, gattState) }
+            item { StatusCard(state, gattState, chargeMode) }
             item { SpeedCard(state) }
-
             item { SectionTitle("Bestätigte Fahrdaten") }
             item { MetricRow("Akku", state.batteryPercent?.let { "$it %" } ?: "–", "Kilometer", state.odometerKm?.let { "%.1f km".format(it) } ?: "–") }
             item { MetricRow("Spannung", state.voltageV?.let { "%.2f V".format(it) } ?: "–", "Strom", state.currentA?.let { "%.2f A".format(it) } ?: "–") }
             item { MetricRow("Leistung direkt", state.motorLoadRaw?.let { "$it W" } ?: "–", "Leistung V×A", state.currentPowerW?.let { "%.0f W".format(it) } ?: "–") }
-            item { MetricRow("Max. Tempo", state.maxSpeedKmh?.let { "%.1f km/h".format(it) } ?: "–", "Max. Leistung", state.maxPowerW?.let { "%.0f W".format(it) } ?: "–") }
             item { LightModeCard(state) }
 
             item {
@@ -104,29 +130,43 @@ private fun VmaxApp(manager: BleScooterManager) {
                     Button(onClick = ::connect, enabled = !state.scanning && !state.connected, modifier = Modifier.weight(1f)) {
                         Text(if (state.scanning) "Suche …" else "Verbinden")
                     }
-                    OutlinedButton(onClick = manager::disconnect, enabled = state.connected || state.scanning, modifier = Modifier.weight(1f)) {
-                        Text("Trennen")
-                    }
+                    OutlinedButton(onClick = manager::disconnect, enabled = state.connected || state.scanning, modifier = Modifier.weight(1f)) { Text("Trennen") }
                 }
             }
 
+            item {
+                ChargeDiagnosticCard(
+                    state = state,
+                    active = chargeMode,
+                    startedAt = chargeStartedAt,
+                    lastBattery = lastRealBattery,
+                    lastVoltage = lastRealVoltage,
+                    lastValueAt = lastRealValueAt,
+                    onPlugIn = {
+                        chargeMode = true
+                        chargeStartedAt = System.currentTimeMillis()
+                        marker("Ladegerät einstecken", false)
+                    },
+                    onPower = { marker("Power beim Laden", false) },
+                    onUnplug = {
+                        marker("Ladegerät abziehen", false)
+                        chargeMode = false
+                        if (!state.connected && !state.scanning) connect()
+                    }
+                )
+            }
+
             item { AutoRecordingCard(state, manager::stopMeasurementAndExport, manager::exportSessionCsv) }
-
             item { SectionTitle("Direkttests – einmal drücken") }
-            item { DirectMarkerCard(state, ::directMarker) }
-
-            item { GattSummaryCard(gattState, onScan = gattScanner::scanAndRead, enabled = state.connected) }
+            item { DirectMarkerCard(state) { marker(it) } }
+            item { GattSummaryCard(gattState, gattScanner::scanAndRead, state.connected) }
 
             item {
                 Card(shape = RoundedCornerShape(18.dp)) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("Expertenmodus", fontWeight = FontWeight.Bold)
-                            Text("GATT-Struktur, alle RAW-Kanäle und 3-Schritt-Test")
+                            Text("GATT-Struktur, RAW-Kanäle und Vergleichstest")
                         }
                         Switch(checked = expertMode, onCheckedChange = { expertMode = it })
                     }
@@ -136,71 +176,87 @@ private fun VmaxApp(manager: BleScooterManager) {
             if (expertMode) {
                 item { ConfirmedRawCard(state) }
                 item { SectionTitle("Vollständiger GATT-Explorer") }
-                if (gattState.entries.isEmpty()) {
-                    item { InfoCard("Noch keine GATT-Daten", "Nach der Verbindung startet der sichere READ-Scan automatisch.") }
-                } else {
-                    items(gattState.entries) { GattEntryCard(it) }
-                }
+                if (gattState.entries.isEmpty()) item { InfoCard("Noch keine GATT-Daten", "Nach der Verbindung startet der sichere READ-Scan automatisch.") }
+                else items(gattState.entries) { GattEntryCard(it) }
 
                 item {
                     DecoderLabCard(
-                        state = state,
-                        selectedAction = selectedAction,
-                        onActionSelected = { selectedAction = it },
-                        onBaseline = { manager.startLabBaseline(selectedAction) },
-                        onActive = manager::startLabAction,
-                        onFinish = manager::finishLab
+                        state, selectedAction, { selectedAction = it },
+                        { manager.startLabBaseline(selectedAction) }, manager::startLabAction, manager::finishLab
                     )
                 }
-
                 item { SectionTitle("Alle empfangenen BLE-Kanäle") }
-                if (state.channels.isEmpty()) {
-                    item { InfoCard("Noch keine Live-Daten", "Alle Notify-/Indicate-Kanäle erscheinen nach der Verbindung automatisch.") }
-                } else {
-                    items(state.channels) { ChannelCard(it) }
-                }
+                if (state.channels.isEmpty()) item { InfoCard("Noch keine Live-Daten", "Notify-/Indicate-Kanäle erscheinen nach der Verbindung.") }
+                else items(state.channels) { ChannelCard(it) }
                 item { RawDataCard(state) }
             }
 
             item { SectionTitle("Automatische Lernanalyse") }
-            if (state.autoAnalysisFindings.isEmpty()) {
-                item { InfoCard("Decoder AI läuft", "Stillstand, Fahrt und alle Rohbytes werden dauerhaft aufgezeichnet. Für Schalterdaten direkt vor der Aktion einmal den passenden Testknopf drücken.") }
-            } else {
-                items(state.autoAnalysisFindings.take(20)) { InfoCard(it.marker, it.description) }
-            }
+            if (state.autoAnalysisFindings.isEmpty()) item { InfoCard("Decoder AI läuft", "Fahrt, Stillstand, Ladeabbrüche und Marker werden dauerhaft aufgezeichnet.") }
+            else items(state.autoAnalysisFindings.take(20)) { InfoCard(it.marker, it.description) }
 
             item { SectionTitle("Protokoll") }
-            items(state.log) {
-                Text(it, style = MaterialTheme.typography.bodySmall)
-                HorizontalDivider()
-            }
+            items(state.log) { Text(it, style = MaterialTheme.typography.bodySmall); HorizontalDivider() }
         }
     }
 }
 
 @Composable
-private fun SectionTitle(text: String) {
-    Text(text, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-}
-
-@Composable
-private fun StatusCard(state: ScooterState, gatt: GattScanState) {
+private fun ChargeDiagnosticCard(
+    state: ScooterState,
+    active: Boolean,
+    startedAt: Long,
+    lastBattery: Int?,
+    lastVoltage: Double?,
+    lastValueAt: Long,
+    onPlugIn: () -> Unit,
+    onPower: () -> Unit,
+    onUnplug: () -> Unit
+) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(state.connected, state.lastPacketAt) {
-        while (state.connected) {
-            now = System.currentTimeMillis()
-            delay(1_000)
+    LaunchedEffect(active, state.connected, lastValueAt) {
+        while (active) { now = System.currentTimeMillis(); delay(1_000) }
+    }
+    val age = lastValueAt.takeIf { it > 0 }?.let { ((now - it) / 1_000L).coerceAtLeast(0L) }
+    val duration = if (active && startedAt > 0L) now - startedAt else 0L
+    val status = when {
+        !active -> "Bereit"
+        state.connected && state.packetsPerSecond > 0.1 -> "BLE verbunden – Live-Daten vorhanden"
+        state.connected -> "BLE verbunden – Telemetrie pausiert"
+        state.scanning -> "Controller offline – automatische Suche läuft"
+        else -> "Controller offline – nächster Scan folgt automatisch"
+    }
+    Card(shape = RoundedCornerShape(22.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("🔌 Lade-Diagnose", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(status)
+            if (active) Text("Ladetest: ${formatElapsed(duration)}")
+            Text("Letzter echter Akkuwert: ${lastBattery?.let { "$it %" } ?: "–"}")
+            Text("Letzte echte Spannung: ${lastVoltage?.let { "%.2f V".format(it) } ?: "–"}")
+            if (age != null) Text("Letzte echte Messung vor ${age}s")
+            if (!active) {
+                Button(onClick = onPlugIn, enabled = state.connected, modifier = Modifier.fillMaxWidth()) { Text("1. LADEGERÄT EINSTECKEN") }
+            } else {
+                Button(onClick = onPower, modifier = Modifier.fillMaxWidth()) { Text("2. POWER BEIM LADEN") }
+                OutlinedButton(onClick = onUnplug, modifier = Modifier.fillMaxWidth()) { Text("3. LADEGERÄT ABZIEHEN") }
+            }
+            Text("Offline-Werte werden nicht geschätzt. Die Aufnahme und Marker bleiben auch bei BLE-Abschaltung aktiv.", style = MaterialTheme.typography.bodySmall)
         }
     }
-    val age = state.lastPacketAt.takeIf { it > 0 }?.let { ((now - it) / 1_000L).coerceAtLeast(0) }
+}
+
+@Composable private fun SectionTitle(text: String) = Text(text, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+
+@Composable
+private fun StatusCard(state: ScooterState, gatt: GattScanState, chargeMode: Boolean) {
     Card(shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text(state.status, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(if (state.connected) "● Bluetooth verbunden" else "○ Bluetooth nicht verbunden")
             Text(if (state.recordingActive) "● Auto-KI-Aufnahme läuft" else "○ Aufnahme wartet")
+            if (chargeMode) Text("🔌 Lademodus aktiv – Auto-Reconnect alle 15 Sekunden")
             Text("%.1f Pakete/s • ${state.packetTotal} Pakete • ${state.channels.size} Live-Kanäle".format(state.packetsPerSecond))
             Text("GATT: ${gatt.serviceCount} Dienste • ${gatt.characteristicCount} Characteristics • ${gatt.readableCount} lesbar")
-            if (state.connected && age != null && age > 10) Text("⚠ BLE-Datenstrom pausiert – letztes Paket vor ${age}s")
         }
     }
 }
@@ -212,9 +268,9 @@ private fun SpeedCard(state: ScooterState) {
     Card(shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.fillMaxWidth().padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(state.speedKmh?.let { "%.1f".format(it) } ?: "—", style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.Black)
-            Text("km/h • Hauptquelle 1505 Byte 6–7")
+            Text("km/h • 1505 Byte 6–7")
             Text("150D Vergleich: ${speed150d?.let { "%.1f km/h".format(it) } ?: "–"}")
-            if (diff != null) Text(if (diff <= 1.0) "✓ Quellen stimmen überein" else "⚠ Abweichung %.1f km/h".format(diff))
+            if (diff != null) Text(if (diff <= 1.0) "✓ Quellen stimmen" else "⚠ Abweichung %.1f km/h".format(diff))
         }
     }
 }
@@ -223,28 +279,14 @@ private fun SpeedCard(state: ScooterState) {
 private fun LightModeCard(state: ScooterState) {
     val light = when (state.accessoryByte0) { 0 -> "AUS"; 1 -> "AN"; null -> "–"; else -> "RAW ${state.accessoryByte0}" }
     val mode = when (state.accessoryByte3) { 1 -> "ECO"; 2 -> "SPORT"; null -> "–"; else -> "RAW ${state.accessoryByte3}" }
-    Card(shape = RoundedCornerShape(18.dp)) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            Text("Licht & Fahrmodus", fontWeight = FontWeight.Bold)
-            Text("💡 Licht: $light • RAW 1508/0: ${state.accessoryByte0 ?: "–"}")
-            Text("⚡ Fahrmodus: $mode • RAW 1508/3: ${state.accessoryByte3 ?: "–"}")
-            Text("Für deinen BT638 bestätigt: 0/1 = AUS/AN und 1/2 = ECO/SPORT.", style = MaterialTheme.typography.bodySmall)
-        }
-    }
+    InfoCard("Licht & Fahrmodus", "💡 Licht: $light • RAW 1508/0: ${state.accessoryByte0 ?: "–"}\n⚡ Fahrmodus: $mode • RAW 1508/3: ${state.accessoryByte3 ?: "–"}\nBT638 bestätigt: 0/1 = AUS/AN und 1/2 = ECO/SPORT.")
 }
 
 @Composable
 private fun AutoRecordingCard(state: ScooterState, onStop: () -> Unit, onExport: () -> Unit) {
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(state.recordingActive) {
-        while (state.recordingActive) { now = System.currentTimeMillis(); delay(250) }
-    }
-    val elapsed = if (state.recordingActive) (now - state.recordingStartedAt).coerceAtLeast(0) else 0
     Card(shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Automatische Daueraufnahme", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("Startet nach der Verbindung selbst. Alle Live-Daten und READ-Ergebnisse werden im selben Decoderprofil verglichen.")
-            Text(formatElapsed(elapsed), style = MaterialTheme.typography.titleLarge)
             Text("Pakete: ${state.recordingPacketCount} • Marker: ${state.markerCount}")
             Button(onClick = onStop, enabled = state.recordingActive, modifier = Modifier.fillMaxWidth()) { Text("STOPPEN, ANALYSIEREN & SPEICHERN") }
             OutlinedButton(onClick = onExport, enabled = state.packetTotal > 0, modifier = Modifier.fillMaxWidth()) { Text("Rohdaten zusätzlich als CSV") }
@@ -255,20 +297,12 @@ private fun AutoRecordingCard(state: ScooterState, onStop: () -> Unit, onExport:
 
 @Composable
 private fun DirectMarkerCard(state: ScooterState, onMarker: (String) -> Unit) {
-    val markers = listOf(
-        "Stillstand", "Bremse im Stand", "Schieben frei", "Bremse beim Schieben",
-        "Licht AUS", "Licht AN", "ECO", "SPORT",
-        "Blinker links", "Blinker rechts", "Anfahren", "Rollen", "Vollgas", "Laden"
-    )
+    val markers = listOf("Stillstand", "Bremse im Stand", "Schieben frei", "Bremse beim Schieben", "Licht AUS", "Licht AN", "ECO", "SPORT", "Blinker links", "Blinker rechts", "Anfahren", "Rollen", "Vollgas")
     Card(shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Ein-Knopf-Tests", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("Direkt vor der Aktion einmal drücken. Falls die Aufnahme aus ist, startet sie automatisch.")
             markers.chunked(2).forEach { row ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    row.forEach { marker ->
-                        Button(onClick = { onMarker(marker) }, enabled = state.connected, modifier = Modifier.weight(1f)) { Text(marker) }
-                    }
+                    row.forEach { m -> Button(onClick = { onMarker(m) }, enabled = state.connected, modifier = Modifier.weight(1f)) { Text(m) } }
                     if (row.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
@@ -279,162 +313,43 @@ private fun DirectMarkerCard(state: ScooterState, onMarker: (String) -> Unit) {
 
 @Composable
 private fun GattSummaryCard(state: GattScanState, onScan: () -> Unit, enabled: Boolean) {
-    Card(shape = RoundedCornerShape(18.dp)) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            Text("BLE-Explorer & sicherer READ-Scan", fontWeight = FontWeight.Bold)
-            Text(state.status)
-            Text("Dienste ${state.serviceCount} • Characteristics ${state.characteristicCount} • READ ${state.readableCount} • gestartet ${state.startedReads}")
-            LinearProgressIndicator(
-                progress = { if (state.readableCount > 0) state.startedReads.toFloat() / state.readableCount else 0f },
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedButton(onClick = onScan, enabled = enabled && !state.running, modifier = Modifier.fillMaxWidth()) {
-                Text(if (state.running) "READ-SCAN LÄUFT" else "ALLE SICHEREN READ-FELDER NOCHMALS LESEN")
-            }
-            Text("Es wird nichts geschrieben. WRITE-Fähigkeiten werden nur angezeigt.", style = MaterialTheme.typography.bodySmall)
-        }
-    }
+    InfoCard("BLE-Explorer & sicherer READ-Scan", "${state.status}\nDienste ${state.serviceCount} • Characteristics ${state.characteristicCount} • READ ${state.readableCount} • gestartet ${state.startedReads}")
+    OutlinedButton(onClick = onScan, enabled = enabled && !state.running, modifier = Modifier.fillMaxWidth()) { Text("ALLE SICHEREN READ-FELDER LESEN") }
 }
 
-@Composable
-private fun GattEntryCard(entry: GattCharacteristicInfo) {
-    val status = when {
-        entry.lastReadStarted -> "✓ READ gestartet"
-        entry.readable -> "READ verfügbar"
-        entry.notifiable || entry.indicatable -> "Live-Kanal"
-        else -> "statisch/sonstig"
-    }
-    Card(shape = RoundedCornerShape(14.dp)) {
-        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text("${entry.serviceUuid} → ${entry.characteristicUuid}", fontWeight = FontWeight.Bold)
-            Text(entry.properties, style = MaterialTheme.typography.bodySmall)
-            Text(status, style = MaterialTheme.typography.labelMedium)
-        }
-    }
-}
+@Composable private fun GattEntryCard(e: GattCharacteristicInfo) = InfoCard("${e.serviceUuid} → ${e.characteristicUuid}", "${e.properties}\n${if (e.lastReadStarted) "✓ READ gestartet" else if (e.readable) "READ verfügbar" else "Live/statisch"}")
 
 @Composable
 private fun ConfirmedRawCard(state: ScooterState) {
-    val p1505 = parseHex(state.rawPackets["1505"])
-    val p1502 = parseHex(state.rawPackets["1502"])
-    val p150a = parseHex(state.rawPackets["150A"])
-    val p150d = parseHex(state.rawPackets["150D"])
-    Card(shape = RoundedCornerShape(18.dp)) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text("Bestätigte & starke RAW-Felder", fontWeight = FontWeight.Bold)
-            Text("🟢 1505 Motor/Leistung A: ${u16be(p1505, 0) ?: "–"}")
-            Text("🟢 1505 Motor/Leistung B: ${u16be(p1505, 2) ?: "–"}")
-            Text("🟢 1505 Tempo RAW: ${u16be(p1505, 6) ?: "–"}")
-            Text("🟢 150D Tempo RAW: ${u16be(p150d, 0) ?: "–"}")
-            Text("🟡 150D Feld 2: ${u16be(p150d, 2) ?: "–"}")
-            Text("🟡 150A Strom/Last: ${u16be(p150a, 0) ?: "–"}")
-            Text("🟡 1502 statisch A/B: ${u16be(p1502, 0) ?: "–"} / ${u16be(p1502, 6) ?: "–"}")
-        }
-    }
+    val a = parseHex(state.rawPackets["1505"]); val b = parseHex(state.rawPackets["1502"]); val c = parseHex(state.rawPackets["150A"]); val d = parseHex(state.rawPackets["150D"])
+    InfoCard("Bestätigte & starke RAW-Felder", "1505 A/B: ${u16be(a,0) ?: "–"} / ${u16be(a,2) ?: "–"}\n1505 Tempo: ${u16be(a,6) ?: "–"}\n150D Tempo/Feld2: ${u16be(d,0) ?: "–"} / ${u16be(d,2) ?: "–"}\n150A Last: ${u16be(c,0) ?: "–"}\n1502 A/B: ${u16be(b,0) ?: "–"} / ${u16be(b,6) ?: "–"}")
 }
 
 @Composable
-private fun DecoderLabCard(
-    state: ScooterState,
-    selectedAction: String,
-    onActionSelected: (String) -> Unit,
-    onBaseline: () -> Unit,
-    onActive: () -> Unit,
-    onFinish: () -> Unit
-) {
-    val actions = listOf("Bremse", "Blinker links", "Blinker rechts", "Licht", "Fahrmodus", "Gas", "Rekuperation")
+private fun DecoderLabCard(state: ScooterState, selected: String, select: (String)->Unit, baseline:()->Unit, active:()->Unit, finish:()->Unit) {
     var expanded by remember { mutableStateOf(false) }
-    Card(shape = RoundedCornerShape(18.dp)) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Optionaler 3-Schritt-Vergleichstest", fontWeight = FontWeight.Bold)
-            Box {
-                OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) { Text(selectedAction) }
-                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                    actions.forEach { action -> DropdownMenuItem(text = { Text(action) }, onClick = { onActionSelected(action); expanded = false }) }
-                }
-            }
-            Text("Phase: ${state.labPhase}")
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Button(onClick = onBaseline, enabled = state.connected && !state.labRunning, modifier = Modifier.weight(1f)) { Text("1 Ruhe") }
-                Button(onClick = onActive, enabled = state.labRunning && state.labPhase.startsWith("1/2"), modifier = Modifier.weight(1f)) { Text("2 Aktion") }
-                Button(onClick = onFinish, enabled = state.labRunning && state.labPhase.startsWith("2/2"), modifier = Modifier.weight(1f)) { Text("3 Fertig") }
-            }
-            state.labCandidates.take(8).forEach { Text("${it.characteristic} Byte ${it.byteIndex}: ${it.beforeValue}→${it.activeValue} • ${it.score}%", style = MaterialTheme.typography.bodySmall) }
+    val actions = listOf("Bremse", "Blinker links", "Blinker rechts", "Licht", "Fahrmodus", "Gas", "Rekuperation")
+    Card(shape = RoundedCornerShape(18.dp)) { Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Optionaler 3-Schritt-Test", fontWeight = FontWeight.Bold)
+        Box { OutlinedButton(onClick={expanded=true}, modifier=Modifier.fillMaxWidth()){Text(selected)}; DropdownMenu(expanded, {expanded=false}) { actions.forEach { a -> DropdownMenuItem({Text(a)}, {select(a);expanded=false}) } } }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+            Button(baseline, enabled=state.connected&&!state.labRunning, modifier=Modifier.weight(1f)){Text("1 Ruhe")}
+            Button(active, enabled=state.labRunning&&state.labPhase.startsWith("1/2"), modifier=Modifier.weight(1f)){Text("2 Aktion")}
+            Button(finish, enabled=state.labRunning&&state.labPhase.startsWith("2/2"), modifier=Modifier.weight(1f)){Text("3 Fertig")}
         }
-    }
+    } }
 }
 
 @Composable
-private fun ChannelCard(channel: BleChannelState) {
-    val bytes = channel.hex.split("-").filter { it.isNotBlank() }
-    val unsupported = bytes.isNotEmpty() && bytes.all { it.equals("FF", true) }
-    val level = when {
-        unsupported -> "🔴 nicht unterstützt"
-        channel.knowledge.contains("Bestätigt", true) -> "🟢 bestätigt"
-        channel.knowledge.contains("Kandidat", true) -> "🟡 Kandidat"
-        else -> "⚪ unbekannt"
-    }
-    Card(shape = RoundedCornerShape(16.dp)) {
-        Column(Modifier.fillMaxWidth().padding(13.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("${channel.channel} • ${channel.title}", fontWeight = FontWeight.Bold)
-                Text(level, style = MaterialTheme.typography.labelSmall)
-            }
-            Text(if (unsupported) "Nur FF-Platzhalter" else channel.meaning, style = MaterialTheme.typography.bodySmall)
-            Text("Pakete ${channel.packetCount} • geändert ${channel.changedBytes}")
-            Text(channel.hex, style = MaterialTheme.typography.bodySmall)
-        }
-    }
-}
+private fun ChannelCard(c: BleChannelState) = InfoCard("${c.channel} • ${c.title}", "${c.knowledge} • Pakete ${c.packetCount} • Δ ${c.changedBytes}\n${c.hex}")
+
+@Composable private fun RawDataCard(state: ScooterState) = InfoCard("Letztes BLE-Paket", "${state.lastCharacteristic.ifBlank { "–" }} • Δ ${state.lastChangedBytes}\n${state.lastRawHex.ifBlank { "Noch keine Daten" }}")
 
 @Composable
-private fun RawDataCard(state: ScooterState) {
-    InfoCard("Letztes BLE-Paket", "${state.lastCharacteristic.ifBlank { "–" }} • Δ ${state.lastChangedBytes}\n${state.lastRawHex.ifBlank { "Noch keine Daten" }}")
-}
-
-@Composable
-private fun MetricRow(title1: String, value1: String, title2: String, value2: String) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        MetricCard(title1, value1, Modifier.weight(1f))
-        MetricCard(title2, value2, Modifier.weight(1f))
-    }
-}
-
-@Composable
-private fun MetricCard(title: String, value: String, modifier: Modifier = Modifier) {
-    Card(modifier = modifier, shape = RoundedCornerShape(18.dp)) {
-        Column(Modifier.fillMaxWidth().padding(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(title, style = MaterialTheme.typography.labelLarge)
-            Spacer(Modifier.height(6.dp))
-            Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        }
-    }
-}
-
-@Composable
-private fun InfoCard(title: String, text: String) {
-    Card(shape = RoundedCornerShape(18.dp)) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(title, fontWeight = FontWeight.Bold)
-            Text(text, style = MaterialTheme.typography.bodySmall)
-        }
-    }
-}
-
-private fun decode150dSpeed(hex: String?): Double? {
-    val raw = u16be(parseHex(hex), 0) ?: return null
-    return if (raw == 0xFFFF) null else raw / 10.0
-}
-
-private fun parseHex(hex: String?): List<Int> =
-    hex.orEmpty().split('-', ' ', ':').mapNotNull { it.trim().takeIf { token -> token.length == 2 }?.toIntOrNull(16) }
-
-private fun u16be(bytes: List<Int>, index: Int): Int? =
-    if (index < 0 || index + 1 >= bytes.size) null else (bytes[index] shl 8) or bytes[index + 1]
-
-private fun formatElapsed(ms: Long): String {
-    val hours = ms / 3_600_000
-    val minutes = (ms / 60_000) % 60
-    val seconds = (ms / 1_000) % 60
-    return "%02d:%02d:%02d".format(hours, minutes, seconds)
-}
+private fun MetricRow(t1:String,v1:String,t2:String,v2:String) { Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(10.dp)) { MetricCard(t1,v1,Modifier.weight(1f)); MetricCard(t2,v2,Modifier.weight(1f)) } }
+@Composable private fun MetricCard(t:String,v:String,m:Modifier=Modifier) { Card(m, shape=RoundedCornerShape(18.dp)) { Column(Modifier.fillMaxWidth().padding(14.dp), horizontalAlignment=Alignment.CenterHorizontally) { Text(t); Text(v, fontWeight=FontWeight.Bold) } } }
+@Composable private fun InfoCard(t:String,x:String) { Card(shape=RoundedCornerShape(18.dp)) { Column(Modifier.fillMaxWidth().padding(16.dp)) { Text(t,fontWeight=FontWeight.Bold); Text(x,style=MaterialTheme.typography.bodySmall) } } }
+private fun decode150dSpeed(hex:String?):Double? { val r=u16be(parseHex(hex),0)?:return null; return if(r==0xFFFF)null else r/10.0 }
+private fun parseHex(hex:String?):List<Int> = hex.orEmpty().split('-',' ',':').mapNotNull { it.trim().takeIf { x->x.length==2 }?.toIntOrNull(16) }
+private fun u16be(b:List<Int>,i:Int):Int? = if(i<0||i+1>=b.size)null else (b[i] shl 8) or b[i+1]
+private fun formatElapsed(ms:Long):String = "%02d:%02d:%02d".format(ms/3_600_000,(ms/60_000)%60,(ms/1_000)%60)
