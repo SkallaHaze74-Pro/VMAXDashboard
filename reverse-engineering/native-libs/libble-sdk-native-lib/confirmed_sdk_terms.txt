@@ -1,0 +1,33 @@
+AssistFactor
+BatterySerialNumber
+BootloaderVersion
+BrakeCombined
+BrakeStatic
+DynamicFactor
+ExtendedBatterySerialNumber
+ExtendedBatterySoftChargeMode
+ExtendedBatteryStorageMode
+MainBatterySoftChargeMode
+MainBatteryStorageMode
+MaxSpeed
+MotorTemperature
+SpeedCut
+StateOfCharge
+
+Additional confirmed native capabilities:
+- ReadCharacteristicBatteryInfo
+- ReadCharacteristicBatteryCell
+- ReadCharacteristicBatteryChange
+- ReadCharacteristicTotalTrip
+- ReadCharacteristicFirmwareID
+- ReadCharacteristicFirmwareDataExtended
+- ReadCharacteristicFirmwareTQData
+- ReadCharacteristicMotorTuning
+- SetMotorTuning
+- ResetMotorTuning
+- WriteMotorTuning
+- StartOTAUpdate
+- UploadOTAFile
+- firmware/hardware summary parsing
+
+Confidence note: these are confirmed capabilities of the supplied generic GPST BLE SDK binary. BT638 support must still be verified characteristic-by-characteristic and by read-back.
