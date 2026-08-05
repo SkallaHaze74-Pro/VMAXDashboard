@@ -1,0 +1,1 @@
+Pull-request build trigger for corrected visible Version 7.4 title and BuildConfig.VERSION_NAME display.
