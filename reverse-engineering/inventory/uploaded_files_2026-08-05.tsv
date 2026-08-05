@@ -1,0 +1,10 @@
+filename	size_bytes	sha256	file_type
+libble-sdk-native-lib.so	1433968	6050df512a62edb19279d169c0e416a6674ed036d046f5026c6a6512dafe7760	ELF 64-bit ARM aarch64 shared object; Android 28; NDK r28-beta2; stripped
+libbugsnag-ndk.so	1150192	b0049b240ece72d799bd8900ef19b5ffd2a3a009bad4ca73c746fc2770b85702	ELF 64-bit ARM aarch64 shared object; Android 21; NDK r23b; stripped
+libbugsnag-plugin-android-anr.so	13656	2a145c6fd8c75db3ca64d1a4ce5b1220a1f1019a34dd11cd8fad6390640460ba	ELF 64-bit ARM aarch64 shared object; Android 21; NDK r23b; stripped
+libbugsnag-root-detection.so	5016	b121e17b36f93a13796b90f659124cc26dc03c473689b24bab717f650567ba3a	ELF 64-bit ARM aarch64 shared object; Android 21; NDK r23b; stripped
+libdatastore_shared_counter.so	7112	d3e48717c9aa147e0ab21063ba0e8e0211cabf8bf40b222640829519edbf58e1	ELF 64-bit ARM aarch64 shared object; Android 21; NDK r25c; stripped
+libMapViewerDll.so	12789768	f4c97c1a7260a1b3109f9953d00d5c6f70faaf1a4f433ce1a25491d3d1db4198	ELF 64-bit ARM aarch64 shared object; Android 30; NDK r28-beta2; stripped
+libnative-lib.so	17800	be2e8af6cbe518e5b77928620ce6a3fba2318d437a878ab2b4e74e06d74d559d	ELF 64-bit ARM aarch64 shared object; stripped
+libutil.so	1083272	815d0a0625eb69e51178fedf95d2e1ed15034698249fb3986e426c0017f82053	ELF 64-bit ARM aarch64 shared object; Android 24; NDK r28b; stripped
+VMAX_com.gpstuner.vmax_2.0#m-2688-g8ec416.m-1902-g6bb7aa.m-879-gc7a16e.v0.9-233-g302cf5.v1.0-257-g9d89ff_V125345.apk	70760791	5f9ee266672bf7f24c7b45dd35546a46317498a499daeeff0dc1ef121ccdb8af	Android base APK; six DEX files; no native libraries inside archive
