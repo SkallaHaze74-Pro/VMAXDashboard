@@ -24,7 +24,10 @@ data class GattCharacteristicInfo(
     val notifiable: Boolean,
     val indicatable: Boolean,
     val writable: Boolean,
-    val lastReadStarted: Boolean = false
+    val lastReadStarted: Boolean = false,
+    val evidence: String = CapabilityEvidence.UNKNOWN.label,
+    val family: String = "Unbekannt",
+    val meaning: String = ""
 )
 
 data class GattScanState(
@@ -34,6 +37,10 @@ data class GattScanState(
     val characteristicCount: Int = 0,
     val readableCount: Int = 0,
     val startedReads: Int = 0,
+    val confirmedCount: Int = 0,
+    val observedCount: Int = 0,
+    val sdkKnownCount: Int = 0,
+    val unknownCount: Int = 0,
     val entries: List<GattCharacteristicInfo> = emptyList(),
     val status: String = "Warte auf Verbindung"
 )
@@ -63,20 +70,38 @@ class GattReadScanner(private val manager: BleScooterManager) {
 
         val services = gatt.services.orEmpty()
         val entries = services.flatMap { service ->
+            val serviceShort = shortUuid(service.uuid.toString())
             service.characteristics.map { characteristic ->
+                val characteristicShort = shortUuid(characteristic.uuid.toString())
                 val p = characteristic.properties
+                val knowledge = VmaxSdkCapabilityCatalog.classify(serviceShort, characteristicShort)
                 GattCharacteristicInfo(
-                    serviceUuid = shortUuid(service.uuid.toString()),
-                    characteristicUuid = shortUuid(characteristic.uuid.toString()),
-                    properties = propertyText(p),
+                    serviceUuid = serviceShort,
+                    characteristicUuid = characteristicShort,
+                    properties = buildString {
+                        append(propertyText(p))
+                        append(" • ")
+                        append(knowledge.evidence.label)
+                        append(" • ")
+                        append(knowledge.family)
+                        if (knowledge.meaning.isNotBlank()) {
+                            append("\n")
+                            append(knowledge.meaning)
+                        }
+                    },
                     readable = p and BluetoothGattCharacteristic.PROPERTY_READ != 0,
                     notifiable = p and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0,
                     indicatable = p and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0,
                     writable = p and BluetoothGattCharacteristic.PROPERTY_WRITE != 0 ||
-                        p and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0
+                        p and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0,
+                    evidence = knowledge.evidence.label,
+                    family = knowledge.family,
+                    meaning = knowledge.meaning
                 )
             }
-        }.sortedWith(compareBy({ it.serviceUuid }, { it.characteristicUuid }))
+        }.sortedWith(
+            compareBy<GattCharacteristicInfo>({ evidenceRank(it.evidence) }, { it.serviceUuid }, { it.characteristicUuid })
+        )
 
         queue.clear()
         services.forEach { service ->
@@ -85,14 +110,22 @@ class GattReadScanner(private val manager: BleScooterManager) {
                 .forEach(queue::addLast)
         }
 
+        val confirmed = entries.count { it.evidence == CapabilityEvidence.BT638_CONFIRMED.label }
+        val observed = entries.count { it.evidence == CapabilityEvidence.BT638_OBSERVED.label }
+        val sdkKnown = entries.count { it.evidence == CapabilityEvidence.SDK_CONFIRMED.label }
+        val unknown = entries.count { it.evidence == CapabilityEvidence.UNKNOWN.label }
         val currentGeneration = ++generation
         _state.value = GattScanState(
             running = true,
             serviceCount = services.size,
             characteristicCount = entries.size,
             readableCount = queue.size,
+            confirmedCount = confirmed,
+            observedCount = observed,
+            sdkKnownCount = sdkKnown,
+            unknownCount = unknown,
             entries = entries,
-            status = "${services.size} Dienste, ${entries.size} Characteristics – READ-Scan läuft"
+            status = "${services.size} Dienste, ${entries.size} Characteristics – $confirmed bestätigt, $observed beobachtet, $sdkKnown SDK-bekannt, $unknown unbekannt"
         )
         readNext(gatt, currentGeneration, 0)
     }
@@ -106,7 +139,7 @@ class GattReadScanner(private val manager: BleScooterManager) {
                 running = false,
                 completed = true,
                 startedReads = started,
-                status = "READ-Scan fertig: $started/${_state.value.readableCount} Lesevorgänge gestartet"
+                status = "READ-Scan fertig: $started/${_state.value.readableCount} gestartet • ${_state.value.confirmedCount} BT638 bestätigt • ${_state.value.sdkKnownCount} nur SDK"
             )
             return
         }
@@ -121,8 +154,8 @@ class GattReadScanner(private val manager: BleScooterManager) {
             }
         )
 
-        // Android allows only one GATT operation at a time. The manager receives
-        // read callbacks; a conservative delay keeps this scanner read-only and stable.
+        // Android permits one GATT operation at a time. Read callbacks are handled
+        // by BleScooterManager; this conservative interval keeps the scan stable.
         handler.postDelayed(
             { readNext(gatt, expectedGeneration, started + if (readStarted) 1 else 0) },
             650L
@@ -143,6 +176,14 @@ class GattReadScanner(private val manager: BleScooterManager) {
         if (properties and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0) add("INDICATE")
         if (properties and BluetoothGattCharacteristic.PROPERTY_BROADCAST != 0) add("BROADCAST")
     }.ifEmpty { listOf("–") }.joinToString(" • ")
+
+    private fun evidenceRank(value: String): Int = when (value) {
+        CapabilityEvidence.BT638_CONFIRMED.label -> 0
+        CapabilityEvidence.BT638_OBSERVED.label -> 1
+        CapabilityEvidence.SDK_CONFIRMED.label -> 2
+        CapabilityEvidence.BLUETOOTH_STANDARD.label -> 3
+        else -> 4
+    }
 
     private fun shortUuid(uuid: String): String =
         if (uuid.startsWith("da1a") && uuid.length >= 8) uuid.substring(4, 8).uppercase()
