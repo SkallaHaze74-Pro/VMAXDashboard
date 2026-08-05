@@ -111,7 +111,21 @@ private fun VmaxApp(manager: BleScooterManager) {
         }
     }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("VMAX Dashboard • Version 7.2 Lade-Diagnose") }) }) { padding ->
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text("VMAX Dashboard • Version 7.4")
+                        Text(
+                            "Capability Matrix & Decoder AI • Build ${BuildConfig.VERSION_NAME}",
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                }
+            )
+        }
+    ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -252,6 +266,7 @@ private fun StatusCard(state: ScooterState, gatt: GattScanState, chargeMode: Boo
     Card(shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text(state.status, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("Version 7.4 • Build ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodySmall)
             Text(if (state.connected) "● Bluetooth verbunden" else "○ Bluetooth nicht verbunden")
             Text(if (state.recordingActive) "● Auto-KI-Aufnahme läuft" else "○ Aufnahme wartet")
             if (chargeMode) Text("🔌 Lademodus aktiv – Auto-Reconnect alle 15 Sekunden")
