@@ -1,0 +1,2 @@
+Build trigger for corrected visible Version 7.4 title and BuildConfig.VERSION_NAME display.
+Source commit: 3146bc2e9de7a835196c579a769363fdd2d6ff5c
