@@ -1,0 +1,1 @@
+Build Version 7.1 Decoder AI mit GATT-Explorer, READ-Scan und Ein-Knopf-Tests.
