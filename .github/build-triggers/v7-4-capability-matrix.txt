@@ -1,0 +1,1 @@
+Build validation for VMAX SDK capability catalog and classified read-only GATT explorer.
