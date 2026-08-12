@@ -7,16 +7,31 @@ on:
       - 'tools/decoder_ai/**'
       - '.github/workflows/decoder-ai.yml'
       - 'app/src/main/java/de/kevin/vmaxdashboard/AdaptiveDecoderProfileStore.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/AdaptiveDecoderRuntime.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/DecoderAiCloudSync.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/GitHubSyncActivity.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/GitHubTelemetrySync.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/LearningProfileStore.kt'
-      - 'app/src/main/java/de/kevin/vmaxdashboard/BleScooterManager.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/ScooterState.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/LiveTelemetryDecoder.kt'
-      - 'app/src/main/java/de/kevin/vmaxdashboard/MainActivity.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/VMAXSyncApplication.kt'
   push:
-    branches: [telemetry-data]
+    branches:
+      - telemetry-data
+      - feature/v7-6-adaptive-decoder-ai-final
     paths:
       - 'fahrdaten/**/manifest.json'
+      - 'tools/decoder_ai/**'
+      - '.github/workflows/decoder-ai.yml'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/AdaptiveDecoderProfileStore.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/AdaptiveDecoderRuntime.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/DecoderAiCloudSync.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/GitHubSyncActivity.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/GitHubTelemetrySync.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/LearningProfileStore.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/ScooterState.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/LiveTelemetryDecoder.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/VMAXSyncApplication.kt'
   workflow_dispatch:
 
 permissions:
@@ -59,3 +74,27 @@ jobs:
           git add decoder-ai/decoder_profile.json decoder-ai/analysis_report.md
           git commit -m 'Decoder AI: Fahrdaten-Konsens aktualisieren'
           git push origin HEAD:telemetry-data
+
+  android-verify:
+    if: github.ref == 'refs/heads/feature/v7-6-adaptive-decoder-ai-final'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Projekt laden
+        uses: actions/checkout@v4
+
+      - name: Java 17 einrichten
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Gradle einrichten
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: V7.6 Debug-APK kompilieren
+        run: |
+          export VERSION_CODE=7600
+          export VERSION_NAME='7.6.0-adaptive-ai-check'
+          gradle assembleDebug --stacktrace
