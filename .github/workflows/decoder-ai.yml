@@ -1,0 +1,142 @@
+name: VMAX Decoder AI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tools/decoder_ai/**'
+      - '.github/workflows/decoder-ai.yml'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/AdaptiveDecoderProfileStore.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/AdaptiveDecoderRuntime.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/DecoderAiCloudSync.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/GitHubSyncActivity.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/GitHubTelemetrySync.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/LearningProfileStore.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/ScooterState.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/LiveTelemetryDecoder.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/OriginalSdkRealtimeDecoder.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/VmaxProtocolCatalog.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/MainActivity.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/VMAXSyncApplication.kt'
+  push:
+    branches:
+      - telemetry-data
+      - feature/v7-6-adaptive-decoder-ai-final
+    paths:
+      - 'fahrdaten/**/manifest.json'
+      - 'tools/decoder_ai/**'
+      - '.github/workflows/decoder-ai.yml'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/AdaptiveDecoderProfileStore.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/AdaptiveDecoderRuntime.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/DecoderAiCloudSync.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/GitHubSyncActivity.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/GitHubTelemetrySync.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/LearningProfileStore.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/ScooterState.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/LiveTelemetryDecoder.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/OriginalSdkRealtimeDecoder.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/VmaxProtocolCatalog.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/MainActivity.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/VMAXSyncApplication.kt'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  decoder-ai:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repository laden
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Decoder-AI Module validieren
+        run: |
+          python -m py_compile tools/decoder_ai/*.py
+          python -m json.tool tools/decoder_ai/original_app_semantics.json >/dev/null
+
+      - name: Decoder-AI Tests
+        run: |
+          python tools/decoder_ai/test_consensus.py
+          python tools/decoder_ai/test_libble_compare.py
+
+      - name: libble SDK gegen BT638-Livestand vergleichen
+        if: github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data'
+        run: |
+          python tools/decoder_ai/libble_compare.py \
+            --root fahrdaten \
+            --output decoder-ai/libble_comparison.json \
+            --report decoder-ai/libble_comparison.md
+
+      - name: Original-App Sollwerte gegen BT638 abgleichen
+        if: github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data'
+        run: |
+          python tools/decoder_ai/original_app_compare.py \
+            --semantics tools/decoder_ai/original_app_semantics.json \
+            --libble decoder-ai/libble_comparison.json \
+            --output decoder-ai/original_app_comparison.json \
+            --report decoder-ai/original_app_comparison.md
+
+      - name: Unbekannte Felder über mehrere Fahrten lernen
+        if: github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data'
+        run: |
+          python tools/decoder_ai/consensus.py \
+            --root fahrdaten \
+            --output decoder-ai/decoder_profile.json \
+            --report decoder-ai/analysis_report.md
+
+      - name: Neue Decoder-Ergebnisse speichern
+        if: github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data'
+        run: |
+          if git diff --quiet -- \
+            decoder-ai/decoder_profile.json \
+            decoder-ai/analysis_report.md \
+            decoder-ai/libble_comparison.json \
+            decoder-ai/libble_comparison.md \
+            decoder-ai/original_app_comparison.json \
+            decoder-ai/original_app_comparison.md; then
+            echo 'Keine neue Decoder-Evidenz.'
+            exit 0
+          fi
+          git config user.name 'VMAX Decoder AI'
+          git config user.email 'actions@users.noreply.github.com'
+          git add \
+            decoder-ai/decoder_profile.json \
+            decoder-ai/analysis_report.md \
+            decoder-ai/libble_comparison.json \
+            decoder-ai/libble_comparison.md \
+            decoder-ai/original_app_comparison.json \
+            decoder-ai/original_app_comparison.md
+          git commit -m 'Decoder AI: Original-App, libble und Fahrdaten abgleichen'
+          git push origin HEAD:telemetry-data
+
+  android-verify:
+    if: github.ref == 'refs/heads/feature/v7-6-adaptive-decoder-ai-final'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Projekt laden
+        uses: actions/checkout@v4
+
+      - name: Java 17 einrichten
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Gradle einrichten
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: V7.6 Debug-APK kompilieren
+        run: |
+          export VERSION_CODE=7600
+          export VERSION_NAME='7.6.0-adaptive-ai-check'
+          gradle assembleDebug --stacktrace

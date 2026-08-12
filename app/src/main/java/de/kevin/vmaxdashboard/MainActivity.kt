@@ -50,6 +50,7 @@ private fun VmaxApp(manager: BleScooterManager) {
     val context = LocalContext.current
     val githubSync = remember(context) { GitHubTelemetrySync.get(context.applicationContext) }
     var githubSnapshot by remember { mutableStateOf(githubSync.snapshot()) }
+    var aiProfile by remember { mutableStateOf(AdaptiveDecoderRuntime.snapshot()) }
     var expertMode by remember { mutableStateOf(true) }
     var selectedAction by remember { mutableStateOf("Bremse") }
     var chargeMode by remember { mutableStateOf(false) }
@@ -88,6 +89,7 @@ private fun VmaxApp(manager: BleScooterManager) {
     LaunchedEffect(Unit) {
         while (true) {
             githubSnapshot = githubSync.snapshot()
+            aiProfile = AdaptiveDecoderRuntime.snapshot()
             delay(1_000)
         }
     }
@@ -128,9 +130,9 @@ private fun VmaxApp(manager: BleScooterManager) {
             TopAppBar(
                 title = {
                     Column {
-                        Text("VMAX Dashboard • Version 7.5")
+                        Text("VMAX Dashboard • Version 7.6")
                         Text(
-                            "GitHub Sync & Decoder AI • Build ${BuildConfig.VERSION_NAME}",
+                            "Original SDK Live + Adaptive Decoder AI • Build ${BuildConfig.VERSION_NAME}",
                             style = MaterialTheme.typography.labelSmall
                         )
                     }
@@ -143,13 +145,14 @@ private fun VmaxApp(manager: BleScooterManager) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(vertical = 14.dp)
         ) {
-            item { StatusCard(state, gattState, chargeMode) }
+            item { StatusCard(state, gattState, chargeMode, aiProfile) }
             item { SpeedCard(state) }
             item { SectionTitle("Bestätigte Fahrdaten") }
             item { MetricRow("Akku", state.batteryPercent?.let { "$it %" } ?: "–", "Kilometer", state.odometerKm?.let { "%.1f km".format(it) } ?: "–") }
             item { MetricRow("Spannung", state.voltageV?.let { "%.2f V".format(it) } ?: "–", "Strom", state.currentA?.let { "%.2f A".format(it) } ?: "–") }
-            item { MetricRow("Leistung direkt", state.motorLoadRaw?.let { "$it W" } ?: "–", "Leistung V×A", state.currentPowerW?.let { "%.0f W".format(it) } ?: "–") }
+            item { MetricRow("Leistung direkt", state.sdkDirectPowerW?.let { "%.0f W".format(it) } ?: state.motorLoadRaw?.let { "$it W" } ?: "–", "Leistung V×A", state.currentPowerW?.let { "%.0f W".format(it) } ?: "–") }
             item { LightModeCard(state) }
+            item { OriginalSdkRealtimeCard(state) }
 
             item {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -186,10 +189,14 @@ private fun VmaxApp(manager: BleScooterManager) {
             item {
                 GitHubSyncCard(
                     snapshot = githubSnapshot,
+                    aiProfile = aiProfile,
                     onOpen = {
                         context.startActivity(Intent(context, GitHubSyncActivity::class.java))
                     }
                 )
+            }
+            if (aiProfile.confirmedRuleCount > 0) {
+                item { AdaptiveLiveCard(state, aiProfile) }
             }
             item { SectionTitle("Direkttests – einmal drücken") }
             item { DirectMarkerCard(state) { marker(it) } }
@@ -282,13 +289,14 @@ private fun ChargeDiagnosticCard(
 @Composable private fun SectionTitle(text: String) = Text(text, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
 
 @Composable
-private fun StatusCard(state: ScooterState, gatt: GattScanState, chargeMode: Boolean) {
+private fun StatusCard(state: ScooterState, gatt: GattScanState, chargeMode: Boolean, aiProfile: AdaptiveProfileSnapshot) {
     Card(shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text(state.status, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("Version 7.5 • Build ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodySmall)
+            Text("Version 7.6 • Build ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodySmall)
             Text(if (state.connected) "● Bluetooth verbunden" else "○ Bluetooth nicht verbunden")
             Text(if (state.recordingActive) "● Auto-KI-Aufnahme läuft" else "○ Aufnahme wartet")
+            Text("Original-SDK live: ${state.sdkLiveFieldCount} Felder • Decoder AI: ${aiProfile.confirmedRuleCount}/${aiProfile.ruleCount} bestätigt", style = MaterialTheme.typography.bodySmall)
             if (chargeMode) Text("🔌 Lademodus aktiv – Auto-Reconnect alle 15 Sekunden")
             Text("%.1f Pakete/s • ${state.packetTotal} Pakete • ${state.channels.size} Live-Kanäle".format(state.packetsPerSecond))
             Text("GATT: ${gatt.serviceCount} Dienste • ${gatt.characteristicCount} Characteristics • ${gatt.readableCount} lesbar")
@@ -303,7 +311,7 @@ private fun SpeedCard(state: ScooterState) {
     Card(shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.fillMaxWidth().padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(state.speedKmh?.let { "%.1f".format(it) } ?: "—", style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.Black)
-            Text("km/h • 1505 Byte 6–7")
+            Text("km/h • Original-libble + BT638")
             Text("150D Vergleich: ${speed150d?.let { "%.1f km/h".format(it) } ?: "–"}")
             if (diff != null) Text(if (diff <= 1.0) "✓ Quellen stimmen" else "⚠ Abweichung %.1f km/h".format(diff))
         }
@@ -315,6 +323,33 @@ private fun LightModeCard(state: ScooterState) {
     val light = when (state.accessoryByte0) { 0 -> "AUS"; 1 -> "AN"; null -> "–"; else -> "RAW ${state.accessoryByte0}" }
     val mode = when (state.accessoryByte3) { 1 -> "ECO"; 2 -> "SPORT"; null -> "–"; else -> "RAW ${state.accessoryByte3}" }
     InfoCard("Licht & Fahrmodus", "💡 Licht: $light • RAW 1508/0: ${state.accessoryByte0 ?: "–"}\n⚡ Fahrmodus: $mode • RAW 1508/3: ${state.accessoryByte3 ?: "–"}\nBT638 bestätigt: 0/1 = AUS/AN und 1/2 = ECO/SPORT.")
+}
+
+@Composable
+private fun OriginalSdkRealtimeCard(state: ScooterState) {
+    fun d(value: Double?, unit: String, digits: Int = 2): String =
+        value?.let { "% .${digits}f".format(it).trim() + " " + unit } ?: "–"
+    fun i(value: Int?, unit: String = ""): String = value?.let { "$it${if (unit.isBlank()) "" else " $unit"}" } ?: "–"
+
+    Card(shape = RoundedCornerShape(22.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("⚡ Original-SDK Echtzeit", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("libble Ground Truth • ${state.sdkLiveFieldCount} aktuell dekodierbare Felder", style = MaterialTheme.typography.bodySmall)
+            Text("1505 Leistung A/B: ${d(state.sdkPerformancePowerAW, "W", 1)} • ${d(state.sdkPerformancePowerBW, "W", 1)}")
+            Text("1505 Drehmoment: ${d(state.sdkPerformanceTorqueNm, "Nm", 2)} • RPM: ${i(state.sdkPerformanceRpm)}")
+            Text("1505 Weg RAW: ${i(state.sdkPerformanceDistanceRaw)} • 1506 Zähler RAW: ${state.sdkOperatingCounterRaw ?: "–"}")
+            Text("1509 Akku-Temp: ${d(state.resolvedBatteryTemperatureC, "°C", 1)} • 2. Strom: ${d(state.sdkSecondaryBatteryCurrentA, "A", 3)}")
+            Text("1509 direkte Leistung: ${d(state.sdkDirectPowerW, "W", 0)}")
+            Text("150A Motorstrom: ${d(state.sdkMotorCurrentA, "A", 3)} • Motorspannung: ${d(state.sdkMotorVoltageV, "V", 3)}")
+            Text("150A Motor-RPM: ${i(state.sdkMotorRpm)} • Drehmoment: ${d(state.sdkMotorTorqueNm, "Nm", 2)}")
+            Text("150A Motortemperatur: ${d(state.resolvedMotorTemperatureC, "°C", 1)}")
+            Text("Assistenz/Fahrstufe RAW: ${i(state.sdkAssistanceLevelRaw)}")
+            Text(
+                "Leistung A/B bleiben absichtlich neutral benannt, bis der Original-App↔BT638-Vergleich eindeutig Motor- und Tretleistung zuordnet. 0xFFFF-Felder werden nicht erfunden.",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
 }
 
 @Composable
@@ -331,7 +366,7 @@ private fun AutoRecordingCard(state: ScooterState, onStop: () -> Unit, onExport:
 }
 
 @Composable
-private fun GitHubSyncCard(snapshot: GitHubSyncSnapshot, onOpen: () -> Unit) {
+private fun GitHubSyncCard(snapshot: GitHubSyncSnapshot, aiProfile: AdaptiveProfileSnapshot, onOpen: () -> Unit) {
     val status = when {
         !snapshot.tokenConfigured -> "Noch nicht eingerichtet"
         !snapshot.enabled -> "Eingerichtet • Auto-Upload ist aus"
@@ -340,15 +375,35 @@ private fun GitHubSyncCard(snapshot: GitHubSyncSnapshot, onOpen: () -> Unit) {
     }
     Card(shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("☁ GitHub Fahrdaten-Sync", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("☁ GitHub Fahrdaten & Decoder AI", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(status)
+            Text("KI: ${aiProfile.confirmedRuleCount}/${aiProfile.ruleCount} Regeln bestätigt • ${aiProfile.source}")
             if (snapshot.lastStatus.isNotBlank()) {
                 Text(snapshot.lastStatus, style = MaterialTheme.typography.bodySmall)
             }
             Button(onClick = onOpen, modifier = Modifier.fillMaxWidth()) {
-                Text(if (snapshot.tokenConfigured) "GITHUB SYNC & FAHRDATEN" else "GITHUB SYNC EINRICHTEN")
+                Text(if (snapshot.tokenConfigured) "GITHUB SYNC & DECODER AI" else "GITHUB SYNC EINRICHTEN")
             }
-            Text("Kein Scooter und keine Bluetooth-Verbindung nötig. Token, Upload-Status und Warteschlange sind direkt hier in derselben App erreichbar.", style = MaterialTheme.typography.bodySmall)
+            Text("Kein Scooter und keine Bluetooth-Verbindung für die Einstellungen nötig. Bestätigte KI-Regeln werden read-only in die Live-Auswertung übernommen.", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun AdaptiveLiveCard(state: ScooterState, aiProfile: AdaptiveProfileSnapshot) {
+    fun binary(value: Boolean): String = if (!state.connected) "–" else if (value) "AN" else "AUS"
+    Card(shape = RoundedCornerShape(22.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("🧠 KI-gelernte Live-Signale", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            if ("brakeActive" in aiProfile.signals) Text("🛑 Bremse: ${binary(state.brakeActive)}")
+            if ("leftIndicator" in aiProfile.signals) Text("⬅ Blinker links: ${binary(state.leftIndicator)}")
+            if ("rightIndicator" in aiProfile.signals) Text("➡ Blinker rechts: ${binary(state.rightIndicator)}")
+            if ("lightOn" in aiProfile.signals) Text("💡 Licht KI: ${binary(state.lightOn)}")
+            if ("charging" in aiProfile.signals) Text("🔌 Laden: ${state.charging?.let { binary(it) } ?: "–"}")
+            if ("lockActive" in aiProfile.signals) Text("🔒 Sperre: ${state.lockActive?.let { binary(it) } ?: "–"}")
+            val numeric = aiProfile.signals.filter { it !in setOf("brakeActive", "leftIndicator", "rightIndicator", "lightOn", "charging", "lockActive") }
+            if (numeric.isNotEmpty()) Text("Zusätzliche Messwerte: ${numeric.sorted().joinToString(", ")}", style = MaterialTheme.typography.bodySmall)
+            Text("Nur bestätigte Regeln werden angezeigt; unsichere Treffer bleiben Lernkandidaten.", style = MaterialTheme.typography.bodySmall)
         }
     }
 }

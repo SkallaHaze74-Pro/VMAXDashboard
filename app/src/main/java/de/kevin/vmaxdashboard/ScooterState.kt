@@ -42,12 +42,6 @@ data class ScooterState(
     val tripDistanceKm: Double? = null,
     val odometerKm: Double? = null,
     val rssi: Int? = null,
-    val leftIndicator: Boolean = false,
-    val rightIndicator: Boolean = false,
-    val lightOn: Boolean = false,
-    val brakeActive: Boolean = false,
-    val lockActive: Boolean? = null,
-    val charging: Boolean? = null,
     val lastCharacteristic: String = "",
     val lastRawHex: String = "",
     val lastChangedBytes: String = "–",
@@ -90,4 +84,109 @@ data class ScooterState(
     val motorTuningLastReadRaw: String = "",
     val motorTuningLastVerified: Boolean? = null,
     val log: List<String> = emptyList()
-)
+) {
+    private val adaptiveLive: AdaptiveDecodedTelemetry
+        get() = AdaptiveDecoderRuntime.decodePackets(rawPackets)
+
+    private val aiSnapshot: AdaptiveProfileSnapshot
+        get() = AdaptiveDecoderRuntime.snapshot()
+
+    private val originalSdkLive: OriginalSdkRealtimeSnapshot
+        get() = OriginalSdkRealtimeDecoder.decodePackets(rawPackets)
+
+    val leftIndicator: Boolean
+        get() = connected && (adaptiveLive.leftIndicator ?: false)
+
+    val rightIndicator: Boolean
+        get() = connected && (adaptiveLive.rightIndicator ?: false)
+
+    val brakeActive: Boolean
+        get() = connected && (adaptiveLive.brakeActive ?: false)
+
+    val lightOn: Boolean
+        get() = connected && when (accessoryByte0) {
+            0 -> false
+            1 -> true
+            else -> originalSdkLive.lightOn ?: adaptiveLive.lightOn ?: false
+        }
+
+    val lockActive: Boolean?
+        get() = if (connected) adaptiveLive.lockActive else null
+
+    val charging: Boolean?
+        get() = if (connected) adaptiveLive.charging else null
+
+    val aiDecoderRuleCount: Int
+        get() = aiSnapshot.ruleCount
+
+    val aiDecoderConfirmedRules: Int
+        get() = aiSnapshot.confirmedRuleCount
+
+    val aiDecoderRevision: String
+        get() = aiSnapshot.revision
+
+    val aiDecoderSource: String
+        get() = aiSnapshot.source
+
+    val aiDecoderSignals: Set<String>
+        get() = aiSnapshot.signals
+
+    // Original VMAX/Hyena SDK semantics, decoded at the incoming BLE notification rate.
+    // Values are hidden when disconnected so a stale last packet is never presented as live.
+    val sdkLiveFieldCount: Int
+        get() = if (connected) originalSdkLive.availableFieldCount else 0
+
+    val sdkPerformancePowerAW: Double?
+        get() = originalSdkLive.performancePowerAW.takeIf { connected }
+
+    val sdkPerformancePowerBW: Double?
+        get() = originalSdkLive.performancePowerBW.takeIf { connected }
+
+    val sdkPerformanceTorqueNm: Double?
+        get() = originalSdkLive.performanceTorqueNm.takeIf { connected }
+
+    val sdkPerformanceRpm: Int?
+        get() = originalSdkLive.performanceRpm.takeIf { connected }
+
+    val sdkPerformanceDistanceRaw: Int?
+        get() = originalSdkLive.performanceDistanceRaw.takeIf { connected }
+
+    val sdkOperatingCounterRaw: Long?
+        get() = originalSdkLive.operatingCounterRaw.takeIf { connected }
+
+    val sdkBatteryTemperatureC: Double?
+        get() = originalSdkLive.batteryTemperatureC.takeIf { connected }
+
+    val sdkSecondaryBatteryCurrentA: Double?
+        get() = originalSdkLive.secondaryBatteryCurrentA.takeIf { connected }
+
+    val sdkDirectPowerW: Double?
+        get() = originalSdkLive.directPowerW.takeIf { connected }
+
+    val sdkMotorCurrentA: Double?
+        get() = originalSdkLive.motorCurrentA.takeIf { connected }
+
+    val sdkMotorVoltageV: Double?
+        get() = originalSdkLive.motorVoltageV.takeIf { connected }
+
+    val sdkMotorRpm: Int?
+        get() = originalSdkLive.motorRpm.takeIf { connected }
+
+    val sdkMotorTorqueNm: Double?
+        get() = originalSdkLive.motorTorqueNm.takeIf { connected }
+
+    val sdkMotorTemperatureC: Double?
+        get() = originalSdkLive.motorTemperatureC.takeIf { connected }
+
+    val sdkAssistanceLevelRaw: Int?
+        get() = originalSdkLive.assistanceLevelRaw.takeIf { connected }
+
+    val resolvedBatteryTemperatureC: Double?
+        get() = if (connected) batteryTemperatureC ?: originalSdkLive.batteryTemperatureC ?: adaptiveLive.batteryTemperatureC else null
+
+    val resolvedMotorTemperatureC: Double?
+        get() = if (connected) motorTemperatureC ?: originalSdkLive.motorTemperatureC ?: adaptiveLive.motorTemperatureC else null
+
+    val resolvedDirectPowerW: Double?
+        get() = if (connected) originalSdkLive.directPowerW ?: adaptiveLive.powerW ?: currentPowerW else null
+}

@@ -10,8 +10,15 @@ data class DecodedTelemetry(
     val batteryStateRaw: Int? = null,
     val accessoryByte0: Int? = null,
     val accessoryByte3: Int? = null,
+    val lightOn: Boolean? = null,
+    val brakeActive: Boolean? = null,
+    val leftIndicator: Boolean? = null,
+    val rightIndicator: Boolean? = null,
+    val lockActive: Boolean? = null,
+    val charging: Boolean? = null,
     val voltageV: Double? = null,
     val currentA: Double? = null,
+    val powerW: Double? = null,
     val motorTemperatureC: Double? = null,
     val batteryTemperatureC: Double? = null,
     val tripDistanceKm: Double? = null,
@@ -30,8 +37,12 @@ object LiveTelemetryDecoder {
         var motorLoadRaw: Int? = null
         var accessoryByte0: Int? = null
         var accessoryByte3: Int? = null
+        var lightOn: Boolean? = null
         var voltageV: Double? = null
         var currentA: Double? = null
+        var powerW: Double? = null
+        var motorTemperatureC: Double? = null
+        var batteryTemperatureC: Double? = null
         var odometerKm: Double? = null
 
         when (channel) {
@@ -42,14 +53,16 @@ object LiveTelemetryDecoder {
             }
 
             "1505" -> {
-                validUnsigned16BE(value, 0)?.let { notes += "Fahrleistungswert A RAW: $it" }
-                validUnsigned16BE(value, 2)?.let { notes += "Fahrleistungswert B RAW: $it" }
+                validUnsigned16BE(value, 0)?.let { notes += "libble Leistung A: ${rounded(it / 10.0)} W" }
+                validUnsigned16BE(value, 2)?.let { notes += "libble Leistung B: ${rounded(it / 10.0)} W" }
+                validUnsigned16BE(value, 4)?.let { notes += "libble Drehmoment: ${rounded(it / 100.0)} Nm" }
                 validUnsigned16BE(value, 6)?.let { raw ->
                     driveRaw = raw
                     speedKmh = rounded(raw / 10.0)
                     notes += "Geschwindigkeit: 1505 Byte 6-7, Big Endian, /10 km/h"
                 }
-                validUnsigned16BE(value, 10)?.let { notes += "1505 Byte 10-11 RAW: $it" }
+                validUnsigned16BE(value, 8)?.let { notes += "libble RPM: $it" }
+                validUnsigned16BE(value, 10)?.let { notes += "libble Distanz-/Wegfeld RAW: $it" }
             }
 
             "1506" -> {
@@ -67,13 +80,25 @@ object LiveTelemetryDecoder {
             "1508" -> {
                 accessoryByte0 = u8OrNull(value, 0)
                 accessoryByte3 = u8OrNull(value, 3)
-                notes += "1508 Byte 0: 0=Licht aus, 1=Licht an; Byte 3=Fahrstufe RAW"
+                lightOn = when (accessoryByte0) {
+                    0 -> false
+                    1 -> true
+                    else -> null
+                }
+                notes += "1508 Byte 0: 0=Licht aus, 1=Licht an; Byte 3=Fahrstufe/Assistenz RAW"
             }
 
             "1509" -> {
                 signed16BE(value, 0)?.let { raw ->
                     currentA = rounded(raw / 1000.0)
                     notes += "Akkustrom: 1509 Byte 0-1, mA"
+                }
+                signed16BE(value, 2)?.let { raw ->
+                    val temperature = rounded(raw / 10.0)
+                    if (temperature in -50.0..150.0) {
+                        batteryTemperatureC = temperature
+                        notes += "Akkutemperatur: 1509 Byte 2-3, /10 °C"
+                    }
                 }
                 u8OrNull(value, 4)?.takeIf { it in 0..100 }?.let { percent ->
                     batteryPercent = percent
@@ -83,14 +108,28 @@ object LiveTelemetryDecoder {
                     voltageV = rounded(raw / 1000.0)
                     notes += "Akkuspannung: 1509 Byte 5-6, mV"
                 }
+                signed16BE(value, 7)?.let { raw ->
+                    notes += "Zweiter libble-Stromwert: ${rounded(raw / 1000.0)} A"
+                }
                 validUnsigned16BE(value, 9)?.let { raw ->
                     motorLoadRaw = raw
+                    powerW = raw.toDouble()
                     notes += "Direkte Leistung: 1509 Byte 9-10, W"
                 }
             }
 
             "150A" -> {
-                validUnsigned16BE(value, 0)?.let { notes += "Motorstrom-/Last-Kandidat RAW: $it" }
+                signed16BE(value, 0)?.let { notes += "libble Motorstrom: ${rounded(it / 1000.0)} A" }
+                validUnsigned16BE(value, 2)?.let { notes += "libble Motorspannung: ${rounded(it / 1000.0)} V" }
+                validUnsigned16BE(value, 4)?.let { notes += "libble Motor-RPM: $it" }
+                signed16BE(value, 6)?.let { notes += "libble Motordrehmoment: ${rounded(it / 100.0)} Nm" }
+                signed16BE(value, 8)?.let { raw ->
+                    val temperature = rounded(raw / 10.0)
+                    if (temperature in -50.0..220.0) {
+                        motorTemperatureC = temperature
+                        notes += "Motortemperatur: 150A Byte 8-9, /10 °C"
+                    }
+                }
                 if (value.size > 2 && value.drop(2).all { (it.toInt() and 0xFF) == 0xFF }) {
                     notes += "150A Byte 2-${value.lastIndex} werden vom BT638 aktuell nicht geliefert"
                 }
@@ -109,16 +148,32 @@ object LiveTelemetryDecoder {
             }
         }
 
+        val adaptive = AdaptiveDecoderRuntime.decode(channel, value)
+        if (adaptive.speedKmh != null && speedKmh == null) notes += "Decoder AI: Geschwindigkeit aus bestätigtem Lernprofil"
+        if (adaptive.batteryPercent != null && batteryPercent == null) notes += "Decoder AI: Akkustand aus bestätigtem Lernprofil"
+        if (adaptive.voltageV != null && voltageV == null) notes += "Decoder AI: Spannung aus bestätigtem Lernprofil"
+        if (adaptive.currentA != null && currentA == null) notes += "Decoder AI: Strom aus bestätigtem Lernprofil"
+
         return DecodedTelemetry(
-            batteryPercent = batteryPercent,
-            speedKmh = speedKmh,
+            batteryPercent = batteryPercent ?: adaptive.batteryPercent,
+            speedKmh = speedKmh ?: adaptive.speedKmh,
             driveRaw = driveRaw,
             motorLoadRaw = motorLoadRaw,
             accessoryByte0 = accessoryByte0,
             accessoryByte3 = accessoryByte3,
-            voltageV = voltageV,
-            currentA = currentA,
-            odometerKm = odometerKm,
+            lightOn = lightOn ?: adaptive.lightOn,
+            brakeActive = adaptive.brakeActive,
+            leftIndicator = adaptive.leftIndicator,
+            rightIndicator = adaptive.rightIndicator,
+            lockActive = adaptive.lockActive,
+            charging = adaptive.charging,
+            voltageV = voltageV ?: adaptive.voltageV,
+            currentA = currentA ?: adaptive.currentA,
+            powerW = powerW ?: adaptive.powerW,
+            motorTemperatureC = motorTemperatureC ?: adaptive.motorTemperatureC,
+            batteryTemperatureC = batteryTemperatureC ?: adaptive.batteryTemperatureC,
+            tripDistanceKm = adaptive.tripDistanceKm,
+            odometerKm = odometerKm ?: adaptive.odometerKm,
             notes = notes
         )
     }
