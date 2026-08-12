@@ -1,0 +1,61 @@
+name: VMAX Decoder AI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tools/decoder_ai/**'
+      - '.github/workflows/decoder-ai.yml'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/AdaptiveDecoderProfileStore.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/GitHubTelemetrySync.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/LearningProfileStore.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/BleScooterManager.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/ScooterState.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/LiveTelemetryDecoder.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/MainActivity.kt'
+  push:
+    branches: [telemetry-data]
+    paths:
+      - 'fahrdaten/**/manifest.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  decoder-ai:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repository laden
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Decoder-AI Tests
+        run: python tools/decoder_ai/test_consensus.py
+
+      - name: Fahrten vergleichen und Profil erzeugen
+        if: github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data'
+        run: |
+          python tools/decoder_ai/consensus.py \
+            --root fahrdaten \
+            --output decoder-ai/decoder_profile.json \
+            --report decoder-ai/analysis_report.md
+
+      - name: Neues Decoder-Profil speichern
+        if: github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data'
+        run: |
+          if git diff --quiet -- decoder-ai/decoder_profile.json decoder-ai/analysis_report.md; then
+            echo 'Keine neue Decoder-Evidenz.'
+            exit 0
+          fi
+          git config user.name 'VMAX Decoder AI'
+          git config user.email 'actions@users.noreply.github.com'
+          git add decoder-ai/decoder_profile.json decoder-ai/analysis_report.md
+          git commit -m 'Decoder AI: Fahrdaten-Konsens aktualisieren'
+          git push origin HEAD:telemetry-data
