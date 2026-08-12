@@ -42,12 +42,6 @@ data class ScooterState(
     val tripDistanceKm: Double? = null,
     val odometerKm: Double? = null,
     val rssi: Int? = null,
-    val leftIndicator: Boolean = false,
-    val rightIndicator: Boolean = false,
-    val lightOn: Boolean = false,
-    val brakeActive: Boolean = false,
-    val lockActive: Boolean? = null,
-    val charging: Boolean? = null,
     val lastCharacteristic: String = "",
     val lastRawHex: String = "",
     val lastChangedBytes: String = "–",
@@ -78,11 +72,6 @@ data class ScooterState(
     val learningProfileCount: Int = 0,
     val sessionHistoryCount: Int = 0,
     val lastSessionFolder: String = "",
-    val aiDecoderRuleCount: Int = 0,
-    val aiDecoderConfirmedRules: Int = 0,
-    val aiDecoderRevision: String = "",
-    val aiDecoderSource: String = "Noch kein KI-Profil",
-    val aiDecoderSignals: Set<String> = emptySet(),
     val motorTuningSupported: Boolean = false,
     val motorTuningReadAvailable: Boolean = false,
     val motorTuningWriteAvailable: Boolean = false,
@@ -95,4 +84,47 @@ data class ScooterState(
     val motorTuningLastReadRaw: String = "",
     val motorTuningLastVerified: Boolean? = null,
     val log: List<String> = emptyList()
-)
+) {
+    private val adaptiveLive: AdaptiveDecodedTelemetry
+        get() = AdaptiveDecoderRuntime.decodePackets(rawPackets)
+
+    private val aiSnapshot: AdaptiveProfileSnapshot
+        get() = AdaptiveDecoderRuntime.snapshot()
+
+    val leftIndicator: Boolean
+        get() = adaptiveLive.leftIndicator ?: false
+
+    val rightIndicator: Boolean
+        get() = adaptiveLive.rightIndicator ?: false
+
+    val brakeActive: Boolean
+        get() = adaptiveLive.brakeActive ?: false
+
+    val lightOn: Boolean
+        get() = when (accessoryByte0) {
+            0 -> false
+            1 -> true
+            else -> adaptiveLive.lightOn ?: false
+        }
+
+    val lockActive: Boolean?
+        get() = adaptiveLive.lockActive
+
+    val charging: Boolean?
+        get() = adaptiveLive.charging
+
+    val aiDecoderRuleCount: Int
+        get() = aiSnapshot.ruleCount
+
+    val aiDecoderConfirmedRules: Int
+        get() = aiSnapshot.confirmedRuleCount
+
+    val aiDecoderRevision: String
+        get() = aiSnapshot.revision
+
+    val aiDecoderSource: String
+        get() = aiSnapshot.source
+
+    val aiDecoderSignals: Set<String>
+        get() = aiSnapshot.signals
+}
