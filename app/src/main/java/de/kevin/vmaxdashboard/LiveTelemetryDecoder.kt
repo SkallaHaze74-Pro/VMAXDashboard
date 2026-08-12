@@ -11,8 +11,14 @@ data class DecodedTelemetry(
     val accessoryByte0: Int? = null,
     val accessoryByte3: Int? = null,
     val lightOn: Boolean? = null,
+    val brakeActive: Boolean? = null,
+    val leftIndicator: Boolean? = null,
+    val rightIndicator: Boolean? = null,
+    val lockActive: Boolean? = null,
+    val charging: Boolean? = null,
     val voltageV: Double? = null,
     val currentA: Double? = null,
+    val powerW: Double? = null,
     val motorTemperatureC: Double? = null,
     val batteryTemperatureC: Double? = null,
     val tripDistanceKm: Double? = null,
@@ -116,17 +122,32 @@ object LiveTelemetryDecoder {
             }
         }
 
+        val adaptive = AdaptiveDecoderRuntime.decode(channel, value)
+        if (adaptive.speedKmh != null && speedKmh == null) notes += "Decoder AI: Geschwindigkeit aus bestätigtem Lernprofil"
+        if (adaptive.batteryPercent != null && batteryPercent == null) notes += "Decoder AI: Akkustand aus bestätigtem Lernprofil"
+        if (adaptive.voltageV != null && voltageV == null) notes += "Decoder AI: Spannung aus bestätigtem Lernprofil"
+        if (adaptive.currentA != null && currentA == null) notes += "Decoder AI: Strom aus bestätigtem Lernprofil"
+
         return DecodedTelemetry(
-            batteryPercent = batteryPercent,
-            speedKmh = speedKmh,
+            batteryPercent = batteryPercent ?: adaptive.batteryPercent,
+            speedKmh = speedKmh ?: adaptive.speedKmh,
             driveRaw = driveRaw,
             motorLoadRaw = motorLoadRaw,
             accessoryByte0 = accessoryByte0,
             accessoryByte3 = accessoryByte3,
-            lightOn = lightOn,
-            voltageV = voltageV,
-            currentA = currentA,
-            odometerKm = odometerKm,
+            lightOn = lightOn ?: adaptive.lightOn,
+            brakeActive = adaptive.brakeActive,
+            leftIndicator = adaptive.leftIndicator,
+            rightIndicator = adaptive.rightIndicator,
+            lockActive = adaptive.lockActive,
+            charging = adaptive.charging,
+            voltageV = voltageV ?: adaptive.voltageV,
+            currentA = currentA ?: adaptive.currentA,
+            powerW = adaptive.powerW,
+            motorTemperatureC = adaptive.motorTemperatureC,
+            batteryTemperatureC = adaptive.batteryTemperatureC,
+            tripDistanceKm = adaptive.tripDistanceKm,
+            odometerKm = odometerKm ?: adaptive.odometerKm,
             notes = notes
         )
     }
