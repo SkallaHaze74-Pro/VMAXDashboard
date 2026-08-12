@@ -38,24 +38,32 @@ class GitHubSyncActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val sync = GitHubTelemetrySync.get(applicationContext)
+        val aiSync = DecoderAiCloudSync.get(applicationContext)
         setContent {
             MaterialTheme {
-                GitHubSyncScreen(sync = sync, onClose = ::finish)
+                GitHubSyncScreen(sync = sync, aiSync = aiSync, onClose = ::finish)
             }
         }
     }
 }
 
 @Composable
-private fun GitHubSyncScreen(sync: GitHubTelemetrySync, onClose: () -> Unit) {
+private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSync, onClose: () -> Unit) {
     var token by remember { mutableStateOf("") }
     var snapshot by remember { mutableStateOf(sync.snapshot()) }
+    var aiProfile by remember { mutableStateOf(AdaptiveDecoderProfileStore.get(syncContext(sync)).snapshot()) }
+    var aiStatus by remember { mutableStateOf(aiSync.status()) }
     var localMessage by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
-        if (snapshot.enabled) sync.start()
+        if (snapshot.enabled) {
+            sync.start()
+            aiSync.start()
+        }
         while (true) {
             snapshot = sync.snapshot()
+            aiProfile = AdaptiveDecoderProfileStore.get(syncContext(sync)).snapshot()
+            aiStatus = aiSync.status()
             delay(750)
         }
     }
@@ -67,16 +75,41 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, onClose: () -> Unit) {
             .padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Text("VMAX Dashboard • GitHub Sync V7.5", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Text("Messfahrten und Decoder-AI-Ergebnisse automatisch sichern")
+        Text("VMAX Dashboard • GitHub & Decoder AI V7.6", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Text("Messfahrten sichern, automatisch vergleichen und bestätigte Decoder ohne neue APK übernehmen")
 
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 Text("Ziel", fontWeight = FontWeight.Bold)
                 Text("Repository: SkallaHaze74-Pro/VMAXDashboard")
                 Text("Daten-Branch: telemetry-data")
-                Text("Ordner: fahrdaten/JJJJ-MM-TT/Messfahrt_…")
-                Text("Der Daten-Branch löst keinen normalen main-Build aus.", style = MaterialTheme.typography.bodySmall)
+                Text("Fahrdaten: fahrdaten/JJJJ-MM-TT/Messfahrt_…")
+                Text("KI-Profil: decoder-ai/decoder_profile.json")
+            }
+        }
+
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Adaptive Decoder AI", fontWeight = FontWeight.Bold)
+                Text(aiStatus.status)
+                Text("Profilquelle: ${aiProfile.source}")
+                Text("Regeln: ${aiProfile.confirmedRuleCount} bestätigt / ${aiProfile.ruleCount} gesamt")
+                if (aiProfile.revision.isNotBlank()) Text("Revision: ${aiProfile.revision}", style = MaterialTheme.typography.bodySmall)
+                if (aiProfile.signals.isNotEmpty()) {
+                    Text("Live lernbar: ${aiProfile.signals.sorted().joinToString(", ")}", style = MaterialTheme.typography.bodySmall)
+                }
+                Text(
+                    "Die KI darf ausschließlich lesen/dekodieren. Sie erzeugt keine Motor- oder BLE-Schreibbefehle.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                OutlinedButton(
+                    onClick = {
+                        aiSync.refreshNow()
+                        localMessage = "Decoder-AI-Profil wird neu geprüft"
+                    },
+                    enabled = snapshot.enabled && snapshot.tokenConfigured,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("DECODER AI JETZT ABGLEICHEN") }
             }
         }
 
@@ -95,14 +128,18 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, onClose: () -> Unit) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Automatischer Upload", fontWeight = FontWeight.Bold)
+                        Text("Automatischer Upload & KI-Abgleich", fontWeight = FontWeight.Bold)
                         Text(if (snapshot.enabled) "Aktiv" else "Aus", style = MaterialTheme.typography.bodySmall)
                     }
                     Switch(
                         checked = snapshot.enabled,
                         onCheckedChange = {
                             sync.setEnabled(it)
-                            if (it) sync.start()
+                            if (it) {
+                                sync.start()
+                                aiSync.start()
+                                aiSync.refreshNow()
+                            }
                             snapshot = sync.snapshot()
                         }
                     )
@@ -111,8 +148,7 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, onClose: () -> Unit) {
                 HorizontalDivider()
                 Text("GitHub Fine-grained Token", fontWeight = FontWeight.Bold)
                 Text(
-                    "Einmalig einen Token für dieses Repository mit 'Contents: Read and write' eintragen. " +
-                        "Der Token wird mit Android Keystore verschlüsselt und nicht in die APK oder Fahrdaten geschrieben.",
+                    "Nur VMAXDashboard mit 'Contents: Read and write'. Der Token bleibt mit Android Keystore verschlüsselt auf diesem Handy.",
                     style = MaterialTheme.typography.bodySmall
                 )
                 OutlinedTextField(
@@ -128,6 +164,8 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, onClose: () -> Unit) {
                         runCatching { sync.saveToken(token) }
                             .onSuccess {
                                 sync.start()
+                                aiSync.start()
+                                aiSync.refreshNow()
                                 token = ""
                                 localMessage = "✓ Token verschlüsselt gespeichert"
                             }
@@ -164,28 +202,26 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, onClose: () -> Unit) {
                     onClick = {
                         sync.start()
                         sync.retryNow()
-                        localMessage = "Sync erneut angestoßen"
+                        aiSync.refreshNow()
+                        localMessage = "Upload und Decoder AI erneut angestoßen"
                     },
                     enabled = snapshot.enabled && snapshot.tokenConfigured,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("JETZT SYNCHRONISIEREN") }
+                ) { Text("JETZT ALLES SYNCHRONISIEREN") }
             }
         }
 
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Was automatisch hochgeladen wird", fontWeight = FontWeight.Bold)
-                Text("• BLE_Rohdaten.csv")
-                Text("• Live_Telemetrie.csv")
-                Text("• Ereignisse.csv")
-                Text("• Zusammenfassung.txt")
-                Text("• Automatische_Analyse.txt")
-                Text("• Lernprofil.json")
-                Text("• manifest.json mit Max-Speed, Max-Leistung, Paket- und Markerzahl")
+                Text("Was automatisch ausgewertet wird", fontWeight = FontWeight.Bold)
+                Text("• BLE_Rohdaten.csv – jedes empfangene Byte")
+                Text("• Live_Telemetrie.csv – bestätigte Referenzwerte")
+                Text("• Ereignisse.csv – Bremse, Blinker, Licht, Laden usw.")
+                Text("• Lernprofil.json – lokale Kandidaten über mehrere Fahrten")
+                Text("• Numerische Korrelationen für weitere Speed/Akku/Volt/Strom/Temperatur/Weg-Felder")
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    "Ohne Internet bleibt die komplette Fahrt in der internen Warteschlange. " +
-                        "Die laufende App versucht den Upload bei wieder verfügbarem Netz automatisch erneut; spätestens beim nächsten App-Start wird die Warteschlange wieder geprüft.",
+                    "Neue Regeln werden erst nach hoher Konfidenz live verwendet. Unsichere Treffer bleiben Kandidaten.",
                     style = MaterialTheme.typography.bodySmall
                 )
             }
@@ -195,4 +231,10 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, onClose: () -> Unit) {
         OutlinedButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("SCHLIESSEN") }
         Spacer(Modifier.height(12.dp))
     }
+}
+
+private fun syncContext(sync: GitHubTelemetrySync): android.content.Context {
+    val field = GitHubTelemetrySync::class.java.getDeclaredField("appContext")
+    field.isAccessible = true
+    return field.get(sync) as android.content.Context
 }
