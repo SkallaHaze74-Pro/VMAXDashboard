@@ -95,16 +95,6 @@ jobs:
       - name: Neue Decoder-Ergebnisse speichern
         if: github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data'
         run: |
-          if git diff --quiet -- \
-            decoder-ai/decoder_profile.json \
-            decoder-ai/analysis_report.md \
-            decoder-ai/libble_comparison.json \
-            decoder-ai/libble_comparison.md \
-            decoder-ai/original_app_comparison.json \
-            decoder-ai/original_app_comparison.md; then
-            echo 'Keine neue Decoder-Evidenz.'
-            exit 0
-          fi
           git config user.name 'VMAX Decoder AI'
           git config user.email 'actions@users.noreply.github.com'
           git add \
@@ -114,6 +104,10 @@ jobs:
             decoder-ai/libble_comparison.md \
             decoder-ai/original_app_comparison.json \
             decoder-ai/original_app_comparison.md
+          if git diff --cached --quiet; then
+            echo 'Keine neue Decoder-Evidenz.'
+            exit 0
+          fi
           git commit -m 'Decoder AI: Original-App, libble und Fahrdaten abgleichen'
           git push origin HEAD:telemetry-data
 
