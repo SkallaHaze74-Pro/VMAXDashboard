@@ -8,6 +8,7 @@ import java.io.File
 class LearningProfileStore(context: Context) {
     private val dir = File(context.filesDir, "learning").apply { mkdirs() }
     private val file = File(dir, "decoder_candidates.json")
+    private val adaptiveStore = AdaptiveDecoderProfileStore.get(context.applicationContext)
 
     fun merge(findings: List<MeasurementFinding>, model: String, createdAt: Long) {
         val root = loadSanitizedRoot(createdAt)
@@ -39,7 +40,8 @@ class LearningProfileStore(context: Context) {
             }
         }
 
-        writeRoot(byKey.values.toList(), createdAt)
+        val mergedRoot = writeRoot(byKey.values.toList(), createdAt)
+        adaptiveStore.importLocalLearning(mergedRoot.toString())
     }
 
     fun count(): Int {
@@ -59,22 +61,17 @@ class LearningProfileStore(context: Context) {
             val item = source.optJSONObject(i) ?: continue
             if (isAllowedCandidate(item)) kept += item
         }
-        val root = JSONObject().apply {
-            put("format", "VMAX_LEARNING_PROFILE_V1")
-            put("updatedAt", updatedAt)
-            put("candidates", JSONArray(kept))
-        }
-        file.writeText(root.toString(2))
-        return root
+        return writeRoot(kept, updatedAt)
     }
 
-    private fun writeRoot(candidates: List<JSONObject>, updatedAt: Long) {
+    private fun writeRoot(candidates: List<JSONObject>, updatedAt: Long): JSONObject {
         val out = JSONObject().apply {
             put("format", "VMAX_LEARNING_PROFILE_V1")
             put("updatedAt", updatedAt)
             put("candidates", JSONArray(candidates))
         }
         file.writeText(out.toString(2))
+        return out
     }
 
     private fun isAllowedFinding(finding: MeasurementFinding): Boolean =
