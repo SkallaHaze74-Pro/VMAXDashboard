@@ -1,0 +1,145 @@
+{
+  "schema": "vmax-original-app-live-semantics-v1",
+  "source": {
+    "class": "com.gpstuner.mapviewer.androidbase.bluetooth.manager.HyenaSDKManager",
+    "sdk": "io.hylink.hbp / libble-sdk-native-lib.so",
+    "note": "Semantics are taken from the original app listeners. Byte mappings are only marked confirmed when independently matched to BT638/libble parser data."
+  },
+  "signals": [
+    {
+      "signal": "assistanceLevel",
+      "callback": "ControllerPartListener.onAssistanceLevel",
+      "originalCommand": "257",
+      "unit": "level",
+      "mapping": {"channel": "1508", "offset": 3, "encoding": "u8", "scale": 1.0},
+      "status": "bt638_confirmed_as_drive_level"
+    },
+    {
+      "signal": "odometerKm",
+      "callback": "ControllerPartListener.onOdoInKm",
+      "originalCommand": "258",
+      "unit": "km",
+      "mapping": {"channel": "1506", "offset": 0, "encoding": "u32be", "scale": 0.1},
+      "status": "bt638_confirmed"
+    },
+    {
+      "signal": "rpm",
+      "callback": "ControllerPartListener.onRPM",
+      "originalCommand": "259",
+      "unit": "rpm",
+      "mapping": {"channel": "1505", "offset": 8, "encoding": "u16be", "scale": 1.0},
+      "status": "libble_known_verify_on_bt638"
+    },
+    {
+      "signal": "remainingDistanceKm",
+      "callback": "ControllerPartListener.onRemainDistanceInKm",
+      "originalCommand": "260",
+      "unit": "km",
+      "mapping": null,
+      "status": "original_app_known_mapping_open"
+    },
+    {
+      "signal": "speedKmh",
+      "callback": "ControllerPartListener.onSpeedInKm",
+      "originalCommand": "261",
+      "unit": "km/h",
+      "mapping": {"channel": "1505", "offset": 6, "encoding": "u16be", "scale": 0.1},
+      "alternateMapping": {"channel": "150D", "offset": 0, "encoding": "u16be", "scale": 0.1},
+      "status": "bt638_confirmed"
+    },
+    {
+      "signal": "motorPower",
+      "callback": "ControllerPartListener.onMotorPowerInmw",
+      "originalCommand": "262",
+      "unit": "original callback unit: mw",
+      "mappingCandidates": [
+        {"channel": "1505", "offset": 0, "encoding": "u16be", "scale": 0.1, "name": "performancePowerA"},
+        {"channel": "1505", "offset": 2, "encoding": "u16be", "scale": 0.1, "name": "performancePowerB"}
+      ],
+      "status": "role_assignment_open"
+    },
+    {
+      "signal": "treadlePower",
+      "callback": "ControllerPartListener.onTreadlePowerInmw",
+      "originalCommand": "263",
+      "unit": "original callback unit: mw",
+      "mappingCandidates": [
+        {"channel": "1505", "offset": 0, "encoding": "u16be", "scale": 0.1, "name": "performancePowerA"},
+        {"channel": "1505", "offset": 2, "encoding": "u16be", "scale": 0.1, "name": "performancePowerB"}
+      ],
+      "status": "role_assignment_open"
+    },
+    {
+      "signal": "batteryVoltageMv",
+      "callback": "BatteryPartListener.onActVoltageInmv",
+      "originalCommand": "513",
+      "unit": "mV",
+      "mapping": {"channel": "1509", "offset": 5, "encoding": "u16be", "scale": 1.0},
+      "status": "bt638_confirmed"
+    },
+    {
+      "signal": "batteryPercent",
+      "callback": "BatteryPartListener.onCapacityInPercentage / ISOCListener.onISOCInPercentage",
+      "originalCommand": "DriverInfo02.SID",
+      "unit": "%",
+      "mapping": {"channel": "1509", "offset": 4, "encoding": "u8", "scale": 1.0},
+      "status": "bt638_confirmed"
+    },
+    {
+      "signal": "batteryCapacityMwh",
+      "callback": "BatteryPartListener.onCapacityInmwh",
+      "originalCommand": "DriverInfo03.SID",
+      "unit": "mWh",
+      "mapping": null,
+      "status": "original_app_known_mapping_open"
+    },
+    {
+      "signal": "chargingRemainSeconds",
+      "callback": "BatteryPartListener.onChargingRemainSecond",
+      "originalCommand": "516",
+      "unit": "s",
+      "mapping": null,
+      "status": "original_app_known_mapping_open"
+    },
+    {
+      "signal": "charging",
+      "callback": "BatteryPartListener.onIsCharging",
+      "originalCommand": "517",
+      "unit": "boolean",
+      "mapping": null,
+      "status": "original_app_known_mapping_open_marker_learnable"
+    },
+    {
+      "signal": "stateOfHealthPercent",
+      "callback": "BatteryPartListener.onStateOfHealthInPercentage",
+      "originalCommand": "518",
+      "unit": "%",
+      "mapping": null,
+      "status": "original_app_known_mapping_open"
+    },
+    {
+      "signal": "stateOfHealthMwh",
+      "callback": "BatteryPartListener.onStateOfHealthInmwh",
+      "originalCommand": "519",
+      "unit": "mWh",
+      "mapping": null,
+      "status": "original_app_known_mapping_open"
+    },
+    {
+      "signal": "batteryCurrentMa",
+      "callback": "BatteryPartListener.onActCurrentInma",
+      "originalCommand": "520",
+      "unit": "mA",
+      "mapping": {"channel": "1509", "offset": 0, "encoding": "s16be", "scale": 1.0},
+      "status": "bt638_confirmed"
+    },
+    {
+      "signal": "lightOn",
+      "callback": "LightPartListener.onLightState",
+      "originalCommand": "769",
+      "unit": "boolean",
+      "mapping": {"channel": "1508", "offset": 0, "encoding": "u8", "activeValue": 1, "inactiveValue": 0},
+      "status": "bt638_confirmed"
+    }
+  ]
+}
