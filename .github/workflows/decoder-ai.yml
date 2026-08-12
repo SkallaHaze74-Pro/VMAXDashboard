@@ -14,6 +14,8 @@ on:
       - 'app/src/main/java/de/kevin/vmaxdashboard/LearningProfileStore.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/ScooterState.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/LiveTelemetryDecoder.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/OriginalSdkRealtimeDecoder.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/VmaxProtocolCatalog.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/MainActivity.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/VMAXSyncApplication.kt'
   push:
@@ -32,6 +34,8 @@ on:
       - 'app/src/main/java/de/kevin/vmaxdashboard/LearningProfileStore.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/ScooterState.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/LiveTelemetryDecoder.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/OriginalSdkRealtimeDecoder.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/VmaxProtocolCatalog.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/MainActivity.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/VMAXSyncApplication.kt'
   workflow_dispatch:
@@ -66,6 +70,15 @@ jobs:
             --output decoder-ai/libble_comparison.json \
             --report decoder-ai/libble_comparison.md
 
+      - name: Original-App Sollwerte gegen BT638 abgleichen
+        if: github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data'
+        run: |
+          python tools/decoder_ai/original_app_compare.py \
+            --semantics tools/decoder_ai/original_app_semantics.json \
+            --libble decoder-ai/libble_comparison.json \
+            --output decoder-ai/original_app_comparison.json \
+            --report decoder-ai/original_app_comparison.md
+
       - name: Unbekannte Felder über mehrere Fahrten lernen
         if: github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data'
         run: |
@@ -77,14 +90,26 @@ jobs:
       - name: Neue Decoder-Ergebnisse speichern
         if: github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data'
         run: |
-          if git diff --quiet -- decoder-ai/decoder_profile.json decoder-ai/analysis_report.md decoder-ai/libble_comparison.json decoder-ai/libble_comparison.md; then
+          if git diff --quiet -- \
+            decoder-ai/decoder_profile.json \
+            decoder-ai/analysis_report.md \
+            decoder-ai/libble_comparison.json \
+            decoder-ai/libble_comparison.md \
+            decoder-ai/original_app_comparison.json \
+            decoder-ai/original_app_comparison.md; then
             echo 'Keine neue Decoder-Evidenz.'
             exit 0
           fi
           git config user.name 'VMAX Decoder AI'
           git config user.email 'actions@users.noreply.github.com'
-          git add decoder-ai/decoder_profile.json decoder-ai/analysis_report.md decoder-ai/libble_comparison.json decoder-ai/libble_comparison.md
-          git commit -m 'Decoder AI: libble- und Fahrdaten-Konsens aktualisieren'
+          git add \
+            decoder-ai/decoder_profile.json \
+            decoder-ai/analysis_report.md \
+            decoder-ai/libble_comparison.json \
+            decoder-ai/libble_comparison.md \
+            decoder-ai/original_app_comparison.json \
+            decoder-ai/original_app_comparison.md
+          git commit -m 'Decoder AI: Original-App, libble und Fahrdaten abgleichen'
           git push origin HEAD:telemetry-data
 
   android-verify:
