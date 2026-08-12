@@ -1,6 +1,5 @@
 package de.kevin.vmaxdashboard
 
-import android.app.Application
 import android.content.ContentResolver
 import android.content.ContentUris
 import android.content.Context
@@ -29,13 +28,6 @@ import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
-
-class VMAXApplication : Application() {
-    override fun onCreate() {
-        super.onCreate()
-        GitHubTelemetrySync.get(this).start()
-    }
-}
 
 data class GitHubSyncSnapshot(
     val enabled: Boolean,
@@ -154,6 +146,7 @@ class GitHubTelemetrySync private constructor(context: Context) {
 
     private fun scheduleScanAndFlush() {
         executor.execute {
+            if (!prefs.getBoolean("enabled", false)) return@execute
             runCatching { scanForCompletedMeasurements() }
                 .onFailure { setStatus("Lokaler Scan: ${safeMessage(it)}") }
             flushPending()
@@ -240,7 +233,7 @@ class GitHubTelemetrySync private constructor(context: Context) {
             EXPECTED_FILES.forEach { name ->
                 val uri = files.getValue(name)
                 resolver.openInputStream(uri)?.use { input ->
-                    File(staging, name).outputStream().use(input::copyTo)
+                    File(staging, name).outputStream().use { output -> input.copyTo(output) }
                 } ?: error("$name konnte nicht gelesen werden")
             }
             finishQueueBundle(staging, queueFolder, folderName, sourceKey)
