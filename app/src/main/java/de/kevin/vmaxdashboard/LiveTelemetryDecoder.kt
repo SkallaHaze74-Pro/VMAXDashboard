@@ -10,6 +10,7 @@ data class DecodedTelemetry(
     val batteryStateRaw: Int? = null,
     val accessoryByte0: Int? = null,
     val accessoryByte3: Int? = null,
+    val lightOn: Boolean? = null,
     val voltageV: Double? = null,
     val currentA: Double? = null,
     val motorTemperatureC: Double? = null,
@@ -30,6 +31,7 @@ object LiveTelemetryDecoder {
         var motorLoadRaw: Int? = null
         var accessoryByte0: Int? = null
         var accessoryByte3: Int? = null
+        var lightOn: Boolean? = null
         var voltageV: Double? = null
         var currentA: Double? = null
         var odometerKm: Double? = null
@@ -67,6 +69,11 @@ object LiveTelemetryDecoder {
             "1508" -> {
                 accessoryByte0 = u8OrNull(value, 0)
                 accessoryByte3 = u8OrNull(value, 3)
+                lightOn = when (accessoryByte0) {
+                    0 -> false
+                    1 -> true
+                    else -> null
+                }
                 notes += "1508 Byte 0: 0=Licht aus, 1=Licht an; Byte 3=Fahrstufe RAW"
             }
 
@@ -116,6 +123,7 @@ object LiveTelemetryDecoder {
             motorLoadRaw = motorLoadRaw,
             accessoryByte0 = accessoryByte0,
             accessoryByte3 = accessoryByte3,
+            lightOn = lightOn,
             voltageV = voltageV,
             currentA = currentA,
             odometerKm = odometerKm,
