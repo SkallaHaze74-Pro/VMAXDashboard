@@ -91,6 +91,9 @@ data class ScooterState(
     private val aiSnapshot: AdaptiveProfileSnapshot
         get() = AdaptiveDecoderRuntime.snapshot()
 
+    private val originalSdkLive: OriginalSdkRealtimeSnapshot
+        get() = OriginalSdkRealtimeDecoder.decodePackets(rawPackets)
+
     val leftIndicator: Boolean
         get() = adaptiveLive.leftIndicator ?: false
 
@@ -104,7 +107,7 @@ data class ScooterState(
         get() = when (accessoryByte0) {
             0 -> false
             1 -> true
-            else -> adaptiveLive.lightOn ?: false
+            else -> originalSdkLive.lightOn ?: adaptiveLive.lightOn ?: false
         }
 
     val lockActive: Boolean?
@@ -127,4 +130,62 @@ data class ScooterState(
 
     val aiDecoderSignals: Set<String>
         get() = aiSnapshot.signals
+
+    // Original VMAX/Hyena SDK semantics, decoded at the incoming BLE notification rate.
+    val sdkLiveFieldCount: Int
+        get() = originalSdkLive.availableFieldCount
+
+    val sdkPerformancePowerAW: Double?
+        get() = originalSdkLive.performancePowerAW
+
+    val sdkPerformancePowerBW: Double?
+        get() = originalSdkLive.performancePowerBW
+
+    val sdkPerformanceTorqueNm: Double?
+        get() = originalSdkLive.performanceTorqueNm
+
+    val sdkPerformanceRpm: Int?
+        get() = originalSdkLive.performanceRpm
+
+    val sdkPerformanceDistanceRaw: Int?
+        get() = originalSdkLive.performanceDistanceRaw
+
+    val sdkOperatingCounterRaw: Long?
+        get() = originalSdkLive.operatingCounterRaw
+
+    val sdkBatteryTemperatureC: Double?
+        get() = originalSdkLive.batteryTemperatureC
+
+    val sdkSecondaryBatteryCurrentA: Double?
+        get() = originalSdkLive.secondaryBatteryCurrentA
+
+    val sdkDirectPowerW: Double?
+        get() = originalSdkLive.directPowerW
+
+    val sdkMotorCurrentA: Double?
+        get() = originalSdkLive.motorCurrentA
+
+    val sdkMotorVoltageV: Double?
+        get() = originalSdkLive.motorVoltageV
+
+    val sdkMotorRpm: Int?
+        get() = originalSdkLive.motorRpm
+
+    val sdkMotorTorqueNm: Double?
+        get() = originalSdkLive.motorTorqueNm
+
+    val sdkMotorTemperatureC: Double?
+        get() = originalSdkLive.motorTemperatureC
+
+    val sdkAssistanceLevelRaw: Int?
+        get() = originalSdkLive.assistanceLevelRaw
+
+    val resolvedBatteryTemperatureC: Double?
+        get() = batteryTemperatureC ?: originalSdkLive.batteryTemperatureC ?: adaptiveLive.batteryTemperatureC
+
+    val resolvedMotorTemperatureC: Double?
+        get() = motorTemperatureC ?: originalSdkLive.motorTemperatureC ?: adaptiveLive.motorTemperatureC
+
+    val resolvedDirectPowerW: Double?
+        get() = originalSdkLive.directPowerW ?: adaptiveLive.powerW ?: currentPowerW
 }
