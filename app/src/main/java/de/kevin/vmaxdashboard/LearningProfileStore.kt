@@ -86,8 +86,11 @@ class LearningProfileStore(context: Context) {
     private fun isAllowed(label: String, channel: String, byteIndex: Int): Boolean = when (channel) {
         "1505", "1506", "1509", "150A", "150C" -> false
         "1508" -> when (byteIndex) {
-            0 -> label == "Licht"
-            3 -> label == "Fahrmodus"
+            0 -> label.contains("Licht", ignoreCase = true) || label.startsWith("Auto", ignoreCase = true)
+            3 -> label.contains("Fahrmodus", ignoreCase = true) ||
+                label.contains("ECO", ignoreCase = true) ||
+                label.contains("SPORT", ignoreCase = true) ||
+                label.startsWith("Auto", ignoreCase = true)
             else -> true
         }
         else -> true
