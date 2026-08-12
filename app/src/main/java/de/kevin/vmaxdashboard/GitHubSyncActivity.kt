@@ -29,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -49,9 +50,11 @@ class GitHubSyncActivity : ComponentActivity() {
 
 @Composable
 private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSync, onClose: () -> Unit) {
+    val appContext = LocalContext.current.applicationContext
+    val adaptiveStore = remember(appContext) { AdaptiveDecoderProfileStore.get(appContext) }
     var token by remember { mutableStateOf("") }
     var snapshot by remember { mutableStateOf(sync.snapshot()) }
-    var aiProfile by remember { mutableStateOf(AdaptiveDecoderProfileStore.get(syncContext(sync)).snapshot()) }
+    var aiProfile by remember { mutableStateOf(adaptiveStore.snapshot()) }
     var aiStatus by remember { mutableStateOf(aiSync.status()) }
     var localMessage by remember { mutableStateOf("") }
 
@@ -62,7 +65,7 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
         }
         while (true) {
             snapshot = sync.snapshot()
-            aiProfile = AdaptiveDecoderProfileStore.get(syncContext(sync)).snapshot()
+            aiProfile = adaptiveStore.snapshot()
             aiStatus = aiSync.status()
             delay(750)
         }
@@ -231,10 +234,4 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
         OutlinedButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("SCHLIESSEN") }
         Spacer(Modifier.height(12.dp))
     }
-}
-
-private fun syncContext(sync: GitHubTelemetrySync): android.content.Context {
-    val field = GitHubTelemetrySync::class.java.getDeclaredField("appContext")
-    field.isAccessible = true
-    return field.get(sync) as android.content.Context
 }
