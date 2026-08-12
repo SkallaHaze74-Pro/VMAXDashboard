@@ -57,6 +57,11 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Decoder-AI Module validieren
+        run: |
+          python -m py_compile tools/decoder_ai/*.py
+          python -m json.tool tools/decoder_ai/original_app_semantics.json >/dev/null
+
       - name: Decoder-AI Tests
         run: |
           python tools/decoder_ai/test_consensus.py
