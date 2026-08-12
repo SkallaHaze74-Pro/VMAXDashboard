@@ -81,6 +81,17 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, onClose: () -> Unit) {
         }
 
         Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Datenschutz-Hinweis", fontWeight = FontWeight.Bold)
+                Text(
+                    "Wenn das GitHub-Repository öffentlich ist, sind auch die hochgeladenen Fahrdaten öffentlich sichtbar. " +
+                        "Der Sync ergänzt weder GPS-Koordinaten noch die Bluetooth-Adresse; Zeitstempel und Fahrtelemetrie bleiben jedoch in den Dateien enthalten.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+
+        Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -174,7 +185,7 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, onClose: () -> Unit) {
                 Spacer(Modifier.height(2.dp))
                 Text(
                     "Ohne Internet bleibt die komplette Fahrt in der internen Warteschlange. " +
-                        "Sobald Android wieder ein Netz meldet, versucht die App den Upload automatisch erneut.",
+                        "Die laufende App versucht den Upload bei wieder verfügbarem Netz automatisch erneut; spätestens beim nächsten App-Start wird die Warteschlange wieder geprüft.",
                     style = MaterialTheme.typography.bodySmall
                 )
             }
