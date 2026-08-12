@@ -37,7 +37,7 @@ import kotlinx.coroutines.delay
 class GitHubSyncActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val sync = GitHubTelemetrySync.get(applicationContext).also { it.start() }
+        val sync = GitHubTelemetrySync.get(applicationContext)
         setContent {
             MaterialTheme {
                 GitHubSyncScreen(sync = sync, onClose = ::finish)
@@ -53,6 +53,7 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, onClose: () -> Unit) {
     var localMessage by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
+        if (snapshot.enabled) sync.start()
         while (true) {
             snapshot = sync.snapshot()
             delay(750)
@@ -90,6 +91,7 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, onClose: () -> Unit) {
                         checked = snapshot.enabled,
                         onCheckedChange = {
                             sync.setEnabled(it)
+                            if (it) sync.start()
                             snapshot = sync.snapshot()
                         }
                     )
@@ -114,6 +116,7 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, onClose: () -> Unit) {
                     onClick = {
                         runCatching { sync.saveToken(token) }
                             .onSuccess {
+                                sync.start()
                                 token = ""
                                 localMessage = "✓ Token verschlüsselt gespeichert"
                             }
@@ -148,6 +151,7 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, onClose: () -> Unit) {
                 Text("Token: ${if (snapshot.tokenConfigured) "✓ eingerichtet" else "○ fehlt"}")
                 OutlinedButton(
                     onClick = {
+                        sync.start()
                         sync.retryNow()
                         localMessage = "Sync erneut angestoßen"
                     },
