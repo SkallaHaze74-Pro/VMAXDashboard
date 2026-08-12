@@ -6,6 +6,7 @@ import android.content.Context
 class VMAXSyncApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        AdaptiveDecoderRuntime.initialize(this)
         val enabled = getSharedPreferences("vmax_github_sync", Context.MODE_PRIVATE)
             .getBoolean("enabled", false)
         if (enabled) {
