@@ -54,9 +54,19 @@ jobs:
           python-version: '3.12'
 
       - name: Decoder-AI Tests
-        run: python tools/decoder_ai/test_consensus.py
+        run: |
+          python tools/decoder_ai/test_consensus.py
+          python tools/decoder_ai/test_libble_compare.py
 
-      - name: Fahrten vergleichen und Profil erzeugen
+      - name: libble SDK gegen BT638-Livestand vergleichen
+        if: github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data'
+        run: |
+          python tools/decoder_ai/libble_compare.py \
+            --root fahrdaten \
+            --output decoder-ai/libble_comparison.json \
+            --report decoder-ai/libble_comparison.md
+
+      - name: Unbekannte Felder über mehrere Fahrten lernen
         if: github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data'
         run: |
           python tools/decoder_ai/consensus.py \
@@ -64,17 +74,17 @@ jobs:
             --output decoder-ai/decoder_profile.json \
             --report decoder-ai/analysis_report.md
 
-      - name: Neues Decoder-Profil speichern
+      - name: Neue Decoder-Ergebnisse speichern
         if: github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data'
         run: |
-          if git diff --quiet -- decoder-ai/decoder_profile.json decoder-ai/analysis_report.md; then
+          if git diff --quiet -- decoder-ai/decoder_profile.json decoder-ai/analysis_report.md decoder-ai/libble_comparison.json decoder-ai/libble_comparison.md; then
             echo 'Keine neue Decoder-Evidenz.'
             exit 0
           fi
           git config user.name 'VMAX Decoder AI'
           git config user.email 'actions@users.noreply.github.com'
-          git add decoder-ai/decoder_profile.json decoder-ai/analysis_report.md
-          git commit -m 'Decoder AI: Fahrdaten-Konsens aktualisieren'
+          git add decoder-ai/decoder_profile.json decoder-ai/analysis_report.md decoder-ai/libble_comparison.json decoder-ai/libble_comparison.md
+          git commit -m 'Decoder AI: libble- und Fahrdaten-Konsens aktualisieren'
           git push origin HEAD:telemetry-data
 
   android-verify:
