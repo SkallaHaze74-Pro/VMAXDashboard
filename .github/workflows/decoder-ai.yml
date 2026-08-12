@@ -14,6 +14,7 @@ on:
       - 'app/src/main/java/de/kevin/vmaxdashboard/LearningProfileStore.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/ScooterState.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/LiveTelemetryDecoder.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/MainActivity.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/VMAXSyncApplication.kt'
   push:
     branches:
@@ -31,6 +32,7 @@ on:
       - 'app/src/main/java/de/kevin/vmaxdashboard/LearningProfileStore.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/ScooterState.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/LiveTelemetryDecoder.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/MainActivity.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/VMAXSyncApplication.kt'
   workflow_dispatch:
 
