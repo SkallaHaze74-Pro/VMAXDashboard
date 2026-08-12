@@ -8,6 +8,9 @@ class VMAXSyncApplication : Application() {
         super.onCreate()
         val enabled = getSharedPreferences("vmax_github_sync", Context.MODE_PRIVATE)
             .getBoolean("enabled", false)
-        if (enabled) GitHubTelemetrySync.get(this).start()
+        if (enabled) {
+            GitHubTelemetrySync.get(this).start()
+            DecoderAiCloudSync.get(this).start()
+        }
     }
 }
