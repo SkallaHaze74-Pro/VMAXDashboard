@@ -47,15 +47,8 @@
 
         <activity
             android:name=".GitHubSyncActivity"
-            android:exported="true"
-            android:label="VMAX GitHub Sync">
-
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-
-        </activity>
+            android:exported="false"
+            android:label="VMAX GitHub Sync" />
 
     </application>
 
