@@ -3,6 +3,7 @@
 package de.kevin.vmaxdashboard
 
 import android.Manifest
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -17,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -45,6 +47,9 @@ private fun VmaxApp(manager: BleScooterManager) {
     val gattScanner = remember(manager) { GattReadScanner(manager) }
     val gattState by gattScanner.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val githubSync = remember(context) { GitHubTelemetrySync.get(context.applicationContext) }
+    var githubSnapshot by remember { mutableStateOf(githubSync.snapshot()) }
     var expertMode by remember { mutableStateOf(true) }
     var selectedAction by remember { mutableStateOf("Bremse") }
     var chargeMode by remember { mutableStateOf(false) }
@@ -77,6 +82,13 @@ private fun VmaxApp(manager: BleScooterManager) {
             if (manager.state.value.recordingActive && (!requireConnection || manager.state.value.connected)) {
                 manager.addMeasurementMarker(label)
             }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            githubSnapshot = githubSync.snapshot()
+            delay(1_000)
         }
     }
 
@@ -116,9 +128,9 @@ private fun VmaxApp(manager: BleScooterManager) {
             TopAppBar(
                 title = {
                     Column {
-                        Text("VMAX Dashboard • Version 7.4")
+                        Text("VMAX Dashboard • Version 7.5")
                         Text(
-                            "Capability Matrix & Decoder AI • Build ${BuildConfig.VERSION_NAME}",
+                            "GitHub Sync & Decoder AI • Build ${BuildConfig.VERSION_NAME}",
                             style = MaterialTheme.typography.labelSmall
                         )
                     }
@@ -171,6 +183,14 @@ private fun VmaxApp(manager: BleScooterManager) {
             }
 
             item { AutoRecordingCard(state, manager::stopMeasurementAndExport, manager::exportSessionCsv) }
+            item {
+                GitHubSyncCard(
+                    snapshot = githubSnapshot,
+                    onOpen = {
+                        context.startActivity(Intent(context, GitHubSyncActivity::class.java))
+                    }
+                )
+            }
             item { SectionTitle("Direkttests – einmal drücken") }
             item { DirectMarkerCard(state) { marker(it) } }
             item { GattSummaryCard(gattState, gattScanner::scanAndRead, state.connected) }
@@ -266,7 +286,7 @@ private fun StatusCard(state: ScooterState, gatt: GattScanState, chargeMode: Boo
     Card(shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text(state.status, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("Version 7.4 • Build ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodySmall)
+            Text("Version 7.5 • Build ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodySmall)
             Text(if (state.connected) "● Bluetooth verbunden" else "○ Bluetooth nicht verbunden")
             Text(if (state.recordingActive) "● Auto-KI-Aufnahme läuft" else "○ Aufnahme wartet")
             if (chargeMode) Text("🔌 Lademodus aktiv – Auto-Reconnect alle 15 Sekunden")
@@ -306,6 +326,29 @@ private fun AutoRecordingCard(state: ScooterState, onStop: () -> Unit, onExport:
             Button(onClick = onStop, enabled = state.recordingActive, modifier = Modifier.fillMaxWidth()) { Text("STOPPEN, ANALYSIEREN & SPEICHERN") }
             OutlinedButton(onClick = onExport, enabled = state.packetTotal > 0, modifier = Modifier.fillMaxWidth()) { Text("Rohdaten zusätzlich als CSV") }
             if (state.lastExportMessage.isNotBlank()) Text(state.lastExportMessage, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun GitHubSyncCard(snapshot: GitHubSyncSnapshot, onOpen: () -> Unit) {
+    val status = when {
+        !snapshot.tokenConfigured -> "Noch nicht eingerichtet"
+        !snapshot.enabled -> "Eingerichtet • Auto-Upload ist aus"
+        snapshot.pendingBundles > 0 -> "Auto-Upload aktiv • ${snapshot.pendingBundles} Fahrt(en) warten"
+        else -> "✓ Auto-Upload aktiv • GitHub aktuell"
+    }
+    Card(shape = RoundedCornerShape(22.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("☁ GitHub Fahrdaten-Sync", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(status)
+            if (snapshot.lastStatus.isNotBlank()) {
+                Text(snapshot.lastStatus, style = MaterialTheme.typography.bodySmall)
+            }
+            Button(onClick = onOpen, modifier = Modifier.fillMaxWidth()) {
+                Text(if (snapshot.tokenConfigured) "GITHUB SYNC & FAHRDATEN" else "GITHUB SYNC EINRICHTEN")
+            }
+            Text("Kein Scooter und keine Bluetooth-Verbindung nötig. Token, Upload-Status und Warteschlange sind direkt hier in derselben App erreichbar.", style = MaterialTheme.typography.bodySmall)
         }
     }
 }
