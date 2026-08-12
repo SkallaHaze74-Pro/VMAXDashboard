@@ -1,0 +1,6 @@
+{
+  "schema": "vmax-libble-ground-truth-v1",
+  "sdk_source": "libble-sdk-native-lib.so",
+  "rides": [],
+  "aggregate_fields": {}
+}
