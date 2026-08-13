@@ -327,6 +327,232 @@
           "sdk_status": "observed"
         }
       }
+    },
+    {
+      "ride": "Messfahrt_2026-08-13_20-26-18",
+      "raw_packets": 41,
+      "live_rows": 2612,
+      "channels": {
+        "1501": {
+          "packets": 1,
+          "non_placeholder_packets": 1,
+          "non_placeholder_percent": 100.0,
+          "sdk_decoder": false,
+          "sdk_name": null
+        },
+        "1502": {
+          "packets": 4,
+          "non_placeholder_packets": 4,
+          "non_placeholder_percent": 100.0,
+          "sdk_decoder": false,
+          "sdk_name": null
+        },
+        "1503": {
+          "packets": 1,
+          "non_placeholder_packets": 1,
+          "non_placeholder_percent": 100.0,
+          "sdk_decoder": false,
+          "sdk_name": null
+        },
+        "1504": {
+          "packets": 1,
+          "non_placeholder_packets": 1,
+          "non_placeholder_percent": 100.0,
+          "sdk_decoder": false,
+          "sdk_name": null
+        },
+        "1505": {
+          "packets": 4,
+          "non_placeholder_packets": 4,
+          "non_placeholder_percent": 100.0,
+          "sdk_decoder": true,
+          "sdk_name": "BikePerformance"
+        },
+        "1506": {
+          "packets": 4,
+          "non_placeholder_packets": 4,
+          "non_placeholder_percent": 100.0,
+          "sdk_decoder": false,
+          "sdk_name": null
+        },
+        "1507": {
+          "packets": 1,
+          "non_placeholder_packets": 1,
+          "non_placeholder_percent": 100.0,
+          "sdk_decoder": false,
+          "sdk_name": null
+        },
+        "1508": {
+          "packets": 4,
+          "non_placeholder_packets": 4,
+          "non_placeholder_percent": 100.0,
+          "sdk_decoder": false,
+          "sdk_name": null
+        },
+        "1509": {
+          "packets": 4,
+          "non_placeholder_packets": 4,
+          "non_placeholder_percent": 100.0,
+          "sdk_decoder": true,
+          "sdk_name": "BatteryChange/BatteryUpdate"
+        },
+        "150A": {
+          "packets": 4,
+          "non_placeholder_packets": 4,
+          "non_placeholder_percent": 100.0,
+          "sdk_decoder": true,
+          "sdk_name": "MotorUpdate"
+        },
+        "150B": {
+          "packets": 4,
+          "non_placeholder_packets": 0,
+          "non_placeholder_percent": 0.0,
+          "sdk_decoder": false,
+          "sdk_name": null
+        },
+        "150C": {
+          "packets": 1,
+          "non_placeholder_packets": 1,
+          "non_placeholder_percent": 100.0,
+          "sdk_decoder": false,
+          "sdk_name": "BatteryCellUpdate",
+          "note": "libble names BatteryCellUpdate/cellIndex/cellVoltage/cellTemp/cellNum are known; exact BT638 byte offsets must be verified before auto-decoding."
+        },
+        "150D": {
+          "packets": 3,
+          "non_placeholder_packets": 3,
+          "non_placeholder_percent": 100.0,
+          "sdk_decoder": false,
+          "sdk_name": null
+        },
+        "2A00": {
+          "packets": 1,
+          "non_placeholder_packets": 1,
+          "non_placeholder_percent": 100.0,
+          "sdk_decoder": false,
+          "sdk_name": null
+        },
+        "2A01": {
+          "packets": 1,
+          "non_placeholder_packets": 1,
+          "non_placeholder_percent": 100.0,
+          "sdk_decoder": false,
+          "sdk_name": null
+        },
+        "2A02": {
+          "packets": 1,
+          "non_placeholder_packets": 1,
+          "non_placeholder_percent": 100.0,
+          "sdk_decoder": false,
+          "sdk_name": null
+        },
+        "2A04": {
+          "packets": 1,
+          "non_placeholder_packets": 1,
+          "non_placeholder_percent": 100.0,
+          "sdk_decoder": false,
+          "sdk_name": null
+        },
+        "2A28": {
+          "packets": 1,
+          "non_placeholder_packets": 1,
+          "non_placeholder_percent": 100.0,
+          "sdk_decoder": false,
+          "sdk_name": null
+        }
+      },
+      "fields": {
+        "1505.powerA_W": {
+          "samples": 4,
+          "min": 0.0,
+          "max": 0.0,
+          "mean": 0.0,
+          "comparisons_to_app_live": 0,
+          "match_percent": null,
+          "mae_to_app_live": null,
+          "sdk_status": "observed"
+        },
+        "1505.powerB_W": {
+          "samples": 4,
+          "min": 0.0,
+          "max": 0.0,
+          "mean": 0.0,
+          "comparisons_to_app_live": 0,
+          "match_percent": null,
+          "mae_to_app_live": null,
+          "sdk_status": "observed"
+        },
+        "1505.speed_kmh": {
+          "samples": 4,
+          "min": 0.0,
+          "max": 0.0,
+          "mean": 0.0,
+          "comparisons_to_app_live": 4,
+          "match_percent": 100.0,
+          "mae_to_app_live": 0.0,
+          "sdk_status": "observed"
+        },
+        "1509.current_A": {
+          "samples": 4,
+          "min": 0.0,
+          "max": 0.0,
+          "mean": 0.0,
+          "comparisons_to_app_live": 4,
+          "match_percent": 100.0,
+          "mae_to_app_live": 0.0,
+          "sdk_status": "observed"
+        },
+        "1509.direct_power_W": {
+          "samples": 4,
+          "min": 0.0,
+          "max": 0.0,
+          "mean": 0.0,
+          "comparisons_to_app_live": 4,
+          "match_percent": 100.0,
+          "mae_to_app_live": 0.0,
+          "sdk_status": "observed"
+        },
+        "1509.secondary_current_A": {
+          "samples": 4,
+          "min": 0.0,
+          "max": 0.0,
+          "mean": 0.0,
+          "comparisons_to_app_live": 0,
+          "match_percent": null,
+          "mae_to_app_live": null,
+          "sdk_status": "observed"
+        },
+        "1509.soc_percent": {
+          "samples": 4,
+          "min": 75.0,
+          "max": 75.0,
+          "mean": 75.0,
+          "comparisons_to_app_live": 4,
+          "match_percent": 100.0,
+          "mae_to_app_live": 0.0,
+          "sdk_status": "observed"
+        },
+        "1509.voltage_V": {
+          "samples": 4,
+          "min": 50.6,
+          "max": 50.6,
+          "mean": 50.6,
+          "comparisons_to_app_live": 4,
+          "match_percent": 100.0,
+          "mae_to_app_live": 0.0,
+          "sdk_status": "observed"
+        },
+        "150A.motor_current_A": {
+          "samples": 4,
+          "min": 0.0,
+          "max": 0.0,
+          "mean": 0.0,
+          "comparisons_to_app_live": 0,
+          "match_percent": null,
+          "mae_to_app_live": null,
+          "sdk_status": "observed"
+        }
+      }
     }
   ],
   "aggregate_fields": {
@@ -338,14 +564,14 @@
       "verdict": "OBSERVED_NEEDS_MORE_PROOF"
     },
     "1505.powerA_W": {
-      "samples": 397,
+      "samples": 401,
       "comparisons_to_app_live": 0,
       "match_percent": null,
       "mae_to_app_live": null,
       "verdict": "OBSERVED_NEEDS_MORE_PROOF"
     },
     "1505.powerB_W": {
-      "samples": 397,
+      "samples": 401,
       "comparisons_to_app_live": 0,
       "match_percent": null,
       "mae_to_app_live": null,
@@ -359,8 +585,8 @@
       "verdict": "OBSERVED_NEEDS_MORE_PROOF"
     },
     "1505.speed_kmh": {
-      "samples": 396,
-      "comparisons_to_app_live": 396,
+      "samples": 400,
+      "comparisons_to_app_live": 400,
       "match_percent": 100.0,
       "mae_to_app_live": 0.0,
       "verdict": "BT638_CONFIRMED"
@@ -373,42 +599,42 @@
       "verdict": "OBSERVED_NEEDS_MORE_PROOF"
     },
     "1509.current_A": {
-      "samples": 397,
-      "comparisons_to_app_live": 397,
+      "samples": 401,
+      "comparisons_to_app_live": 401,
       "match_percent": 100.0,
       "mae_to_app_live": 0.0,
       "verdict": "BT638_CONFIRMED"
     },
     "1509.direct_power_W": {
-      "samples": 397,
-      "comparisons_to_app_live": 397,
-      "match_percent": 64.74,
-      "mae_to_app_live": 34.646096,
+      "samples": 401,
+      "comparisons_to_app_live": 401,
+      "match_percent": 65.09,
+      "mae_to_app_live": 34.300499,
       "verdict": "OBSERVED_NEEDS_MORE_PROOF"
     },
     "1509.secondary_current_A": {
-      "samples": 397,
+      "samples": 401,
       "comparisons_to_app_live": 0,
       "match_percent": null,
       "mae_to_app_live": null,
       "verdict": "OBSERVED_NEEDS_MORE_PROOF"
     },
     "1509.soc_percent": {
-      "samples": 397,
-      "comparisons_to_app_live": 397,
+      "samples": 401,
+      "comparisons_to_app_live": 401,
       "match_percent": 100.0,
       "mae_to_app_live": 0.0,
       "verdict": "BT638_CONFIRMED"
     },
     "1509.voltage_V": {
-      "samples": 397,
-      "comparisons_to_app_live": 397,
+      "samples": 401,
+      "comparisons_to_app_live": 401,
       "match_percent": 100.0,
       "mae_to_app_live": 0.0,
       "verdict": "BT638_CONFIRMED"
     },
     "150A.motor_current_A": {
-      "samples": 397,
+      "samples": 401,
       "comparisons_to_app_live": 0,
       "match_percent": null,
       "mae_to_app_live": null,

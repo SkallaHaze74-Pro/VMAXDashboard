@@ -1,8 +1,8 @@
 {
   "schema": "vmax-adaptive-decoder-v1",
   "revision": "803eaf49a61a3b57",
-  "generatedAtMs": 1786642596881,
-  "rideCount": 1,
+  "generatedAtMs": 1786646573684,
+  "rideCount": 2,
   "ruleCount": 6,
   "confirmedRuleCount": 0,
   "rules": [
