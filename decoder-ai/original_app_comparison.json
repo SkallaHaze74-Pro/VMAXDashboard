@@ -55,7 +55,13 @@
       },
       "mappingCandidates": [],
       "libbleEvidenceKey": "1505.rpm",
-      "libbleEvidence": null
+      "libbleEvidence": {
+        "samples": 1,
+        "comparisons_to_app_live": 0,
+        "match_percent": null,
+        "mae_to_app_live": null,
+        "verdict": "OBSERVED_NEEDS_MORE_PROOF"
+      }
     },
     {
       "signal": "remainingDistanceKm",
@@ -75,7 +81,7 @@
       "originalCommand": "261",
       "unit": "km/h",
       "declaredStatus": "bt638_confirmed",
-      "runtimeStatus": "MAPPED_VERIFY_WITH_MORE_BT638_DATA",
+      "runtimeStatus": "BT638_CONFIRMED_BY_LIBBLE_AND_LIVE",
       "mapping": {
         "channel": "1505",
         "offset": 6,
@@ -84,7 +90,13 @@
       },
       "mappingCandidates": [],
       "libbleEvidenceKey": "1505.speed_kmh",
-      "libbleEvidence": null
+      "libbleEvidence": {
+        "samples": 396,
+        "comparisons_to_app_live": 396,
+        "match_percent": 100.0,
+        "mae_to_app_live": 0.0,
+        "verdict": "BT638_CONFIRMED"
+      }
     },
     {
       "signal": "motorPower",
@@ -146,7 +158,7 @@
       "originalCommand": "513",
       "unit": "mV",
       "declaredStatus": "bt638_confirmed",
-      "runtimeStatus": "MAPPED_VERIFY_WITH_MORE_BT638_DATA",
+      "runtimeStatus": "BT638_CONFIRMED_BY_LIBBLE_AND_LIVE",
       "mapping": {
         "channel": "1509",
         "offset": 5,
@@ -155,7 +167,13 @@
       },
       "mappingCandidates": [],
       "libbleEvidenceKey": "1509.voltage_V",
-      "libbleEvidence": null
+      "libbleEvidence": {
+        "samples": 397,
+        "comparisons_to_app_live": 397,
+        "match_percent": 100.0,
+        "mae_to_app_live": 0.0,
+        "verdict": "BT638_CONFIRMED"
+      }
     },
     {
       "signal": "batteryPercent",
@@ -163,7 +181,7 @@
       "originalCommand": "DriverInfo02.SID",
       "unit": "%",
       "declaredStatus": "bt638_confirmed",
-      "runtimeStatus": "MAPPED_VERIFY_WITH_MORE_BT638_DATA",
+      "runtimeStatus": "BT638_CONFIRMED_BY_LIBBLE_AND_LIVE",
       "mapping": {
         "channel": "1509",
         "offset": 4,
@@ -172,7 +190,13 @@
       },
       "mappingCandidates": [],
       "libbleEvidenceKey": "1509.soc_percent",
-      "libbleEvidence": null
+      "libbleEvidence": {
+        "samples": 397,
+        "comparisons_to_app_live": 397,
+        "match_percent": 100.0,
+        "mae_to_app_live": 0.0,
+        "verdict": "BT638_CONFIRMED"
+      }
     },
     {
       "signal": "batteryCapacityMwh",
@@ -240,7 +264,7 @@
       "originalCommand": "520",
       "unit": "mA",
       "declaredStatus": "bt638_confirmed",
-      "runtimeStatus": "MAPPED_VERIFY_WITH_MORE_BT638_DATA",
+      "runtimeStatus": "BT638_CONFIRMED_BY_LIBBLE_AND_LIVE",
       "mapping": {
         "channel": "1509",
         "offset": 0,
@@ -249,7 +273,13 @@
       },
       "mappingCandidates": [],
       "libbleEvidenceKey": "1509.current_A",
-      "libbleEvidence": null
+      "libbleEvidence": {
+        "samples": 397,
+        "comparisons_to_app_live": 397,
+        "match_percent": 100.0,
+        "mae_to_app_live": 0.0,
+        "verdict": "BT638_CONFIRMED"
+      }
     },
     {
       "signal": "lightOn",
@@ -310,8 +340,8 @@
   ],
   "summary": {
     "signals": 16,
-    "confirmedByLiveEvidence": 0,
-    "mappedNeedMoreData": 8,
+    "confirmedByLiveEvidence": 4,
+    "mappedNeedMoreData": 4,
     "roleAssignmentsOpen": 2,
     "targetedMappingsOpen": 6
   }
