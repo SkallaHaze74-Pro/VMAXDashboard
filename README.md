@@ -1,104 +1,89 @@
-# Scooter Telemetry VX 5.1 - Tester Lab
+# VMAXDashboard
 
-Inoffizielles, lokales BLE-Telemetrie- und Diagnosewerkzeug fur kompatible E-Scooter.
-
-Die App ist in erster Linie ein eigenes Diagnose- und Testwerkzeug. Der Fokus liegt auf lokaler Auswertung, reproduzierbaren Tests und vorsichtiger, nachvollziehbarer Analyse - nicht auf Eingriffen in Fahrparameter.
+Lokales BLE-Telemetrie- und Diagnosewerkzeug fuer kompatible E-Scooter. Das Projekt ist aktuell auf **eigene Nutzung, Tests und reale Messfahrten** ausgerichtet. Die App arbeitet bewusst **read-only**: Es werden keine Fahrparameter veraendert.
 
 ## Aktueller Fokus
 
-- **Eigenes Werkzeug zuerst:** auf Stabilitat, Verlasslichkeit und Erweiterbarkeit fur den eigenen Einsatz optimiert.
-- **Google/oeffentlich optional spater:** Struktur und Dokumentation werden sauber gehalten, ohne schon jetzt alles auf einen offentlichen Release auszurichten.
-- **Keine Datenverluste beim Aufraumen:** bestehende Analyse-, Test- und Forschungsdateien bleiben erhalten und werden nur besser strukturiert.
+Der aktuelle Schwerpunkt liegt auf:
+
+- stabiler BLE-Verbindung
+- reproduzierbaren Messfahrten
+- lokaler Aufzeichnung und Auswertung
+- strukturiertem Decoder-Lernen
+- spaeter optional besserer oeffentlicher Praesentation
 
 ## Hauptfunktionen
 
-- universeller BLE-Geratescanner mit manueller Auswahl
-- lokales Telemetrie- und Diagnose-Dashboard
-- gefuhrter, standardisierter Decoder-Test
-- Sitzungs- und Messfahrtsupport
-- Vergleichsberichte und Export fur Testzwecke
-- experimentelle Unterstutzung unbekannter Modelle
+- universeller BLE-Geraetescanner mit manueller Auswahl
+- lokale Telemetrie- und Diagnoseanzeige
+- automatische Daueraufnahme waehrend der Nutzung
+- Marker fuer reale Testereignisse waehrend der Fahrt
+- GATT-Explorer mit sicheren READ-Operationen
+- GitHub-Sync fuer Fahrdaten und Decoder-Ablage
+- Adaptive-Decoder- und Vergleichslogik
 
-## Sicherheits- und Nutzungsrahmen
+## Sicherheitsrahmen
 
-- **Nur-Lese-Analyse:** es werden keine Fahrparameter verandert
-- **lokaler Fokus:** keine automatische Datenubertragung
-- **kein GPS im Testerbericht**
-- **experimentelle Modellunterstutzung** muss durch reale Testeraufnahmen bestatigt werden
+- **Nur Lesen:** keine Aenderung von Fahrparametern
+- **Keine automatische Datenuebertragung** ohne bewusste Einrichtung
+- **Kein GPS im Testerbericht**
+- **Unbekannte Modelle** sind experimentell und muessen durch reale Testeraufnahmen bestaetigt werden
 
-## Versionshinweise
+## Versionen und sichtbare Entwicklung
 
 ### Neu in 5.1
 
-- universeller BLE-Geratescanner mit manueller Auswahl
-- gefuhrter, standardisierter Decoder-Test
+- universeller BLE-Geraetescanner mit manueller Auswahl
+- gefuehrter, standardisierter Decoder-Test
 - Tester- und Modellangaben
-- STVX-1 Vergleichsbericht uber Android Teilen
-- keine automatische Datenubertragung
+- STVX-1 Vergleichsbericht ueber Android Teilen
+- keine automatische Datenuebertragung
 - kein GPS im Testerbericht
-- weiterhin Nur-Lese-Analyse: keine Fahrparameter werden verandert
+- weiterhin Nur-Lese-Analyse: keine Fahrparameter werden veraendert
 
 ### Scooter-Finder 5.1
 
-Beim Offnen des Tester-Labs startet automatisch ein universeller BLE-Scan. Wahrscheinliche Scooter werden hervorgehoben, nach Signalstarke sortiert und konnen mit einem Tipp verbunden werden.
+Beim Oeffnen des Tester-Labs startet automatisch ein universeller BLE-Scan. Wahrscheinliche Scooter werden hervorgehoben, nach Signalstaerke sortiert und koennen mit einem Tipp verbunden werden.
 
 ### Smart Connect (5.2)
 
 - speichert den zuletzt erfolgreich verbundenen Scooter lokal
-- verbindet ihn beim nachsten App-Start automatisch
+- verbindet ihn beim naechsten App-Start automatisch
 - versucht nach einem unerwarteten BLE-Abbruch automatisch erneut zu verbinden
-- kann unter Setup deaktiviert oder uber "Vergessen" zuruckgesetzt werden
+- kann unter Setup deaktiviert oder ueber "Vergessen" zurueckgesetzt werden
 - eine manuelle Trennung startet absichtlich keine Wiederverbindung
 
 ## Projektstruktur
 
 ```text
-app/                   Android-App mit BLE-, Telemetrie- und UI-Logik
-docs/                  gebundelte Projektdokumentation
-reverse-engineering/   technische Analyse und Forschung
-store-assets/          Assets fur Darstellung und Distribution
-tools/decoder_ai/      Hilfswerkzeuge rund um Decoder und Analyse
-.github/workflows/     Automatisierung und Build-Ablaufe
+app/                  Android-App
+reverse-engineering/  technische Analyse und Protokollarbeit
+tools/decoder_ai/     Hilfstools fuer Decoder-/KI-Unterstuetzung
+store-assets/         Assets fuer Darstellung und Verteilung
+.github/workflows/    Automatisierung und Build-Helfer
+docs/                 geordnete Projektdokumentation
 ```
 
 ## Dokumentation
 
-Die Dokumentation wird schrittweise unter `docs/` gebundelt, damit das Root-Verzeichnis ruhiger und professioneller bleibt.
+Die bestehende Doku wird schrittweise in eine klarere Struktur ueberfuehrt, ohne bestehende Inhalte zu verlieren.
 
-### Testing
-
-- `docs/testing/BLE_TESTPLAN_V2.2.md`
-- `docs/testing/TESTER_ANLEITUNG.md`
-
-### Privacy
-
-- `docs/privacy/DATENSCHUTZ_ENTWURF.md`
-
-### Release
-
-- `docs/release/HANDY_APK_ANLEITUNG.md`
-- `docs/release/UPDATE_SIGNATUR_ANLEITUNG.md`
-
-### Research
-
-- `docs/research/ANALYSE_EDITION.md`
-- `docs/research/GEFUNDENE_DECODER_6.1.md`
-- `docs/research/GEFUNDENE_DECODER_6.2.md`
-
-### Features
-
-- `docs/features/LIVE_AI_TEST_EDITION.md`
-- `docs/features/MESSFAHRT_MARKER_EDITION.md`
-- `docs/features/MESSFAHRT_PRO_EDITION.md`
+- `docs/testing/` fuer Testablaeufe und Testerhinweise
+- `docs/privacy/` fuer Datenschutz und Grenzen
+- `docs/release/` fuer APK-, Signatur- und Release-Hinweise
+- `docs/research/` fuer Analyse, Reverse-Engineering-Ergebnisse und Decoder-Funde
+- `docs/features/` fuer feature-spezifische Notizen und Editionsstaende
 
 ## Empfohlene interne Weiterentwicklung
 
-1. `MainActivity.kt` in kleinere UI-Bausteine zerlegen
-2. BLE-, Decoder-, Telemetrie- und Sync-Logik sauber paketieren
-3. Dokumentation weiter aus dem Root in `docs/` verschieben
-4. experimentelle und bestatigte Modellunterstutzung klar markieren
-5. Google-/offentliche Tauglichkeit erst nach Stabilisierung bewerten
+Die naechsten sinnvollen Schritte fuer dieses Projekt sind:
 
-## Hinweis zur Ausrichtung
+- MainActivity entlasten und UI sauber aufteilen
+- BLE-, Decoder-, Sync- und Telemetrie-Logik fachlich trennen
+- Session- und Report-Logik weiter strukturieren
+- Dokumentation ordnen, ohne bestehende Daten zu loeschen
+- reale erste Messfahrt und anschliessenden Upload robust machen
 
-Dieses Projekt ist aktuell primar fur den eigenen praktischen Einsatz gedacht. Eine spatere offentliche oder store-nahe Aufbereitung bleibt moglich, steht aber bewusst hinter technischer Stabilitat, sauberer Struktur und nachvollziehbarer Diagnose zuruck.
+## Zielbild
+
+Kurzfristig soll die App fuer echte Fahrten zuverlaessig sein. Mittel- bis langfristig kann daraus eine oeffentlich besser praesentierbare App werden, ohne den aktuellen privaten Fokus zu verlieren.
