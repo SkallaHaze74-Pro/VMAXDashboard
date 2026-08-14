@@ -27,7 +27,12 @@ data class GattCharacteristicInfo(
     val lastReadStarted: Boolean = false,
     val evidence: String = CapabilityEvidence.UNKNOWN.label,
     val family: String = "Unbekannt",
-    val meaning: String = ""
+    val meaning: String = "",
+    val sources: List<String> = emptyList(),
+    val confirmedDetails: List<String> = emptyList(),
+    val unknownDetails: List<String> = emptyList(),
+    val uiHint: String = "",
+    val safetyNote: String = ""
 )
 
 data class GattScanState(
@@ -78,17 +83,7 @@ class GattReadScanner(private val manager: BleScooterManager) {
                 GattCharacteristicInfo(
                     serviceUuid = serviceShort,
                     characteristicUuid = characteristicShort,
-                    properties = buildString {
-                        append(propertyText(p))
-                        append(" • ")
-                        append(knowledge.evidence.label)
-                        append(" • ")
-                        append(knowledge.family)
-                        if (knowledge.meaning.isNotBlank()) {
-                            append("\n")
-                            append(knowledge.meaning)
-                        }
-                    },
+                    properties = propertyText(p),
                     readable = p and BluetoothGattCharacteristic.PROPERTY_READ != 0,
                     notifiable = p and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0,
                     indicatable = p and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0,
@@ -96,7 +91,12 @@ class GattReadScanner(private val manager: BleScooterManager) {
                         p and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0,
                     evidence = knowledge.evidence.label,
                     family = knowledge.family,
-                    meaning = knowledge.meaning
+                    meaning = knowledge.meaning,
+                    sources = knowledge.sources,
+                    confirmedDetails = knowledge.confirmedDetails,
+                    unknownDetails = knowledge.unknownDetails,
+                    uiHint = knowledge.uiHint,
+                    safetyNote = knowledge.safetyNote
                 )
             }
         }.sortedWith(
@@ -154,8 +154,6 @@ class GattReadScanner(private val manager: BleScooterManager) {
             }
         )
 
-        // Android permits one GATT operation at a time. Read callbacks are handled
-        // by BleScooterManager; this conservative interval keeps the scan stable.
         handler.postDelayed(
             { readNext(gatt, expectedGeneration, started + if (readStarted) 1 else 0) },
             650L
@@ -175,7 +173,7 @@ class GattReadScanner(private val manager: BleScooterManager) {
         if (properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0) add("NOTIFY")
         if (properties and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0) add("INDICATE")
         if (properties and BluetoothGattCharacteristic.PROPERTY_BROADCAST != 0) add("BROADCAST")
-    }.ifEmpty { listOf("–") }.joinToString(" • ")
+    }.ifEmpty { listOf("-") }.joinToString(" • ")
 
     private fun evidenceRank(value: String): Int = when (value) {
         CapabilityEvidence.BT638_CONFIRMED.label -> 0
