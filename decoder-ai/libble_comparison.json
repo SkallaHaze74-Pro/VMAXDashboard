@@ -5,6 +5,9 @@
     {
       "ride": "Messfahrt_2026-08-13_19-17-14",
       "raw_packets": 3235,
+      "accepted_raw_packets": 3234,
+      "rejected_read_packets": 0,
+      "rejected_hybrid_packets": 1,
       "live_rows": 3245,
       "channels": {
         "0203": {
@@ -43,8 +46,8 @@
           "sdk_name": null
         },
         "1505": {
-          "packets": 397,
-          "non_placeholder_packets": 397,
+          "packets": 396,
+          "non_placeholder_packets": 396,
           "non_placeholder_percent": 100.0,
           "sdk_decoder": true,
           "sdk_name": "BikePerformance"
@@ -206,41 +209,21 @@
         }
       },
       "fields": {
-        "1505.distance_raw": {
-          "samples": 1,
-          "min": 13622.0,
-          "max": 13622.0,
-          "mean": 13622.0,
-          "comparisons_to_app_live": 0,
-          "match_percent": null,
-          "mae_to_app_live": null,
-          "sdk_status": "observed"
-        },
         "1505.powerA_W": {
-          "samples": 397,
+          "samples": 396,
           "min": 0.0,
           "max": 718.0,
-          "mean": 74.73627204030227,
+          "mean": 74.90656565656566,
           "comparisons_to_app_live": 0,
           "match_percent": null,
           "mae_to_app_live": null,
           "sdk_status": "observed"
         },
         "1505.powerB_W": {
-          "samples": 397,
+          "samples": 396,
           "min": 0.0,
-          "max": 1926.9,
-          "mean": 79.57153652392948,
-          "comparisons_to_app_live": 0,
-          "match_percent": null,
-          "mae_to_app_live": null,
-          "sdk_status": "observed"
-        },
-        "1505.rpm": {
-          "samples": 1,
-          "min": 13108.0,
-          "max": 13108.0,
-          "mean": 13108.0,
+          "max": 718.0,
+          "mean": 74.90656565656566,
           "comparisons_to_app_live": 0,
           "match_percent": null,
           "mae_to_app_live": null,
@@ -255,16 +238,6 @@
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
           "sdk_status": "confirmed_on_bt638"
-        },
-        "1505.torque_Nm": {
-          "samples": 1,
-          "min": 243.68,
-          "max": 243.68,
-          "mean": 243.68,
-          "comparisons_to_app_live": 0,
-          "match_percent": null,
-          "mae_to_app_live": null,
-          "sdk_status": "observed"
         },
         "1509.current_A": {
           "samples": 397,
@@ -282,9 +255,9 @@
           "max": 766.0,
           "mean": 79.77581863979849,
           "comparisons_to_app_live": 397,
-          "match_percent": 64.74,
-          "mae_to_app_live": 34.646096,
-          "sdk_status": "observed"
+          "match_percent": 100.0,
+          "mae_to_app_live": 0.0,
+          "sdk_status": "confirmed_on_bt638"
         },
         "1509.secondary_current_A": {
           "samples": 397,
@@ -331,6 +304,9 @@
     {
       "ride": "Messfahrt_2026-08-13_20-26-18",
       "raw_packets": 41,
+      "accepted_raw_packets": 41,
+      "rejected_read_packets": 0,
+      "rejected_hybrid_packets": 0,
       "live_rows": 2612,
       "channels": {
         "1501": {
@@ -557,6 +533,9 @@
     {
       "ride": "Messfahrt_2026-08-15_21-09-05",
       "raw_packets": 533,
+      "accepted_raw_packets": 532,
+      "rejected_read_packets": 0,
+      "rejected_hybrid_packets": 1,
       "live_rows": 533,
       "channels": {
         "0203": {
@@ -595,8 +574,8 @@
           "sdk_name": null
         },
         "1505": {
-          "packets": 64,
-          "non_placeholder_packets": 64,
+          "packets": 63,
+          "non_placeholder_packets": 63,
           "non_placeholder_percent": 100.0,
           "sdk_decoder": true,
           "sdk_name": "BikePerformance"
@@ -758,52 +737,32 @@
         }
       },
       "fields": {
-        "1505.distance_raw": {
-          "samples": 1,
-          "min": 13622.0,
-          "max": 13622.0,
-          "mean": 13622.0,
-          "comparisons_to_app_live": 0,
-          "match_percent": null,
-          "mae_to_app_live": null,
-          "sdk_status": "observed"
-        },
         "1505.powerA_W": {
-          "samples": 64,
+          "samples": 63,
           "min": 0.0,
           "max": 442.0,
-          "mean": 37.8125,
+          "mean": 38.41269841269841,
           "comparisons_to_app_live": 0,
           "match_percent": null,
           "mae_to_app_live": null,
           "sdk_status": "observed"
         },
         "1505.powerB_W": {
-          "samples": 64,
+          "samples": 63,
           "min": 0.0,
           "max": 442.0,
-          "mean": 37.8125,
-          "comparisons_to_app_live": 0,
-          "match_percent": null,
-          "mae_to_app_live": null,
-          "sdk_status": "observed"
-        },
-        "1505.rpm": {
-          "samples": 1,
-          "min": 13108.0,
-          "max": 13108.0,
-          "mean": 13108.0,
+          "mean": 38.41269841269841,
           "comparisons_to_app_live": 0,
           "match_percent": null,
           "mae_to_app_live": null,
           "sdk_status": "observed"
         },
         "1505.speed_kmh": {
-          "samples": 64,
+          "samples": 63,
           "min": 0.0,
           "max": 21.8,
-          "mean": 5.875,
-          "comparisons_to_app_live": 64,
+          "mean": 5.968253968253968,
+          "comparisons_to_app_live": 63,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
           "sdk_status": "confirmed_on_bt638"
@@ -823,10 +782,10 @@
           "min": 0.0,
           "max": 680.0,
           "mean": 50.75,
-          "comparisons_to_app_live": 63,
-          "match_percent": 71.43,
-          "mae_to_app_live": 47.492063,
-          "sdk_status": "observed"
+          "comparisons_to_app_live": 64,
+          "match_percent": 100.0,
+          "mae_to_app_live": 0.0,
+          "sdk_status": "confirmed_on_bt638"
         },
         "1509.secondary_current_A": {
           "samples": 64,
@@ -873,6 +832,9 @@
     {
       "ride": "Messfahrt_2026-08-15_21-12-46",
       "raw_packets": 104,
+      "accepted_raw_packets": 104,
+      "rejected_read_packets": 0,
+      "rejected_hybrid_packets": 0,
       "live_rows": 104,
       "channels": {
         "0203": {
@@ -1168,47 +1130,26 @@
     }
   ],
   "aggregate_fields": {
-    "1505.distance_raw": {
-      "samples": 2,
-      "comparisons_to_app_live": 0,
-      "match_percent": null,
-      "mae_to_app_live": null,
-      "verdict": "OBSERVED_NEEDS_MORE_PROOF"
-    },
     "1505.powerA_W": {
-      "samples": 475,
+      "samples": 473,
       "comparisons_to_app_live": 0,
       "match_percent": null,
       "mae_to_app_live": null,
       "verdict": "OBSERVED_NEEDS_MORE_PROOF"
     },
     "1505.powerB_W": {
-      "samples": 475,
-      "comparisons_to_app_live": 0,
-      "match_percent": null,
-      "mae_to_app_live": null,
-      "verdict": "OBSERVED_NEEDS_MORE_PROOF"
-    },
-    "1505.rpm": {
-      "samples": 2,
+      "samples": 473,
       "comparisons_to_app_live": 0,
       "match_percent": null,
       "mae_to_app_live": null,
       "verdict": "OBSERVED_NEEDS_MORE_PROOF"
     },
     "1505.speed_kmh": {
-      "samples": 474,
-      "comparisons_to_app_live": 474,
+      "samples": 473,
+      "comparisons_to_app_live": 473,
       "match_percent": 100.0,
       "mae_to_app_live": 0.0,
       "verdict": "BT638_CONFIRMED"
-    },
-    "1505.torque_Nm": {
-      "samples": 1,
-      "comparisons_to_app_live": 0,
-      "match_percent": null,
-      "mae_to_app_live": null,
-      "verdict": "OBSERVED_NEEDS_MORE_PROOF"
     },
     "1509.current_A": {
       "samples": 474,
@@ -1219,10 +1160,10 @@
     },
     "1509.direct_power_W": {
       "samples": 474,
-      "comparisons_to_app_live": 473,
-      "match_percent": 66.6,
-      "mae_to_app_live": 35.404863,
-      "verdict": "OBSERVED_NEEDS_MORE_PROOF"
+      "comparisons_to_app_live": 474,
+      "match_percent": 100.0,
+      "mae_to_app_live": 0.0,
+      "verdict": "BT638_CONFIRMED"
     },
     "1509.secondary_current_A": {
       "samples": 474,

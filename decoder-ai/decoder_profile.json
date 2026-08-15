@@ -1,18 +1,18 @@
 {
   "schema": "vmax-adaptive-decoder-v1",
-  "revision": "8da423a9e30a3d02",
+  "revision": "2b72bad4e62d6f00",
   "generatedAtMs": 1786821195812,
   "rideCount": 4,
-  "ruleCount": 6,
+  "ruleCount": 5,
   "confirmedRuleCount": 3,
   "rules": [
     {
-      "id": "currentA:1509:0:u16be",
+      "id": "currentA:1509:0:s16be",
       "signal": "currentA",
       "channel": "1509",
       "offset": 0,
       "width": 2,
-      "encoding": "u16be",
+      "encoding": "s16be",
       "scale": 0.001,
       "bias": 0.0,
       "confidence": 99,
@@ -20,7 +20,7 @@
       "rides": 2,
       "correlation": 1.0,
       "mae": 0.0,
-      "source": "numeric-correlation",
+      "source": "libble-ground-truth+numeric",
       "status": "confirmed"
     },
     {
@@ -33,11 +33,11 @@
       "scale": 0.1,
       "bias": 0.0,
       "confidence": 99,
-      "observations": 460,
+      "observations": 459,
       "rides": 2,
       "correlation": 1.0,
       "mae": 0.0,
-      "source": "numeric-correlation",
+      "source": "libble-ground-truth+numeric",
       "status": "confirmed"
     },
     {
@@ -54,7 +54,7 @@
       "rides": 2,
       "correlation": 1.0,
       "mae": 0.0,
-      "source": "numeric-correlation",
+      "source": "libble-ground-truth+numeric",
       "status": "confirmed"
     },
     {
@@ -71,16 +71,16 @@
       "rides": 1,
       "correlation": 1.0,
       "mae": 0.0,
-      "source": "numeric-correlation",
+      "source": "libble-ground-truth+numeric",
       "status": "candidate"
     },
     {
-      "id": "odometerKm:1506:2:u16be",
+      "id": "odometerKm:1506:0:u32be",
       "signal": "odometerKm",
       "channel": "1506",
-      "offset": 2,
-      "width": 2,
-      "encoding": "u16be",
+      "offset": 0,
+      "width": 4,
+      "encoding": "u32be",
       "scale": 0.1,
       "bias": 0.0,
       "confidence": 98,
@@ -88,24 +88,7 @@
       "rides": 1,
       "correlation": 1.0,
       "mae": 0.0,
-      "source": "numeric-correlation",
-      "status": "candidate"
-    },
-    {
-      "id": "speedKmh:150D:0:u16be",
-      "signal": "speedKmh",
-      "channel": "150D",
-      "offset": 0,
-      "width": 2,
-      "encoding": "u16be",
-      "scale": 0.1,
-      "bias": -0.0,
-      "confidence": 98,
-      "observations": 397,
-      "rides": 1,
-      "correlation": 1.0,
-      "mae": 0.0,
-      "source": "numeric-correlation",
+      "source": "libble-ground-truth+numeric",
       "status": "candidate"
     }
   ]
