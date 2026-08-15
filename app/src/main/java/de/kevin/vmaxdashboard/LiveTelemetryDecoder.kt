@@ -148,9 +148,11 @@ object LiveTelemetryDecoder {
 
             "150D" -> {
                 validUnsigned16BE(value, 0)?.let { raw ->
-                    notes += "150D Byte 0-1 Statistik-/Grenzwert RAW: $raw; nach erster Echtfahrt nicht als Live-Speed verwenden"
+                    notes += "150D Fahrt-Maximum: ${rounded(raw / 10.0)} km/h; kein Live-Tempo"
                 }
-                validUnsigned16BE(value, 2)?.let { notes += "150D Byte 2-3 Statistikwert RAW: $it" }
+                validUnsigned16BE(value, 2)?.let { raw ->
+                    notes += "150D Fahrt-Durchschnitt: ${rounded(raw / 10.0)} km/h"
+                }
             }
         }
 

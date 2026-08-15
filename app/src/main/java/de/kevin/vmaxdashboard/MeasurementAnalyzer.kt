@@ -22,7 +22,7 @@ object MeasurementAnalyzer {
     fun analyze(sessionRows: List<String>, markerRows: List<String>): Pair<List<MeasurementFinding>, String> {
         val packets = sessionRows.mapNotNull(::parsePacket)
         val markers = markerRows.mapNotNull(::parseMarker)
-            .filterNot { it.label == "START" || it.label == "STOP" || it.label == "PAUSE" || it.label == "FORTSETZEN" }
+            .filterNot(::isSystemMarker)
 
         val markerFindings = analyzeMarkers(packets, markers)
         val rideFindings = analyzeLongRideAutomatically(packets)
@@ -242,16 +242,8 @@ object MeasurementAnalyzer {
         return sorted[sorted.size / 2]
     }
 
-    private fun isCandidateAllowed(marker: String, channel: String, byteIndex: Int): Boolean = when (channel) {
-        "1505", "1506", "1509", "150A", "150C" -> false
-        "1508" -> when (byteIndex) {
-            0 -> marker.contains("Licht", true) || marker.startsWith("Auto")
-            3 -> marker.contains("Fahrmodus", true) || marker.contains("ECO", true) || marker.contains("SPORT", true) || marker.startsWith("Auto")
-            else -> true
-        }
-        "2A00", "2A01", "2A02", "2A04", "2A05", "2A28" -> false
-        else -> true
-    }
+    private fun isCandidateAllowed(marker: String, channel: String, byteIndex: Int): Boolean =
+        VmaxDecoderPolicy.isLearningCandidateAllowed(marker, channel, byteIndex)
 
     private fun mode(values: List<Int>): Int? =
         values.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
@@ -269,5 +261,11 @@ object MeasurementAnalyzer {
         val p = row.split(';')
         if (p.size < 3) return null
         return Marker(p[0].toLongOrNull() ?: return null, p[2])
+    }
+
+    private fun isSystemMarker(marker: Marker): Boolean {
+        val label = marker.label.lowercase()
+        return marker.label in setOf("START", "STOP", "PAUSE", "FORTSETZEN") ||
+            (label.startsWith("ble ") && ("getrennt" in label || "wieder verbunden" in label))
     }
 }

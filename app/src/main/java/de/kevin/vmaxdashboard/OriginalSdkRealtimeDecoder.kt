@@ -52,7 +52,9 @@ object OriginalSdkRealtimeDecoder {
         val powerA = validU16BE(p1505, 0)?.let { rounded(it / 10.0) }
         val powerB = validU16BE(p1505, 2)?.let { rounded(it / 10.0) }
         val torque = validU16BE(p1505, 4)?.let { rounded(it / 100.0) }
-        val speed = validU16BE(p1505, 6)?.let { rounded(it / 10.0) }
+        val speed = validU16BE(p1505, 6)
+            ?.let { rounded(it / 10.0) }
+            ?.takeIf { it in 0.0..100.0 }
         val rpm = validU16BE(p1505, 8)?.takeIf { it in 0..50_000 }
         val distanceRaw = validU16BE(p1505, 10)
 

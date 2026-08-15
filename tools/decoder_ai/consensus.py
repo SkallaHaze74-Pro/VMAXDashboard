@@ -44,6 +44,17 @@ SDK_CANONICAL = {
 # It behaves like a statistic/limit value and is therefore excluded from speed learning.
 FORBIDDEN_NUMERIC = {("speedKmh", "150D")}
 
+REFERENCE_SOURCE_CHANNEL = {
+    "speedKmh": "1505",
+    "batteryPercent": "1509",
+    "voltageV": "1509",
+    "currentA": "1509",
+    "powerW": "1509",
+    "motorTemperatureC": "150A",
+    "batteryTemperatureC": "1509",
+    "odometerKm": "1506",
+}
+
 
 @dataclass(frozen=True)
 class NumericEvidence:
@@ -91,9 +102,19 @@ def hex_bytes(text: str) -> bytes:
     return bytes(out)
 
 
+def suspicious_read_payload(channel: str, data: bytes) -> bool:
+    if channel.upper() != "1505" or len(data) < 18:
+        return False
+    printable_tail = sum(0x20 <= value <= 0x7E for value in data[8:])
+    return printable_tail >= 6
+
+
 def candidate_allowed(signal: str, channel: str, offset: int, encoding: str) -> bool:
     channel = channel.upper()
     if (signal, channel) in FORBIDDEN_NUMERIC:
+        return False
+    canonical_channel = next((known_channel for known_signal, known_channel in SDK_CANONICAL if known_signal == signal), None)
+    if canonical_channel is not None and channel != canonical_channel:
         return False
     canonical = SDK_CANONICAL.get((signal, channel))
     if canonical is not None:
@@ -124,11 +145,12 @@ def read_raw_rows(path: Path) -> list[dict]:
         for row in csv.DictReader(handle, delimiter=";"):
             channel = (row.get("channel") or "").strip().upper()
             raw = hex_bytes(row.get("hex") or "")
+            origin = (row.get("origin") or "NOTIFICATION").strip().upper()
             try:
                 rel_ms = int(row.get("relative_ms") or "")
             except ValueError:
                 continue
-            if channel and raw:
+            if channel and raw and origin != "READ" and not suspicious_read_payload(channel, raw):
                 rows.append({"relative_ms": rel_ms, "channel": channel, "bytes": raw})
     return rows
 
@@ -148,6 +170,11 @@ def read_live_lookup(path: Path) -> dict[tuple[int, str], dict[str, float]]:
                 continue
             values = {}
             for signal, cfg in TARGETS.items():
+                expected_channel = REFERENCE_SOURCE_CHANNEL.get(signal)
+                # Signals without a confirmed source (currently tripDistanceKm)
+                # are not safe references in a carry-forward snapshot CSV.
+                if expected_channel is None or channel != expected_channel:
+                    continue
                 val = as_float(row.get(cfg["column"]))
                 if val is None:
                     continue

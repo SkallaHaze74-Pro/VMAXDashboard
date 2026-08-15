@@ -332,9 +332,11 @@ class AdaptiveDecoderProfileStore private constructor(context: Context) {
             val channel = item.optString("channel").uppercase()
             val encoding = item.optString("encoding")
             val offset = item.optInt("offset", -1)
-            val width = item.optInt("width", widthForEncoding(encoding))
-            if (signal !in SUPPORTED_SIGNALS || channel.isBlank() || offset < 0 || width !in 1..4) continue
             if (encoding !in setOf("u8", "u16be", "u16le", "s16be", "s16le", "u32be", "u32le")) continue
+            val expectedWidth = widthForEncoding(encoding)
+            val width = item.optInt("width", expectedWidth)
+            if (signal !in SUPPORTED_SIGNALS || channel.isBlank() || offset < 0 || width != expectedWidth) continue
+            if (!VmaxDecoderPolicy.isAdaptiveRuleAllowed(signal, channel, offset, encoding)) continue
             out += AdaptiveRule(
                 id = item.optString("id", "$signal:$channel:$offset:$encoding"),
                 signal = signal,

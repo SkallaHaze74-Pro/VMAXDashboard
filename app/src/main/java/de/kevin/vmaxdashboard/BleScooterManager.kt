@@ -21,6 +21,25 @@ import java.util.ArrayDeque
 import java.util.UUID
 import kotlin.math.abs
 
+internal fun resolveElectricalPowerW(
+    decodedVoltageV: Double?,
+    decodedCurrentA: Double?,
+    previousVoltageV: Double?,
+    previousCurrentA: Double?
+): Double? {
+    val voltage = decodedVoltageV ?: previousVoltageV
+    val current = decodedCurrentA ?: previousCurrentA
+    return if (voltage != null && current != null) voltage * current else null
+}
+
+internal fun resolveExportPowerW(
+    decodedPowerW: Double?,
+    electricalPowerW: Double?,
+    previousDirectPowerW: Double?
+): Double? = decodedPowerW ?: electricalPowerW ?: previousDirectPowerW
+
+private enum class BlePacketOrigin { NOTIFICATION, READ }
+
 class BleScooterManager(private val context: Context) {
     companion object {
         val SERVICE_TELEMETRY: UUID =
@@ -327,7 +346,7 @@ class BleScooterManager(private val context: Context) {
 
         @Deprecated("Deprecated in API 33")
         override fun onCharacteristicChanged(g: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
-            handleValue(characteristic.uuid, characteristic.value ?: byteArrayOf())
+            handleValue(characteristic.uuid, characteristic.value ?: byteArrayOf(), BlePacketOrigin.NOTIFICATION)
         }
 
         override fun onCharacteristicChanged(
@@ -335,7 +354,7 @@ class BleScooterManager(private val context: Context) {
             characteristic: BluetoothGattCharacteristic,
             value: ByteArray
         ) {
-            handleValue(characteristic.uuid, value)
+            handleValue(characteristic.uuid, value, BlePacketOrigin.NOTIFICATION)
         }
 
         @Deprecated("Deprecated in API 33")
@@ -345,7 +364,7 @@ class BleScooterManager(private val context: Context) {
             status: Int
         ) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                handleValue(characteristic.uuid, characteristic.value ?: byteArrayOf())
+                handleValue(characteristic.uuid, characteristic.value ?: byteArrayOf(), BlePacketOrigin.READ)
             } else if (characteristic.uuid == MOTOR_TUNING_READ_CHARACTERISTIC) {
                 finishMotorTuningFailure("Lesen von 160C fehlgeschlagen: $status")
             }
@@ -358,7 +377,7 @@ class BleScooterManager(private val context: Context) {
             status: Int
         ) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                handleValue(characteristic.uuid, value)
+                handleValue(characteristic.uuid, value, BlePacketOrigin.READ)
             } else if (characteristic.uuid == MOTOR_TUNING_READ_CHARACTERISTIC) {
                 finishMotorTuningFailure("Lesen von 160C fehlgeschlagen: $status")
             }
@@ -715,20 +734,29 @@ class BleScooterManager(private val context: Context) {
         addLog("Motor-Tuning: $message")
     }
 
-    private fun handleValue(uuid: UUID, value: ByteArray) {
-        if (uuid == MOTOR_TUNING_READ_CHARACTERISTIC) handleMotorTuningValue(value)
-        decoderLab.record(uuid, value)
-        val hex = value.joinToString("-") { "%02X".format(it.toInt() and 0xFF) }
+    private fun handleValue(uuid: UUID, value: ByteArray, origin: BlePacketOrigin) {
+        val packet = value.copyOf()
+        if (uuid == MOTOR_TUNING_READ_CHARACTERISTIC) handleMotorTuningValue(packet)
         val short = shortUuid(uuid)
+        val hex = packet.joinToString("-") { "%02X".format(it.toInt() and 0xFF) }
+        if (origin == BlePacketOrigin.READ) {
+            addLog("READ $short (nur Diagnose, nicht als Live-Telemetrie): $hex")
+            return
+        }
+        if (VmaxDecoderPolicy.isSuspiciousReadLikePayload(short, packet)) {
+            addLog("$short verworfen: READ-/Firmware-ID-Hybrid erkannt")
+            return
+        }
+        decoderLab.record(uuid, packet)
         val now = System.currentTimeMillis()
         val relativeMs = now - sessionStartedAt
         val previous = previousValues[short]
-        val changed = changedByteIndexes(previous, value)
-        previousValues[short] = value.copyOf()
+        val changed = changedByteIndexes(previous, packet)
+        previousValues[short] = packet.copyOf()
         val count = (channelPacketCounts[short] ?: 0) + 1
         channelPacketCounts[short] = count
 
-        val decoded = LiveTelemetryDecoder.decode(short, value)
+        val decoded = LiveTelemetryDecoder.decode(short, packet)
         val knowledge = VmaxProtocolCatalog.get(short)
         packetTimes.addLast(now)
         while (packetTimes.isNotEmpty() && packetTimes.first() < now - 3000L) packetTimes.removeFirst()
@@ -738,10 +766,16 @@ class BleScooterManager(private val context: Context) {
             val measurementMs = now - measurementStartedAt
             sessionRows += listOf(
                 measurementMs.toString(), now.toString(), short, knowledge.title,
-                value.size.toString(), count.toString(), changedText, hex
+                packet.size.toString(), count.toString(), changedText, hex
             ).joinToString(";")
             val snapshot = _state.value
-            val power = if (snapshot.voltageV != null && snapshot.currentA != null) snapshot.voltageV * snapshot.currentA else null
+            val electricalPower = resolveElectricalPowerW(
+                decoded.voltageV,
+                decoded.currentA,
+                snapshot.voltageV,
+                snapshot.currentA
+            )
+            val power = resolveExportPowerW(decoded.powerW, electricalPower, snapshot.motorLoadRaw?.toDouble())
             telemetryRows += listOf(
                 measurementMs.toString(), now.toString(),
                 (decoded.speedKmh ?: snapshot.speedKmh)?.toString().orEmpty(),
@@ -803,9 +837,17 @@ class BleScooterManager(private val context: Context) {
                 packetTotal = it.packetTotal + 1,
                 packetsPerSecond = packetsPerSecond,
                 lastPacketAt = now,
-                currentPowerW = if ((decoded.voltageV ?: it.voltageV) != null && (decoded.currentA ?: it.currentA) != null) (decoded.voltageV ?: it.voltageV)!! * (decoded.currentA ?: it.currentA)!! else it.currentPowerW,
+                currentPowerW = resolveElectricalPowerW(
+                    decoded.voltageV,
+                    decoded.currentA,
+                    it.voltageV,
+                    it.currentA
+                ) ?: it.currentPowerW,
                 maxSpeedKmh = maxOf(it.maxSpeedKmh ?: 0.0, decoded.speedKmh ?: it.speedKmh ?: 0.0).takeIf { value -> value > 0.0 },
-                maxPowerW = maxOf(it.maxPowerW ?: 0.0, abs(if ((decoded.voltageV ?: it.voltageV) != null && (decoded.currentA ?: it.currentA) != null) (decoded.voltageV ?: it.voltageV)!! * (decoded.currentA ?: it.currentA)!! else 0.0)).takeIf { value -> value > 0.0 },
+                maxPowerW = maxOf(
+                    it.maxPowerW ?: 0.0,
+                    abs(resolveElectricalPowerW(decoded.voltageV, decoded.currentA, it.voltageV, it.currentA) ?: 0.0)
+                ).takeIf { value -> value > 0.0 },
                 recordingPacketCount = if (recordingActive && !recordingPaused) it.recordingPacketCount + 1 else it.recordingPacketCount,
                 channels = channels,
                 analysisPhase = when {

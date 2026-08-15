@@ -24,7 +24,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.abs
 
 class MainActivity : ComponentActivity() {
     private lateinit var bleManager: BleScooterManager
@@ -306,14 +305,17 @@ private fun StatusCard(state: ScooterState, gatt: GattScanState, chargeMode: Boo
 
 @Composable
 private fun SpeedCard(state: ScooterState) {
-    val speed150d = decode150dSpeed(state.rawPackets["150D"])
-    val diff = if (state.speedKmh != null && speed150d != null) abs(state.speedKmh - speed150d) else null
+    val max150d = decode150dStatistic(state.rawPackets["150D"], 0)
+    val average150d = decode150dStatistic(state.rawPackets["150D"], 2)
     Card(shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.fillMaxWidth().padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(state.speedKmh?.let { "%.1f".format(it) } ?: "—", style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.Black)
             Text("km/h • Original-libble + BT638")
-            Text("150D Vergleich: ${speed150d?.let { "%.1f km/h".format(it) } ?: "–"}")
-            if (diff != null) Text(if (diff <= 1.0) "✓ Quellen stimmen" else "⚠ Abweichung %.1f km/h".format(diff))
+            Text(
+                "Fahrstatistik 150D: Max ${max150d?.let { "%.1f".format(it) } ?: "–"} • " +
+                    "Ø ${average150d?.let { "%.1f km/h".format(it) } ?: "–"}"
+            )
+            Text("150D bleibt im Stillstand gespeichert und ist kein Live-Tempo.", style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -435,7 +437,7 @@ private fun GattSummaryCard(state: GattScanState, onScan: () -> Unit, enabled: B
 @Composable
 private fun ConfirmedRawCard(state: ScooterState) {
     val a = parseHex(state.rawPackets["1505"]); val b = parseHex(state.rawPackets["1502"]); val c = parseHex(state.rawPackets["150A"]); val d = parseHex(state.rawPackets["150D"])
-    InfoCard("Bestätigte & starke RAW-Felder", "1505 A/B: ${u16be(a,0) ?: "–"} / ${u16be(a,2) ?: "–"}\n1505 Tempo: ${u16be(a,6) ?: "–"}\n150D Tempo/Feld2: ${u16be(d,0) ?: "–"} / ${u16be(d,2) ?: "–"}\n150A Last: ${u16be(c,0) ?: "–"}\n1502 A/B: ${u16be(b,0) ?: "–"} / ${u16be(b,6) ?: "–"}")
+    InfoCard("Bestätigte & starke RAW-Felder", "1505 A/B: ${u16be(a,0) ?: "–"} / ${u16be(a,2) ?: "–"}\n1505 Tempo: ${u16be(a,6) ?: "–"}\n150D Max/Ø RAW: ${u16be(d,0) ?: "–"} / ${u16be(d,2) ?: "–"}\n150A Last: ${u16be(c,0) ?: "–"}\n1502 A/B: ${u16be(b,0) ?: "–"} / ${u16be(b,6) ?: "–"}")
 }
 
 @Composable
@@ -462,7 +464,7 @@ private fun ChannelCard(c: BleChannelState) = InfoCard("${c.channel} • ${c.tit
 private fun MetricRow(t1:String,v1:String,t2:String,v2:String) { Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(10.dp)) { MetricCard(t1,v1,Modifier.weight(1f)); MetricCard(t2,v2,Modifier.weight(1f)) } }
 @Composable private fun MetricCard(t:String,v:String,m:Modifier=Modifier) { Card(m, shape=RoundedCornerShape(18.dp)) { Column(Modifier.fillMaxWidth().padding(14.dp), horizontalAlignment=Alignment.CenterHorizontally) { Text(t); Text(v, fontWeight=FontWeight.Bold) } } }
 @Composable private fun InfoCard(t:String,x:String) { Card(shape=RoundedCornerShape(18.dp)) { Column(Modifier.fillMaxWidth().padding(16.dp)) { Text(t,fontWeight=FontWeight.Bold); Text(x,style=MaterialTheme.typography.bodySmall) } } }
-private fun decode150dSpeed(hex:String?):Double? { val r=u16be(parseHex(hex),0)?:return null; return if(r==0xFFFF)null else r/10.0 }
+private fun decode150dStatistic(hex:String?, offset:Int):Double? { val r=u16be(parseHex(hex),offset)?:return null; return if(r==0xFFFF||r==0x8000)null else r/10.0 }
 private fun parseHex(hex:String?):List<Int> = hex.orEmpty().split('-',' ',':').mapNotNull { it.trim().takeIf { x->x.length==2 }?.toIntOrNull(16) }
 private fun u16be(b:List<Int>,i:Int):Int? = if(i<0||i+1>=b.size)null else (b[i] shl 8) or b[i+1]
 private fun formatElapsed(ms:Long):String = "%02d:%02d:%02d".format(ms/3_600_000,(ms/60_000)%60,(ms/1_000)%60)

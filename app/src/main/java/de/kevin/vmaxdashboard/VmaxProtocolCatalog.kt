@@ -190,13 +190,13 @@ object VmaxProtocolCatalog {
         ),
         ChannelKnowledge(
             channel = "150D",
-            title = "Zweite Fahrstatistik",
-            summary = "Zweiter Fahrdatenkanal mit bestätigter Geschwindigkeit und offenem Statistik-/Wegfeld.",
+            title = "Fahrstatistik Max/Ø",
+            summary = "Persistenter Fahrstatistikkanal; kein zweiter Live-Geschwindigkeitskanal.",
             level = KnowledgeLevel.CONFIRMED,
             sources = setOf(KnowledgeSource.BT638_CONFIRMED, KnowledgeSource.LIVE_OBSERVED),
-            confirmedDetails = listOf("Byte 0-1 zweite Geschwindigkeit /10 km/h"),
-            unknownDetails = listOf("Byte 2-3 weiter gegen 1505, 1506 und Trip-Verlauf vergleichen"),
-            uiHint = "als Vergleichsquelle für Geschwindigkeitsstabilität nutzen"
+            confirmedDetails = listOf("Byte 0-1 Fahrt-Maximum /10 km/h", "Byte 2-3 Fahrt-Durchschnitt /10 km/h"),
+            unknownDetails = listOf("weitere Statistikfelder ab Byte 4 weiter vergleichen"),
+            uiHint = "getrennt vom Live-Tempo als gespeicherte Max/Ø-Statistik anzeigen"
         ),
         ChannelKnowledge(
             channel = "1514",
