@@ -1,6 +1,6 @@
 # VMAX Decoder AI – Konsensbericht
 
-- Fahrten ausgewertet: **3**
+- Fahrten ausgewertet: **4**
 - Regeln gesamt: **6**
 - Davon bestätigt: **3**
 - Profil-Revision: `8da423a9e30a3d02`
