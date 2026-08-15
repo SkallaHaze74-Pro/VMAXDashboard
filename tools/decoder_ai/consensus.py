@@ -15,7 +15,7 @@ from typing import Optional
 PROFILE_SCHEMA = "vmax-adaptive-decoder-v1"
 
 TARGETS = {
-    "speedKmh": {"column": "speed_kmh_candidate", "min_span": 3.0, "max_mae": 0.6, "range": (0.0, 200.0)},
+    "speedKmh": {"column": "speed_kmh_candidate", "min_span": 3.0, "max_mae": 0.6, "range": (0.0, 100.0)},
     "batteryPercent": {"column": "battery_percent", "min_span": 5.0, "max_mae": 1.5, "range": (0.0, 100.0)},
     "voltageV": {"column": "voltage_v", "min_span": 0.25, "max_mae": 0.25, "range": (0.0, 100.0)},
     "currentA": {"column": "current_a", "min_span": 0.5, "max_mae": 0.3, "range": (-200.0, 200.0)},
@@ -27,18 +27,22 @@ TARGETS = {
 }
 
 ENCODINGS = (("u8", 1), ("u16be", 2), ("u16le", 2), ("s16be", 2), ("s16le", 2), ("u32be", 4), ("u32le", 4))
+ENCODING_WIDTH = dict(ENCODINGS)
 
+# Ground truth recovered from Original APK + libble-sdk-native-lib.so and verified on BT638.
+# Statistical learning may validate these mappings, but may not silently replace their
+# signedness, width or offset with an equivalent-looking shorter representation.
+SDK_CANONICAL = {
+    ("speedKmh", "1505"): (6, "u16be"),
+    ("batteryPercent", "1509"): (4, "u8"),
+    ("voltageV", "1509"): (5, "u16be"),
+    ("currentA", "1509"): (0, "s16be"),
+    ("odometerKm", "1506"): (0, "u32be"),
+}
 
-def encoding_preference(signal: str, encoding: str) -> int:
-    order = (
-        ("u8", "u16be", "u16le", "s16be", "s16le", "u32be", "u32le")
-        if signal == "batteryPercent"
-        else ("u16be", "u16le", "s16be", "s16le", "u32be", "u32le", "u8")
-    )
-    try:
-        return order.index(encoding)
-    except ValueError:
-        return 999
+# First real ride disproved the old interpretation of 150D/0 as a second live speed.
+# It behaves like a statistic/limit value and is therefore excluded from speed learning.
+FORBIDDEN_NUMERIC = {("speedKmh", "150D")}
 
 
 @dataclass(frozen=True)
@@ -75,9 +79,8 @@ def as_float(value: object) -> Optional[float]:
 
 
 def hex_bytes(text: str) -> bytes:
-    parts = text.replace(":", "-").replace(" ", "-").split("-")
     out = []
-    for part in parts:
+    for part in text.replace(":", "-").replace(" ", "-").split("-"):
         part = part.strip()
         if len(part) != 2:
             continue
@@ -88,13 +91,37 @@ def hex_bytes(text: str) -> bytes:
     return bytes(out)
 
 
+def candidate_allowed(signal: str, channel: str, offset: int, encoding: str) -> bool:
+    channel = channel.upper()
+    if (signal, channel) in FORBIDDEN_NUMERIC:
+        return False
+    canonical = SDK_CANONICAL.get((signal, channel))
+    if canonical is not None:
+        return canonical == (offset, encoding)
+    return True
+
+
+def encoding_preference(signal: str, channel: str, offset: int, encoding: str) -> int:
+    canonical = SDK_CANONICAL.get((signal, channel.upper()))
+    if canonical == (offset, encoding):
+        return -100
+    order = (
+        ("u8", "u16be", "s16be", "u32be", "u16le", "s16le", "u32le")
+        if signal == "batteryPercent"
+        else ("u16be", "s16be", "u32be", "u16le", "s16le", "u32le", "u8")
+    )
+    try:
+        return order.index(encoding)
+    except ValueError:
+        return 999
+
+
 def read_raw_rows(path: Path) -> list[dict]:
     if not path.is_file():
         return []
     rows = []
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
-        reader = csv.DictReader(handle, delimiter=";")
-        for row in reader:
+        for row in csv.DictReader(handle, delimiter=";"):
             channel = (row.get("channel") or "").strip().upper()
             raw = hex_bytes(row.get("hex") or "")
             try:
@@ -111,8 +138,7 @@ def read_live_lookup(path: Path) -> dict[tuple[int, str], dict[str, float]]:
         return {}
     out = {}
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
-        reader = csv.DictReader(handle, delimiter=";")
-        for row in reader:
+        for row in csv.DictReader(handle, delimiter=";"):
             try:
                 rel_ms = int(row.get("relative_ms") or "")
             except ValueError:
@@ -134,7 +160,7 @@ def read_live_lookup(path: Path) -> dict[tuple[int, str], dict[str, float]]:
 
 
 def decode_raw(data: bytes, offset: int, encoding: str) -> Optional[float]:
-    width = dict(ENCODINGS)[encoding]
+    width = ENCODING_WIDTH[encoding]
     if offset < 0 or offset + width > len(data):
         return None
     part = data[offset:offset + width]
@@ -146,39 +172,24 @@ def decode_raw(data: bytes, offset: int, encoding: str) -> Optional[float]:
             return None
     if encoding == "u8":
         return float(part[0])
-    if encoding == "u16be":
-        return float(int.from_bytes(part, "big", signed=False))
-    if encoding == "u16le":
-        return float(int.from_bytes(part, "little", signed=False))
-    if encoding == "s16be":
-        return float(int.from_bytes(part, "big", signed=True))
-    if encoding == "s16le":
-        return float(int.from_bytes(part, "little", signed=True))
-    if encoding == "u32be":
-        return float(int.from_bytes(part, "big", signed=False))
-    if encoding == "u32le":
-        return float(int.from_bytes(part, "little", signed=False))
-    return None
+    byteorder = "big" if encoding.endswith("be") else "little"
+    signed = encoding.startswith("s")
+    return float(int.from_bytes(part, byteorder, signed=signed))
 
 
 def fit_linear(xs: list[float], ys: list[float]) -> Optional[tuple[float, float, float, float]]:
-    n = len(xs)
-    if n < 2 or n != len(ys):
+    if len(xs) < 2 or len(xs) != len(ys):
         return None
-    mx = sum(xs) / n
-    my = sum(ys) / n
-    dx = [x - mx for x in xs]
-    dy = [y - my for y in ys]
-    varx = sum(v * v for v in dx)
-    vary = sum(v * v for v in dy)
+    mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
+    dx, dy = [x - mx for x in xs], [y - my for y in ys]
+    varx, vary = sum(v * v for v in dx), sum(v * v for v in dy)
     if varx <= 1e-12 or vary <= 1e-12:
         return None
     cov = sum(a * b for a, b in zip(dx, dy))
     slope = cov / varx
     bias = my - slope * mx
     corr = cov / math.sqrt(varx * vary)
-    preds = [slope * x + bias for x in xs]
-    mae = sum(abs(a - b) for a, b in zip(preds, ys)) / n
+    mae = sum(abs((slope * x + bias) - y) for x, y in zip(xs, ys)) / len(xs)
     return corr, slope, bias, mae
 
 
@@ -199,6 +210,7 @@ def discover_numeric_evidence(ride_dir: Path, max_rows_per_channel: int = 6000) 
         values = live.get((row["relative_ms"], row["channel"]))
         if values:
             by_channel[row["channel"]].append((row["bytes"], values))
+
     evidence = []
     for channel, pairs in by_channel.items():
         if len(pairs) > max_rows_per_channel:
@@ -210,6 +222,8 @@ def discover_numeric_evidence(ride_dir: Path, max_rows_per_channel: int = 6000) 
                 continue
             for offset in range(max_len - width + 1):
                 for signal, cfg in TARGETS.items():
+                    if not candidate_allowed(signal, channel, offset, encoding):
+                        continue
                     xs, ys = [], []
                     for raw, refs in pairs:
                         y = refs.get(signal)
@@ -275,6 +289,7 @@ def collect_discrete_rules(ride_dirs: list[Path]) -> list[dict]:
         candidates = root.get("candidates") if isinstance(root.get("candidates"), list) else []
         snapshots.append((updated, ride.name, [c for c in candidates if isinstance(c, dict)]))
     snapshots.sort(key=lambda item: (item[0], item[1]))
+
     previous_obs = {}
     grouped = defaultdict(list)
     for updated, ride_name, candidates in snapshots:
@@ -285,23 +300,24 @@ def collect_discrete_rules(ride_dirs: list[Path]) -> list[dict]:
             previous_obs[key] = max(previous_obs.get(key, 0), obs)
             if increment <= 0:
                 continue
-            label = str(item.get("label") or "")
-            channel = str(item.get("channel") or "").upper()
             try:
-                byte_index = int(item.get("byteIndex"))
+                channel = str(item.get("channel") or "").upper()
+                offset = int(item.get("byteIndex"))
                 before = int(item.get("lastBefore"))
                 after = int(item.get("lastAfter"))
                 confidence = int(item.get("confidence") or 0)
             except (TypeError, ValueError):
                 continue
+            label = str(item.get("label") or "")
             orientation = discrete_signal_and_orientation(label, before, after)
-            if not channel or byte_index < 0 or orientation is None:
+            if not channel or offset < 0 or orientation is None:
                 continue
             signal, active, inactive = orientation
-            grouped[(signal, channel, byte_index)].append({
+            grouped[(signal, channel, offset)].append({
                 "ride": ride_name, "increment": increment, "confidence": confidence,
                 "active": active, "inactive": inactive, "label": label,
             })
+
     rules = []
     for (signal, channel, offset), items in grouped.items():
         pair_weight = defaultdict(int)
@@ -320,7 +336,7 @@ def collect_discrete_rules(ride_dirs: list[Path]) -> list[dict]:
         consistency = winning / total_weight
         avg_conf = weighted_conf / total_weight
         confidence = int(round(min(99, avg_conf * 0.67 + consistency * 24 + min(8, len(rides) * 3))))
-        status = "confirmed" if winning >= 2 and confidence >= 92 and consistency >= 0.80 else "candidate"
+        status = "confirmed" if winning >= 2 and len(rides) >= 2 and confidence >= 92 and consistency >= 0.80 else "candidate"
         rules.append({
             "id": f"{signal}:{channel}:{offset}:u8", "signal": signal, "label": " / ".join(sorted(labels)),
             "channel": channel, "offset": offset, "width": 1, "encoding": "u8", "activeValue": active,
@@ -334,6 +350,7 @@ def aggregate_numeric(evidence: list[NumericEvidence]) -> list[dict]:
     grouped = defaultdict(list)
     for item in evidence:
         grouped[(item.signal, item.channel, item.offset, item.encoding)].append(item)
+
     provisional = []
     for (signal, channel, offset, encoding), items in grouped.items():
         rides = {i.ride for i in items}
@@ -351,22 +368,30 @@ def aggregate_numeric(evidence: list[NumericEvidence]) -> list[dict]:
         status = "confirmed" if len(rides) >= 2 and confidence >= 94 and slope_spread <= 0.08 else "candidate"
         provisional.append({
             "id": f"{signal}:{channel}:{offset}:{encoding}", "signal": signal, "channel": channel,
-            "offset": offset, "width": dict(ENCODINGS)[encoding], "encoding": encoding,
+            "offset": offset, "width": ENCODING_WIDTH[encoding], "encoding": encoding,
             "scale": round(slope, 12), "bias": round(bias, 8), "confidence": confidence,
             "observations": total, "rides": len(rides), "correlation": round(corr, 6), "mae": round(mae, 6),
-            "source": "numeric-correlation", "status": status,
+            "source": "libble-ground-truth+numeric" if (signal, channel) in SDK_CANONICAL else "numeric-correlation",
+            "status": status,
         })
+
     best = {}
     for rule in provisional:
         key = (rule["signal"], rule["channel"])
-        score = (1 if rule["status"] == "confirmed" else 0, rule["confidence"], rule["rides"], rule["observations"],
-                 -rule["mae"], -encoding_preference(rule["signal"], rule["encoding"]))
+        score = (
+            1 if rule["status"] == "confirmed" else 0,
+            rule["confidence"], rule["rides"], rule["observations"], -rule["mae"],
+            -encoding_preference(rule["signal"], rule["channel"], rule["offset"], rule["encoding"]),
+        )
         current = best.get(key)
         if current is None:
             best[key] = rule
             continue
-        current_score = (1 if current["status"] == "confirmed" else 0, current["confidence"], current["rides"],
-                         current["observations"], -current["mae"], -encoding_preference(current["signal"], current["encoding"]))
+        current_score = (
+            1 if current["status"] == "confirmed" else 0,
+            current["confidence"], current["rides"], current["observations"], -current["mae"],
+            -encoding_preference(current["signal"], current["channel"], current["offset"], current["encoding"]),
+        )
         if score > current_score:
             best[key] = rule
     return list(best.values())
@@ -394,24 +419,37 @@ def analyze(root: Path) -> dict:
         generated_at = max(generated_at, int(manifest.get("created_at_ms") or manifest.get("end_ms") or 0))
     if generated_at <= 0 and rides:
         generated_at = int(time.time() * 1000)
-    return {"schema": PROFILE_SCHEMA, "revision": revision, "generatedAtMs": generated_at, "rideCount": len(rides),
-            "ruleCount": len(rules), "confirmedRuleCount": confirmed, "rules": rules}
+    return {
+        "schema": PROFILE_SCHEMA, "revision": revision, "generatedAtMs": generated_at,
+        "rideCount": len(rides), "ruleCount": len(rules), "confirmedRuleCount": confirmed, "rules": rules,
+    }
 
 
 def render_report(profile: dict) -> str:
-    lines = ["# VMAX Decoder AI – Konsensbericht", "", f"- Fahrten ausgewertet: **{profile['rideCount']}**",
-             f"- Regeln gesamt: **{profile['ruleCount']}**", f"- Davon bestätigt: **{profile['confirmedRuleCount']}**",
-             f"- Profil-Revision: `{profile['revision']}`", "", "## Regeln", ""]
+    lines = [
+        "# VMAX Decoder AI – Konsensbericht", "",
+        f"- Fahrten ausgewertet: **{profile['rideCount']}**",
+        f"- Regeln gesamt: **{profile['ruleCount']}**",
+        f"- Davon bestätigt: **{profile['confirmedRuleCount']}**",
+        f"- Profil-Revision: `{profile['revision']}`", "", "## Regeln", "",
+    ]
     if not profile["rules"]:
         lines.append("Noch keine belastbaren Regeln. Nach der ersten vollständig hochgeladenen Messfahrt startet die Auswertung automatisch.")
     else:
         lines += ["| Status | Signal | Kanal | Feld | Konfidenz | Evidenz | Quelle |", "|---|---|---:|---|---:|---:|---|"]
         for rule in profile["rules"]:
             evidence = f"{rule.get('rides', 0)} Fahrt(en), {rule.get('observations', 0)} Samples"
-            lines.append(f"| {rule['status']} | {rule['signal']} | {rule['channel']} | {rule['encoding']}@{rule['offset']} | "
-                         f"{rule['confidence']}% | {evidence} | {rule['source']} |")
-    lines += ["", "## Sicherheitsregel", "",
-              "Dieses Profil enthält ausschließlich **Lese-/Decoderregeln**. Es erzeugt keine BLE-Schreibbefehle und verändert keine Motorparameter.", ""]
+            lines.append(
+                f"| {rule['status']} | {rule['signal']} | {rule['channel']} | {rule['encoding']}@{rule['offset']} | "
+                f"{rule['confidence']}% | {evidence} | {rule['source']} |"
+            )
+    lines += [
+        "", "## Ground-Truth-Regeln", "",
+        "1505/6 u16be = Geschwindigkeit; 1509/0 s16be = Strom; 1509/4 u8 = SOC; 1509/5 u16be = Spannung; 1506/0 u32be = Kilometerstand.",
+        "150D wird nach der ersten echten Fahrt nicht mehr als Live-Geschwindigkeit gelernt.",
+        "", "## Sicherheitsregel", "",
+        "Dieses Profil enthält ausschließlich **Lese-/Decoderregeln**. Es erzeugt keine BLE-Schreibbefehle und verändert keine Motorparameter.", "",
+    ]
     return "\n".join(lines)
 
 

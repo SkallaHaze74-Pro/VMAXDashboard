@@ -3,7 +3,7 @@
   "source": {
     "class": "com.gpstuner.mapviewer.androidbase.bluetooth.manager.HyenaSDKManager",
     "sdk": "io.hylink.hbp / libble-sdk-native-lib.so",
-    "note": "Semantics are taken from the original app listeners. Byte mappings are only marked confirmed when independently matched to BT638/libble parser data."
+    "note": "Semantics are taken from the original app listeners. Byte mappings are only marked confirmed when independently matched to BT638/libble parser data. First real ride on 2026-08-13 disproved 150D as a second current-speed source."
   },
   "signals": [
     {
@@ -44,7 +44,6 @@
       "originalCommand": "261",
       "unit": "km/h",
       "mapping": {"channel": "1505", "offset": 6, "encoding": "u16be", "scale": 0.1},
-      "alternateMapping": {"channel": "150D", "offset": 0, "encoding": "u16be", "scale": 0.1},
       "status": "bt638_confirmed"
     },
     {

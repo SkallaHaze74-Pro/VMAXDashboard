@@ -8,39 +8,285 @@ enum class KnowledgeLevel(val label: String) {
     UNKNOWN("Noch unbekannt")
 }
 
+enum class KnowledgeSource(val label: String) {
+    ORIGINAL_SDK("Original SDK"),
+    ORIGINAL_APK("Original APK"),
+    BT638_CONFIRMED("BT638 bestätigt"),
+    LIVE_OBSERVED("Live beobachtet"),
+    SAFETY_RULE("Sicherheitsregel")
+}
+
 data class ChannelKnowledge(
     val channel: String,
     val title: String,
-    val meaning: String,
-    val level: KnowledgeLevel
-)
+    val summary: String,
+    val level: KnowledgeLevel,
+    val sources: Set<KnowledgeSource> = emptySet(),
+    val confirmedDetails: List<String> = emptyList(),
+    val unknownDetails: List<String> = emptyList(),
+    val uiHint: String = "",
+    val safetyNote: String = ""
+) {
+    val meaning: String
+        get() = buildString {
+            append(summary)
+            if (confirmedDetails.isNotEmpty()) {
+                append(" Bestätigt: ")
+                append(confirmedDetails.joinToString("; "))
+                append('.')
+            }
+            if (unknownDetails.isNotEmpty()) {
+                append(" Offen: ")
+                append(unknownDetails.joinToString("; "))
+                append('.')
+            }
+            if (uiHint.isNotBlank()) {
+                append(" Anzeige: ")
+                append(uiHint)
+                append('.')
+            }
+            if (safetyNote.isNotBlank()) {
+                append(" Sicherheit: ")
+                append(safetyNote)
+                append('.')
+            }
+        }
+}
 
 object VmaxProtocolCatalog {
     private val entries = listOf(
-        ChannelKnowledge("1501", "Fahrzeuginformationen", "libble: Fahrzeug-/Modellinformationen. Statischer READ-Block; wird mit der echten BT638-Antwort abgeglichen.", KnowledgeLevel.SDK_KNOWN),
-        ChannelKnowledge("1502", "Akkuinformationen", "libble: BatteryInfo. Statischer Akkublock; 0xFFFF/0x8000 gelten als nicht verfügbar. BT638 liefert hier mehrere modellabhängige RAW-Felder.", KnowledgeLevel.SDK_KNOWN),
-        ChannelKnowledge("1503", "Motor-/Controllerinformationen", "libble: MotorInfo. Statischer Motor-/Controllerblock; SDK-Semantik bekannt, BT638-Feldbelegung wird gegen READ-Antworten verifiziert.", KnowledgeLevel.SDK_KNOWN),
-        ChannelKnowledge("1504", "Firmware-ID", "libble: FirmwareID. Firmware- und Komponentenkennung; READ-Antwort dient als direkte SDK↔BT638-Referenz.", KnowledgeLevel.SDK_KNOWN),
-        ChannelKnowledge("1505", "BikePerformance / Fahrleistung", "libble Native-Parser: Byte 0-1 Leistung A /10 W, 2-3 Leistung B /10 W, 4-5 Drehmoment /100 Nm, 6-7 Geschwindigkeit /10 km/h, 8-9 RPM/Cadence, 10-11 Distanz-/Wegfeld. BT638-Tempo ist bestätigt.", KnowledgeLevel.CONFIRMED),
-        ChannelKnowledge("1506", "Trip / Kilometer & Betriebszähler", "libble: Trip/TotalTrip/Stats-Familie. BT638 bestätigt Byte 0-3 Kilometerstand /10; weitere Zähler werden gegen SDK- und Langfahrtverlauf geprüft.", KnowledgeLevel.CONFIRMED),
-        ChannelKnowledge("1507", "Stats / Gesamtfahrdaten", "libble: weiterer Statistik-/Gesamtfahrdatenblock. Bedeutung ist SDK-seitig benannt; BT638-Offsets werden durch wiederholte READ/RX-Vergleiche bestätigt.", KnowledgeLevel.SDK_KNOWN),
-        ChannelKnowledge("1508", "Settings / Licht & Fahrstufe", "BT638 bestätigt Byte 0: Licht 0=AUS/1=AN und Byte 3: Fahrstufe. Andere Bits/Bytes werden nur dann benannt, wenn SDK-Semantik und RX-Verhalten übereinstimmen.", KnowledgeLevel.CONFIRMED),
-        ChannelKnowledge("1509", "BatteryChange / Akku-Livestand", "libble Native-Parser: Byte 0-1 Strom mA (signed BE), 2-3 Akkutemperatur /10 °C, Byte 4 SOC %, 5-6 Spannung mV, 7-8 zweiter Stromwert mA, 9-10 direkte Leistung W. Diese Bytes sind Ground Truth und dürfen nicht als Schalter/Blinker/Licht umgedeutet werden.", KnowledgeLevel.CONFIRMED),
-        ChannelKnowledge("150A", "MotorUpdate / Motor-Livestand", "libble Native-Parser: Motorstrom mA, Motorspannung mV, RPM, Drehmoment /100 Nm und Motortemperatur /10 °C. Beim BT638 sind nicht unterstützte Felder häufig 0xFFFF; vorhandene Felder werden live gegen Plausibilität geprüft.", KnowledgeLevel.SDK_KNOWN),
-        ChannelKnowledge("150B", "Motor-/Controllerblock", "Beim BT638 bisher überwiegend 0xFF-Platzhalter. Bleibt nicht unterstützt, bis echte Nicht-Platzhalterdaten wiederholt beobachtet werden.", KnowledgeLevel.UNSUPPORTED),
-        ChannelKnowledge("150C", "BatteryCellUpdate / Zell- & Temperaturdaten", "libble benennt BatteryCellUpdate, cellIndex, cellVoltage, cellTemp, cellNum sowie Zell-Drift-Warnungen. BT638-Präsenz wird aufgezeichnet; exakte Byte-Offsets werden erst nach erneuter Verifikation automatisch dekodiert.", KnowledgeLevel.SDK_KNOWN),
-        ChannelKnowledge("150D", "Zweite Fahrstatistik", "BT638 bestätigt Byte 0-1 als zweite Geschwindigkeit /10 km/h. Byte 2-3 bleibt Statistik-/Wegkandidat und wird gegen 1505/1506/Trip-Verlauf verglichen.", KnowledgeLevel.CONFIRMED),
-        ChannelKnowledge("1514", "Error / Fehlercodes", "libble: Error/ErrorCodes. Numerische Fehler- und Warncodes; READ/RX wird direkt als Fehlerstatus behandelt, nicht als generischer Lernkandidat.", KnowledgeLevel.SDK_KNOWN),
-        ChannelKnowledge("1516", "SerialNumbers / Seriennummern", "libble: SerialNumbers und Komponentenkennungen. Statische Identifikation; bei READ-Berechtigung automatisch auslesen.", KnowledgeLevel.SDK_KNOWN),
-        ChannelKnowledge("1517", "ErrorString / Fehlertext", "libble: textuelle Fehler-/Statusmeldung.", KnowledgeLevel.SDK_KNOWN),
-        ChannelKnowledge("1518", "Debug / Diagnoseprotokoll", "libble: Debug-/Diagnosemeldungen des Controllers; separat vom normalen Telemetrie-Lernen behandeln.", KnowledgeLevel.SDK_KNOWN),
-        ChannelKnowledge("151D", "Status-/Ereignisdaten", "Dynamischer Statuskanal. Unbekannte Bits/Bytes werden erst nach Ausschluss aller libble-bekannten Telemetrie- und Settings-Felder gelernt.", KnowledgeLevel.UNKNOWN),
-        ChannelKnowledge("1E03", "Funkfernbedienung", "SDK: Statusdaten einer drahtlosen Lenker- oder Zubehörfernbedienung.", KnowledgeLevel.SDK_KNOWN),
-        ChannelKnowledge("1E04", "Fernbedienungsaktion", "SDK: Aktionen einer drahtlosen Lenker- oder Zubehörfernbedienung.", KnowledgeLevel.SDK_KNOWN),
-        ChannelKnowledge("160C", "Motor-Tuning Rückmeldung", "libble: MotorTuning-Rückmeldung. Bleibt strikt getrennt von der Decoder-AI; KI nutzt diesen Kanal nur lesend.", KnowledgeLevel.SDK_KNOWN),
-        ChannelKnowledge("160D", "Motor-Tuning Schreiben", "libble: MotorTuning-Schreibkanal. Decoder-AI darf niemals automatisch auf diesen oder andere WRITE-Kanäle schreiben.", KnowledgeLevel.SDK_KNOWN)
+        ChannelKnowledge(
+            channel = "1501",
+            title = "Fahrzeuginformationen",
+            summary = "Statischer Informationsblock für Fahrzeug- und Modellangaben mit Referenz aus der Original-Implementierung.",
+            level = KnowledgeLevel.SDK_KNOWN,
+            sources = setOf(KnowledgeSource.ORIGINAL_SDK, KnowledgeSource.ORIGINAL_APK),
+            confirmedDetails = listOf("READ-Block dient als Referenz für Modell- und Identitätsabgleich"),
+            unknownDetails = listOf("modellabhängige BT638-Feldbelegung nicht vollständig beschrieben"),
+            uiHint = "als Referenz- und Identitätskanal anzeigen"
+        ),
+        ChannelKnowledge(
+            channel = "1502",
+            title = "Akkuinformationen",
+            summary = "Statischer Akkublock aus der Original-Referenz mit mehreren modellabhängigen Rohfeldern.",
+            level = KnowledgeLevel.SDK_KNOWN,
+            sources = setOf(KnowledgeSource.ORIGINAL_SDK, KnowledgeSource.ORIGINAL_APK),
+            confirmedDetails = listOf("0xFFFF und 0x8000 als nicht verfügbar behandeln"),
+            unknownDetails = listOf("konkrete BT638-Feldbelegung je Modell weiter verfeinern"),
+            uiHint = "statische Akku-Referenz getrennt von Live-Telemetrie darstellen"
+        ),
+        ChannelKnowledge(
+            channel = "1503",
+            title = "Motor-/Controllerinformationen",
+            summary = "Statischer Motor- und Controllerblock mit bekannter SDK-Semantik.",
+            level = KnowledgeLevel.SDK_KNOWN,
+            sources = setOf(KnowledgeSource.ORIGINAL_SDK, KnowledgeSource.ORIGINAL_APK),
+            confirmedDetails = listOf("SDK-Semantik ist bekannt"),
+            unknownDetails = listOf("BT638-Offsets weiter gegen READ-Antworten prüfen"),
+            uiHint = "als Referenzblock und nicht als Live-Kanal behandeln"
+        ),
+        ChannelKnowledge(
+            channel = "1504",
+            title = "Firmware-ID",
+            summary = "Firmware- und Komponentenkennung als direkte Referenz zwischen Original-Implementierung und BT638.",
+            level = KnowledgeLevel.SDK_KNOWN,
+            sources = setOf(KnowledgeSource.ORIGINAL_SDK, KnowledgeSource.ORIGINAL_APK),
+            confirmedDetails = listOf("READ-Antwort eignet sich als Referenzabgleich"),
+            uiHint = "für Versionen und Komponentenidentität nutzen"
+        ),
+        ChannelKnowledge(
+            channel = "1505",
+            title = "BikePerformance / Fahrleistung",
+            summary = "Live-Fahrleistungsblock mit bestätigter Geschwindigkeits- und Leistungssemantik.",
+            level = KnowledgeLevel.CONFIRMED,
+            sources = setOf(KnowledgeSource.ORIGINAL_SDK, KnowledgeSource.ORIGINAL_APK, KnowledgeSource.BT638_CONFIRMED, KnowledgeSource.LIVE_OBSERVED),
+            confirmedDetails = listOf(
+                "Byte 0-1 Leistung A /10 W",
+                "Byte 2-3 Leistung B /10 W",
+                "Byte 4-5 Drehmoment /100 Nm",
+                "Byte 6-7 Geschwindigkeit /10 km/h",
+                "Byte 8-9 RPM/Cadence",
+                "BT638-Tempo ist bestätigt"
+            ),
+            unknownDetails = listOf("Distanz-/Wegfeld Byte 10-11 weiter präzisieren"),
+            uiHint = "als zentralen Live-Fahrdatenkanal anzeigen"
+        ),
+        ChannelKnowledge(
+            channel = "1506",
+            title = "Trip / Kilometer & Betriebszähler",
+            summary = "Statistik- und Kilometerkanal mit bestätigtem Kilometerstand und weiteren Prüf-Kandidaten.",
+            level = KnowledgeLevel.CONFIRMED,
+            sources = setOf(KnowledgeSource.ORIGINAL_SDK, KnowledgeSource.BT638_CONFIRMED, KnowledgeSource.LIVE_OBSERVED),
+            confirmedDetails = listOf("Byte 0-3 Kilometerstand /10"),
+            unknownDetails = listOf("weitere Zähler gegen Langfahrtverlauf absichern"),
+            uiHint = "für Historie und Session-Abgleich nutzen"
+        ),
+        ChannelKnowledge(
+            channel = "1507",
+            title = "Stats / Gesamtfahrdaten",
+            summary = "Weiterer Statistikblock mit benannter SDK-Bedeutung und noch laufender Offset-Verifikation.",
+            level = KnowledgeLevel.SDK_KNOWN,
+            sources = setOf(KnowledgeSource.ORIGINAL_SDK, KnowledgeSource.ORIGINAL_APK),
+            confirmedDetails = listOf("Rolle als Statistik-/Gesamtfahrdatenblock ist bekannt"),
+            unknownDetails = listOf("BT638-Offsets durch wiederholte READ/RX-Vergleiche weiter bestätigen"),
+            uiHint = "nicht zu aggressiv interpretieren"
+        ),
+        ChannelKnowledge(
+            channel = "1508",
+            title = "Settings / Licht & Fahrstufe",
+            summary = "Einstellungsnaher Kanal mit bestätigten Byte-Bedeutungen für Licht und Fahrstufe.",
+            level = KnowledgeLevel.CONFIRMED,
+            sources = setOf(KnowledgeSource.ORIGINAL_SDK, KnowledgeSource.ORIGINAL_APK, KnowledgeSource.BT638_CONFIRMED),
+            confirmedDetails = listOf("Byte 0: Licht 0=AUS/1=AN", "Byte 3: Fahrstufe"),
+            unknownDetails = listOf("weitere Bits nur nach eindeutiger Übereinstimmung benennen"),
+            uiHint = "bestätigte Zustände direkt anzeigen, Rest defensiv behandeln"
+        ),
+        ChannelKnowledge(
+            channel = "1509",
+            title = "BatteryChange / Akku-Livestand",
+            summary = "Zentraler Live-Akkukanal mit bestätigten Werten aus der nativen Referenzlogik.",
+            level = KnowledgeLevel.CONFIRMED,
+            sources = setOf(KnowledgeSource.ORIGINAL_SDK, KnowledgeSource.ORIGINAL_APK, KnowledgeSource.BT638_CONFIRMED, KnowledgeSource.SAFETY_RULE),
+            confirmedDetails = listOf(
+                "Byte 0-1 Strom mA signed BE",
+                "Byte 2-3 Akkutemperatur /10 °C",
+                "Byte 4 SOC %",
+                "Byte 5-6 Spannung mV",
+                "Byte 7-8 zweiter Stromwert mA",
+                "Byte 9-10 direkte Leistung W"
+            ),
+            uiHint = "als Ground-Truth-Akku-Livekanal hervorheben",
+            safetyNote = "Darf nicht als Licht-, Blinker- oder Schalterkanal umgedeutet werden"
+        ),
+        ChannelKnowledge(
+            channel = "150A",
+            title = "MotorUpdate / Motor-Livestand",
+            summary = "Live-Motorkanal mit bekannter Referenzsemantik und modellabhängiger Feldverfügbarkeit.",
+            level = KnowledgeLevel.SDK_KNOWN,
+            sources = setOf(KnowledgeSource.ORIGINAL_SDK, KnowledgeSource.ORIGINAL_APK),
+            confirmedDetails = listOf("Motorstrom", "Motorspannung", "RPM", "Drehmoment /100 Nm", "Motortemperatur /10 °C"),
+            unknownDetails = listOf("0xFFFF-Felder je Modell als nicht unterstützt behandeln"),
+            uiHint = "verfügbare Live-Felder zeigen, Platzhalter ausblenden"
+        ),
+        ChannelKnowledge(
+            channel = "150B",
+            title = "Motor-/Controllerblock",
+            summary = "Beim BT638 bisher überwiegend Platzhalterdaten und damit aktuell nicht belastbar nutzbar.",
+            level = KnowledgeLevel.UNSUPPORTED,
+            sources = setOf(KnowledgeSource.LIVE_OBSERVED),
+            confirmedDetails = listOf("bisher häufig 0xFF-Platzhalter"),
+            unknownDetails = listOf("erst bei echten Nicht-Platzhalterdaten neu bewerten"),
+            uiHint = "klar als nicht unterstützt kennzeichnen"
+        ),
+        ChannelKnowledge(
+            channel = "150C",
+            title = "BatteryCellUpdate / Zell- & Temperaturdaten",
+            summary = "Zell- und Temperaturkanal aus der Referenzlogik mit noch offener BT638-Bytezuordnung.",
+            level = KnowledgeLevel.SDK_KNOWN,
+            sources = setOf(KnowledgeSource.ORIGINAL_SDK, KnowledgeSource.ORIGINAL_APK),
+            confirmedDetails = listOf("BatteryCellUpdate, cellIndex, cellVoltage, cellTemp und cellNum sind als Themen bekannt"),
+            unknownDetails = listOf("exakte Byte-Offsets erst nach erneuter Verifikation automatisch dekodieren"),
+            uiHint = "als fortgeschrittenen Diagnosekanal behandeln"
+        ),
+        ChannelKnowledge(
+            channel = "150D",
+            title = "Zweite Fahrstatistik",
+            summary = "Zweiter Fahrdatenkanal mit bestätigter Geschwindigkeit und offenem Statistik-/Wegfeld.",
+            level = KnowledgeLevel.CONFIRMED,
+            sources = setOf(KnowledgeSource.BT638_CONFIRMED, KnowledgeSource.LIVE_OBSERVED),
+            confirmedDetails = listOf("Byte 0-1 zweite Geschwindigkeit /10 km/h"),
+            unknownDetails = listOf("Byte 2-3 weiter gegen 1505, 1506 und Trip-Verlauf vergleichen"),
+            uiHint = "als Vergleichsquelle für Geschwindigkeitsstabilität nutzen"
+        ),
+        ChannelKnowledge(
+            channel = "1514",
+            title = "Error / Fehlercodes",
+            summary = "Numerischer Fehler- und Warnkanal mit direkter Referenzbedeutung.",
+            level = KnowledgeLevel.SDK_KNOWN,
+            sources = setOf(KnowledgeSource.ORIGINAL_SDK, KnowledgeSource.ORIGINAL_APK),
+            confirmedDetails = listOf("READ/RX als Fehlerstatus behandeln"),
+            uiHint = "nicht als generischen Lernkanal behandeln"
+        ),
+        ChannelKnowledge(
+            channel = "1516",
+            title = "SerialNumbers / Seriennummern",
+            summary = "Statischer Identifikationskanal für Serien- und Komponentenkennungen.",
+            level = KnowledgeLevel.SDK_KNOWN,
+            sources = setOf(KnowledgeSource.ORIGINAL_SDK, KnowledgeSource.ORIGINAL_APK),
+            confirmedDetails = listOf("bei READ-Berechtigung automatisch auslesbar"),
+            uiHint = "für Geräteidentität und Abgleich nutzen"
+        ),
+        ChannelKnowledge(
+            channel = "1517",
+            title = "ErrorString / Fehlertext",
+            summary = "Textuelle Fehler- oder Statusmeldung aus der Referenzlogik.",
+            level = KnowledgeLevel.SDK_KNOWN,
+            sources = setOf(KnowledgeSource.ORIGINAL_SDK, KnowledgeSource.ORIGINAL_APK),
+            uiHint = "als Klartext-Hinweis anzeigen"
+        ),
+        ChannelKnowledge(
+            channel = "1518",
+            title = "Debug / Diagnoseprotokoll",
+            summary = "Diagnose- und Debug-Kanal des Controllers getrennt von normaler Fahrtelemetrie.",
+            level = KnowledgeLevel.SDK_KNOWN,
+            sources = setOf(KnowledgeSource.ORIGINAL_SDK, KnowledgeSource.ORIGINAL_APK),
+            uiHint = "separat vom normalen Telemetrie-Lernen darstellen"
+        ),
+        ChannelKnowledge(
+            channel = "151D",
+            title = "Status-/Ereignisdaten",
+            summary = "Dynamischer Statuskanal mit noch offener Bit- und Bytebedeutung.",
+            level = KnowledgeLevel.UNKNOWN,
+            sources = setOf(KnowledgeSource.LIVE_OBSERVED),
+            unknownDetails = listOf("erst nach Ausschluss aller bekannten Telemetrie- und Settings-Felder lernen"),
+            uiHint = "vorsichtig und als experimentell kennzeichnen"
+        ),
+        ChannelKnowledge(
+            channel = "1E03",
+            title = "Funkfernbedienung",
+            summary = "Statusdaten einer drahtlosen Lenker- oder Zubehörfernbedienung.",
+            level = KnowledgeLevel.SDK_KNOWN,
+            sources = setOf(KnowledgeSource.ORIGINAL_SDK, KnowledgeSource.ORIGINAL_APK),
+            uiHint = "nur anzeigen, wenn der Kanal real vorhanden ist"
+        ),
+        ChannelKnowledge(
+            channel = "1E04",
+            title = "Fernbedienungsaktion",
+            summary = "Aktionskanal einer drahtlosen Lenker- oder Zubehörfernbedienung.",
+            level = KnowledgeLevel.SDK_KNOWN,
+            sources = setOf(KnowledgeSource.ORIGINAL_SDK, KnowledgeSource.ORIGINAL_APK),
+            uiHint = "eher als Zubehör-Event denn als Fahrtelemetrie behandeln"
+        ),
+        ChannelKnowledge(
+            channel = "160C",
+            title = "Motor-Tuning Rückmeldung",
+            summary = "Rückmeldekanal für Motor-Tuning, in der App aber strikt getrennt von der Decoder-AI behandelt.",
+            level = KnowledgeLevel.SDK_KNOWN,
+            sources = setOf(KnowledgeSource.ORIGINAL_SDK, KnowledgeSource.ORIGINAL_APK, KnowledgeSource.SAFETY_RULE),
+            confirmedDetails = listOf("Decoder-AI liest nur mit"),
+            uiHint = "klar von normaler Telemetrie absetzen",
+            safetyNote = "nicht automatisch von Lernlogik beschreiben lassen"
+        ),
+        ChannelKnowledge(
+            channel = "160D",
+            title = "Motor-Tuning Schreiben",
+            summary = "Schreibkanal für Motor-Tuning mit expliziter Sicherheitsgrenze in der App.",
+            level = KnowledgeLevel.SDK_KNOWN,
+            sources = setOf(KnowledgeSource.ORIGINAL_SDK, KnowledgeSource.ORIGINAL_APK, KnowledgeSource.SAFETY_RULE),
+            confirmedDetails = listOf("Write-Kanal für Tuning-Funktionen"),
+            uiHint = "in UI klar als Schreibkanal markieren",
+            safetyNote = "Decoder-AI darf niemals automatisch auf WRITE-Kanäle schreiben"
+        )
     ).associateBy { it.channel }
 
     fun get(channel: String): ChannelKnowledge = entries[channel]
-        ?: ChannelKnowledge(channel, "Unbekannter Kanal", "Keine feste libble-Zuordnung. Erst nach Ausschluss bekannter SDK-Felder statistisch lernen.", KnowledgeLevel.UNKNOWN)
+        ?: ChannelKnowledge(
+            channel = channel,
+            title = "Unbekannter Kanal",
+            summary = "Keine feste Referenzzuordnung vorhanden.",
+            level = KnowledgeLevel.UNKNOWN,
+            sources = setOf(KnowledgeSource.LIVE_OBSERVED),
+            unknownDetails = listOf("erst nach Ausschluss bekannter SDK-Felder statistisch lernen"),
+            uiHint = "neutral und ohne harte Aussage anzeigen"
+        )
 }

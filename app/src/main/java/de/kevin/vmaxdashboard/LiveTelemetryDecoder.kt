@@ -27,6 +27,8 @@ data class DecodedTelemetry(
 )
 
 object LiveTelemetryDecoder {
+    private const val MAX_PLAUSIBLE_SPEED_KMH = 100.0
+
     fun decode(channel: String, value: ByteArray): DecodedTelemetry {
         if (value.isEmpty()) return DecodedTelemetry()
 
@@ -57,9 +59,14 @@ object LiveTelemetryDecoder {
                 validUnsigned16BE(value, 2)?.let { notes += "libble Leistung B: ${rounded(it / 10.0)} W" }
                 validUnsigned16BE(value, 4)?.let { notes += "libble Drehmoment: ${rounded(it / 100.0)} Nm" }
                 validUnsigned16BE(value, 6)?.let { raw ->
-                    driveRaw = raw
-                    speedKmh = rounded(raw / 10.0)
-                    notes += "Geschwindigkeit: 1505 Byte 6-7, Big Endian, /10 km/h"
+                    val candidate = rounded(raw / 10.0)
+                    if (candidate in 0.0..MAX_PLAUSIBLE_SPEED_KMH) {
+                        driveRaw = raw
+                        speedKmh = candidate
+                        notes += "Geschwindigkeit: 1505 Byte 6-7, Big Endian, /10 km/h"
+                    } else {
+                        notes += "1505 Speed-Ausreißer verworfen: $candidate km/h"
+                    }
                 }
                 validUnsigned16BE(value, 8)?.let { notes += "libble RPM: $it" }
                 validUnsigned16BE(value, 10)?.let { notes += "libble Distanz-/Wegfeld RAW: $it" }
@@ -91,7 +98,7 @@ object LiveTelemetryDecoder {
             "1509" -> {
                 signed16BE(value, 0)?.let { raw ->
                     currentA = rounded(raw / 1000.0)
-                    notes += "Akkustrom: 1509 Byte 0-1, mA"
+                    notes += "Akkustrom: 1509 Byte 0-1, signed mA"
                 }
                 signed16BE(value, 2)?.let { raw ->
                     val temperature = rounded(raw / 10.0)
@@ -141,22 +148,23 @@ object LiveTelemetryDecoder {
 
             "150D" -> {
                 validUnsigned16BE(value, 0)?.let { raw ->
-                    speedKmh = rounded(raw / 10.0)
-                    notes += "Zweite bestätigte Geschwindigkeit: 150D Byte 0-1, /10 km/h"
+                    notes += "150D Byte 0-1 Statistik-/Grenzwert RAW: $raw; nach erster Echtfahrt nicht als Live-Speed verwenden"
                 }
                 validUnsigned16BE(value, 2)?.let { notes += "150D Byte 2-3 Statistikwert RAW: $it" }
             }
         }
 
         val adaptive = AdaptiveDecoderRuntime.decode(channel, value)
-        if (adaptive.speedKmh != null && speedKmh == null) notes += "Decoder AI: Geschwindigkeit aus bestätigtem Lernprofil"
+        val adaptiveSpeed = adaptive.speedKmh
+            ?.takeIf { channel != "150D" && it in 0.0..MAX_PLAUSIBLE_SPEED_KMH }
+        if (adaptiveSpeed != null && speedKmh == null) notes += "Decoder AI: Geschwindigkeit aus bestätigtem Lernprofil"
         if (adaptive.batteryPercent != null && batteryPercent == null) notes += "Decoder AI: Akkustand aus bestätigtem Lernprofil"
         if (adaptive.voltageV != null && voltageV == null) notes += "Decoder AI: Spannung aus bestätigtem Lernprofil"
         if (adaptive.currentA != null && currentA == null) notes += "Decoder AI: Strom aus bestätigtem Lernprofil"
 
         return DecodedTelemetry(
             batteryPercent = batteryPercent ?: adaptive.batteryPercent,
-            speedKmh = speedKmh ?: adaptive.speedKmh,
+            speedKmh = speedKmh ?: adaptiveSpeed,
             driveRaw = driveRaw,
             motorLoadRaw = motorLoadRaw,
             accessoryByte0 = accessoryByte0,
