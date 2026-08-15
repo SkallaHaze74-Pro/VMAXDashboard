@@ -24,7 +24,7 @@ FIELD_LAYOUTS = {
         ("soc_percent", 4, 1, "u8", 1.0, "battery_percent"),
         ("voltage_V", 5, 2, "u16be", 0.001, "voltage_v"),
         ("secondary_current_A", 7, 2, "s16be", 0.001, None),
-        ("direct_power_W", 9, 2, "u16be", 1.0, "power_w"),
+        ("direct_power_W", 9, 2, "u16be", 1.0, "motor_load_raw_be"),
     ],
     "150A": [
         ("motor_current_A", 0, 2, "s16be", 0.001, None),
@@ -74,6 +74,13 @@ def parse_hex(text: str) -> bytes:
         return b""
 
 
+def suspicious_read_payload(channel: str, data: bytes) -> bool:
+    if channel.upper() != "1505" or len(data) < 18:
+        return False
+    printable_tail = sum(0x20 <= value <= 0x7E for value in data[8:])
+    return printable_tail >= 6
+
+
 def raw_value(data: bytes, offset: int, width: int, encoding: str):
     if offset < 0 or offset + width > len(data):
         return None
@@ -103,12 +110,14 @@ def read_csv(path: Path):
         return list(csv.DictReader(handle, delimiter=";"))
 
 
-def nearest_live(live_rows, timestamp_ms: int, max_delta_ms: int = 200):
+def nearest_live(live_rows, timestamp_ms: int, source_channel: str, max_delta_ms: int = 200):
     if not live_rows:
         return None
     best = None
     best_delta = max_delta_ms + 1
     for row in live_rows:
+        if str(row.get("source_channel") or "").upper() != source_channel.upper():
+            continue
         try:
             ts = int(row.get("timestamp_ms") or 0)
         except ValueError:
@@ -146,11 +155,20 @@ def analyze_ride(ride: Path):
     by_field = defaultdict(lambda: {"values": [], "matches": 0, "comparisons": 0, "abs_errors": []})
     channel_packets = defaultdict(int)
     channel_nonplaceholder = defaultdict(int)
+    rejected_read_packets = 0
+    rejected_hybrid_packets = 0
 
     for row in raw_rows:
         channel = str(row.get("channel") or "").upper()
         data = parse_hex(str(row.get("hex") or ""))
+        origin = str(row.get("origin") or "NOTIFICATION").upper()
         if not channel or not data:
+            continue
+        if origin == "READ":
+            rejected_read_packets += 1
+            continue
+        if suspicious_read_payload(channel, data):
+            rejected_hybrid_packets += 1
             continue
         channel_packets[channel] += 1
         if not all(b == 0xFF for b in data):
@@ -160,7 +178,7 @@ def analyze_ride(ride: Path):
             timestamp_ms = int(row.get("timestamp_ms") or 0)
         except ValueError:
             timestamp_ms = 0
-        live = nearest_live(live_rows, timestamp_ms)
+        live = nearest_live(live_rows, timestamp_ms, channel)
         for name, offset, width, encoding, scale, live_column in layouts:
             raw = raw_value(data, offset, width, encoding)
             if raw is None:
@@ -217,6 +235,9 @@ def analyze_ride(ride: Path):
     return {
         "ride": ride.name,
         "raw_packets": len(raw_rows),
+        "accepted_raw_packets": sum(channel_packets.values()),
+        "rejected_read_packets": rejected_read_packets,
+        "rejected_hybrid_packets": rejected_hybrid_packets,
         "live_rows": len(live_rows),
         "channels": channels,
         "fields": fields,

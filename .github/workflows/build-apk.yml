@@ -26,11 +26,14 @@ jobs:
         with:
           gradle-version: "8.11.1"
 
+      - name: Decoder- und App-Tests
+        run: ./gradlew testDebugUnitTest --stacktrace
+
       - name: Debug-APK bauen
         run: |
           export VERSION_CODE=$((7000 + GITHUB_RUN_NUMBER))
           export VERSION_NAME="7.0.${GITHUB_RUN_NUMBER}-fahrdaten"
-          gradle assembleDebug --stacktrace
+          ./gradlew assembleDebug --stacktrace
           cp app/build/outputs/apk/debug/app-debug.apk "VMAXDashboard-v${VERSION_NAME}-Debug.apk"
 
       - name: Debug-APK bereitstellen
@@ -75,7 +78,7 @@ jobs:
         run: |
           export VERSION_CODE=$((7000 + GITHUB_RUN_NUMBER))
           export VERSION_NAME="7.0.${GITHUB_RUN_NUMBER}-fahrdaten"
-          gradle assembleRelease --stacktrace
+          ./gradlew assembleRelease --stacktrace
           cp app/build/outputs/apk/release/app-release.apk "VMAXDashboard-v${VERSION_NAME}-Release.apk"
 
       - name: Release-APK bereitstellen

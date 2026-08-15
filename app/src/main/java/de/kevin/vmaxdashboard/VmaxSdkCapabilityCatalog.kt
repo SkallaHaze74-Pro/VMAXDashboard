@@ -66,11 +66,11 @@ object VmaxSdkCapabilityCatalog {
         "150D" to VmaxGattKnowledge(
             evidence = CapabilityEvidence.BT638_CONFIRMED,
             family = family("150D"),
-            meaning = "Zweite Fahrdatenquelle mit bestätigter Geschwindigkeit.",
+            meaning = "Persistente Fahrstatistik mit Maximum und Durchschnitt; kein Live-Tempo.",
             sources = listOf("BT638 bestätigt", "Live beobachtet"),
-            confirmedDetails = listOf("zweite Geschwindigkeitsquelle Byte 0-1 bestätigt"),
-            unknownDetails = listOf("weitere Statistikfelder weiter mit 1505 und 1506 vergleichen"),
-            uiHint = "als Vergleichs- und Plausibilitätskanal darstellen"
+            confirmedDetails = listOf("Byte 0-1 Maximum /10 km/h", "Byte 2-3 Durchschnitt /10 km/h"),
+            unknownDetails = listOf("weitere Statistikfelder ab Byte 4 weiter untersuchen"),
+            uiHint = "als gespeicherte Max/Ø-Fahrstatistik darstellen"
         )
     )
 
