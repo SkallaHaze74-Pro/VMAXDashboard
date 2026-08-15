@@ -8,16 +8,23 @@ on:
       - '.github/workflows/decoder-ai.yml'
       - 'app/src/main/java/de/kevin/vmaxdashboard/AdaptiveDecoderProfileStore.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/AdaptiveDecoderRuntime.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/BleScooterManager.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/DecoderAiCloudSync.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/GitHubSyncActivity.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/GitHubTelemetrySync.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/LearningProfileStore.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/MeasurementAnalyzer.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/ScooterState.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/LiveTelemetryDecoder.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/OriginalSdkRealtimeDecoder.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/VmaxDecoderPolicy.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/VmaxProtocolCatalog.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/VmaxSdkCapabilityCatalog.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/MainActivity.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/VMAXSyncApplication.kt'
+      - 'app/src/test/**'
+      - 'app/build.gradle.kts'
+      - 'gradle/wrapper/gradle-wrapper.properties'
   push:
     branches:
       - telemetry-data
@@ -28,16 +35,23 @@ on:
       - '.github/workflows/decoder-ai.yml'
       - 'app/src/main/java/de/kevin/vmaxdashboard/AdaptiveDecoderProfileStore.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/AdaptiveDecoderRuntime.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/BleScooterManager.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/DecoderAiCloudSync.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/GitHubSyncActivity.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/GitHubTelemetrySync.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/LearningProfileStore.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/MeasurementAnalyzer.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/ScooterState.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/LiveTelemetryDecoder.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/OriginalSdkRealtimeDecoder.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/VmaxDecoderPolicy.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/VmaxProtocolCatalog.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/VmaxSdkCapabilityCatalog.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/MainActivity.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/VMAXSyncApplication.kt'
+      - 'app/src/test/**'
+      - 'app/build.gradle.kts'
+      - 'gradle/wrapper/gradle-wrapper.properties'
   workflow_dispatch:
 
 permissions:
@@ -46,10 +60,20 @@ permissions:
 jobs:
   decoder-ai:
     runs-on: ubuntu-latest
+    env:
+      ANALYZER_ROOT: ${{ github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data' && '.decoder-main' || '.' }}
     steps:
       - name: Repository laden
         uses: actions/checkout@v4
         with:
+          fetch-depth: 1
+
+      - name: Aktuelle Decoder-Logik aus main laden
+        if: github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data'
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: .decoder-main
           fetch-depth: 1
 
       - name: Python einrichten
@@ -59,18 +83,18 @@ jobs:
 
       - name: Decoder-AI Module validieren
         run: |
-          python -m py_compile tools/decoder_ai/*.py
-          python -m json.tool tools/decoder_ai/original_app_semantics.json >/dev/null
+          python -m py_compile "$ANALYZER_ROOT"/tools/decoder_ai/*.py
+          python -m json.tool "$ANALYZER_ROOT/tools/decoder_ai/original_app_semantics.json" >/dev/null
 
       - name: Decoder-AI Tests
         run: |
-          python tools/decoder_ai/test_consensus.py
-          python tools/decoder_ai/test_libble_compare.py
+          python "$ANALYZER_ROOT/tools/decoder_ai/test_consensus.py"
+          python "$ANALYZER_ROOT/tools/decoder_ai/test_libble_compare.py"
 
       - name: libble SDK gegen BT638-Livestand vergleichen
         if: github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data'
         run: |
-          python tools/decoder_ai/libble_compare.py \
+          python "$ANALYZER_ROOT/tools/decoder_ai/libble_compare.py" \
             --root fahrdaten \
             --output decoder-ai/libble_comparison.json \
             --report decoder-ai/libble_comparison.md
@@ -78,8 +102,8 @@ jobs:
       - name: Original-App Sollwerte gegen BT638 abgleichen
         if: github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data'
         run: |
-          python tools/decoder_ai/original_app_compare.py \
-            --semantics tools/decoder_ai/original_app_semantics.json \
+          python "$ANALYZER_ROOT/tools/decoder_ai/original_app_compare.py" \
+            --semantics "$ANALYZER_ROOT/tools/decoder_ai/original_app_semantics.json" \
             --libble decoder-ai/libble_comparison.json \
             --output decoder-ai/original_app_comparison.json \
             --report decoder-ai/original_app_comparison.md
@@ -87,7 +111,7 @@ jobs:
       - name: Unbekannte Felder über mehrere Fahrten lernen
         if: github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data'
         run: |
-          python tools/decoder_ai/consensus.py \
+          python "$ANALYZER_ROOT/tools/decoder_ai/consensus.py" \
             --root fahrdaten \
             --output decoder-ai/decoder_profile.json \
             --report decoder-ai/analysis_report.md
@@ -112,7 +136,7 @@ jobs:
           git push origin HEAD:telemetry-data
 
   android-verify:
-    if: github.ref == 'refs/heads/feature/v7-6-adaptive-decoder-ai-final'
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/feature/v7-6-adaptive-decoder-ai-final'
     runs-on: ubuntu-latest
     steps:
       - name: Projekt laden
@@ -129,8 +153,8 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: V7.6 Debug-APK kompilieren
+      - name: Decoder-App testen und Debug-APK kompilieren
         run: |
           export VERSION_CODE=7600
           export VERSION_NAME='7.6.0-adaptive-ai-check'
-          gradle assembleDebug --stacktrace
+          ./gradlew testDebugUnitTest assembleDebug --stacktrace
