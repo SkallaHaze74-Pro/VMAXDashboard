@@ -1,21 +1,21 @@
 # VMAX libble Ground-Truth Vergleich
 
 Quelle der Semantik: `libble-sdk-native-lib.so`
-Ausgewertete Messfahrten: **4**
+Ausgewertete Messfahrten: **5**
 
 ## SDK-Felder gegen echten BT638-Livestand
 
 | Feld | Samples | Vergleiche | Treffer | MAE | Urteil |
 |---|---:|---:|---:|---:|---|
-| 1505.powerA_W | 473 | 0 | – | – | OBSERVED_NEEDS_MORE_PROOF |
-| 1505.powerB_W | 473 | 0 | – | – | OBSERVED_NEEDS_MORE_PROOF |
-| 1505.speed_kmh | 473 | 473 | 100.00% | 0.000000 | BT638_CONFIRMED |
-| 1509.current_A | 474 | 474 | 100.00% | 0.000000 | BT638_CONFIRMED |
-| 1509.direct_power_W | 474 | 474 | 100.00% | 0.000000 | BT638_CONFIRMED |
-| 1509.secondary_current_A | 474 | 0 | – | – | OBSERVED_NEEDS_MORE_PROOF |
-| 1509.soc_percent | 474 | 474 | 100.00% | 0.000000 | BT638_CONFIRMED |
-| 1509.voltage_V | 474 | 474 | 100.00% | 0.000000 | BT638_CONFIRMED |
-| 150A.motor_current_A | 474 | 0 | – | – | OBSERVED_NEEDS_MORE_PROOF |
+| 1505.powerA_W | 505 | 0 | – | – | OBSERVED_NEEDS_MORE_PROOF |
+| 1505.powerB_W | 505 | 0 | – | – | OBSERVED_NEEDS_MORE_PROOF |
+| 1505.speed_kmh | 505 | 505 | 100.00% | 0.000000 | BT638_CONFIRMED |
+| 1509.current_A | 505 | 505 | 100.00% | 0.000000 | BT638_CONFIRMED |
+| 1509.direct_power_W | 505 | 505 | 100.00% | 0.000000 | BT638_CONFIRMED |
+| 1509.secondary_current_A | 505 | 0 | – | – | OBSERVED_NEEDS_MORE_PROOF |
+| 1509.soc_percent | 505 | 505 | 100.00% | 0.000000 | BT638_CONFIRMED |
+| 1509.voltage_V | 505 | 505 | 100.00% | 0.000000 | BT638_CONFIRMED |
+| 150A.motor_current_A | 505 | 0 | – | – | OBSERVED_NEEDS_MORE_PROOF |
 
 ## Schutzregel
 

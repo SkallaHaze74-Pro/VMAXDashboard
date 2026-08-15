@@ -1,16 +1,16 @@
 # VMAX Decoder AI – Konsensbericht
 
-- Fahrten ausgewertet: **4**
+- Fahrten ausgewertet: **5**
 - Regeln gesamt: **5**
 - Davon bestätigt: **3**
-- Profil-Revision: `2b72bad4e62d6f00`
+- Profil-Revision: `ea50aaaa09c851e9`
 
 ## Regeln
 
 | Status | Signal | Kanal | Feld | Konfidenz | Evidenz | Quelle |
 |---|---|---:|---|---:|---:|---|
 | confirmed | currentA | 1509 | s16be@0 | 99% | 2 Fahrt(en), 461 Samples | libble-ground-truth+numeric |
-| confirmed | speedKmh | 1505 | u16be@6 | 99% | 2 Fahrt(en), 459 Samples | libble-ground-truth+numeric |
+| confirmed | speedKmh | 1505 | u16be@6 | 99% | 3 Fahrt(en), 491 Samples | libble-ground-truth+numeric |
 | confirmed | voltageV | 1509 | u16be@5 | 99% | 2 Fahrt(en), 461 Samples | libble-ground-truth+numeric |
 | candidate | batteryPercent | 1509 | u8@4 | 98% | 1 Fahrt(en), 397 Samples | libble-ground-truth+numeric |
 | candidate | odometerKm | 1506 | u32be@0 | 98% | 1 Fahrt(en), 397 Samples | libble-ground-truth+numeric |

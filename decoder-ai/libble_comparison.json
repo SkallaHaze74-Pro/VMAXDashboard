@@ -1127,67 +1127,225 @@
           "sdk_status": "observed"
         }
       }
+    },
+    {
+      "ride": "Messfahrt_2026-08-16_00-09-26",
+      "raw_packets": 251,
+      "accepted_raw_packets": 251,
+      "rejected_read_packets": 0,
+      "rejected_hybrid_packets": 0,
+      "live_rows": 251,
+      "channels": {
+        "1502": {
+          "packets": 32,
+          "non_placeholder_packets": 32,
+          "non_placeholder_percent": 100.0,
+          "sdk_decoder": false,
+          "sdk_name": null
+        },
+        "1505": {
+          "packets": 32,
+          "non_placeholder_packets": 32,
+          "non_placeholder_percent": 100.0,
+          "sdk_decoder": true,
+          "sdk_name": "BikePerformance"
+        },
+        "1506": {
+          "packets": 32,
+          "non_placeholder_packets": 32,
+          "non_placeholder_percent": 100.0,
+          "sdk_decoder": false,
+          "sdk_name": null
+        },
+        "1508": {
+          "packets": 31,
+          "non_placeholder_packets": 31,
+          "non_placeholder_percent": 100.0,
+          "sdk_decoder": false,
+          "sdk_name": null
+        },
+        "1509": {
+          "packets": 31,
+          "non_placeholder_packets": 31,
+          "non_placeholder_percent": 100.0,
+          "sdk_decoder": true,
+          "sdk_name": "BatteryChange/BatteryUpdate"
+        },
+        "150A": {
+          "packets": 31,
+          "non_placeholder_packets": 31,
+          "non_placeholder_percent": 100.0,
+          "sdk_decoder": true,
+          "sdk_name": "MotorUpdate"
+        },
+        "150B": {
+          "packets": 31,
+          "non_placeholder_packets": 0,
+          "non_placeholder_percent": 0.0,
+          "sdk_decoder": false,
+          "sdk_name": null
+        },
+        "150D": {
+          "packets": 31,
+          "non_placeholder_packets": 31,
+          "non_placeholder_percent": 100.0,
+          "sdk_decoder": false,
+          "sdk_name": null
+        }
+      },
+      "fields": {
+        "1505.powerA_W": {
+          "samples": 32,
+          "min": 0.0,
+          "max": 50.0,
+          "mean": 1.5625,
+          "comparisons_to_app_live": 0,
+          "match_percent": null,
+          "mae_to_app_live": null,
+          "sdk_status": "observed"
+        },
+        "1505.powerB_W": {
+          "samples": 32,
+          "min": 0.0,
+          "max": 50.0,
+          "mean": 1.5625,
+          "comparisons_to_app_live": 0,
+          "match_percent": null,
+          "mae_to_app_live": null,
+          "sdk_status": "observed"
+        },
+        "1505.speed_kmh": {
+          "samples": 32,
+          "min": 0.0,
+          "max": 12.8,
+          "mean": 2.7437500000000004,
+          "comparisons_to_app_live": 32,
+          "match_percent": 100.0,
+          "mae_to_app_live": 0.0,
+          "sdk_status": "confirmed_on_bt638"
+        },
+        "1509.current_A": {
+          "samples": 31,
+          "min": 0.0,
+          "max": 6.0,
+          "mean": 0.3225806451612903,
+          "comparisons_to_app_live": 31,
+          "match_percent": 100.0,
+          "mae_to_app_live": 0.0,
+          "sdk_status": "confirmed_on_bt638"
+        },
+        "1509.direct_power_W": {
+          "samples": 31,
+          "min": 0.0,
+          "max": 294.0,
+          "mean": 15.935483870967742,
+          "comparisons_to_app_live": 31,
+          "match_percent": 100.0,
+          "mae_to_app_live": 0.0,
+          "sdk_status": "confirmed_on_bt638"
+        },
+        "1509.secondary_current_A": {
+          "samples": 31,
+          "min": 0.0,
+          "max": 0.0,
+          "mean": 0.0,
+          "comparisons_to_app_live": 0,
+          "match_percent": null,
+          "mae_to_app_live": null,
+          "sdk_status": "observed"
+        },
+        "1509.soc_percent": {
+          "samples": 31,
+          "min": 75.0,
+          "max": 75.0,
+          "mean": 75.0,
+          "comparisons_to_app_live": 31,
+          "match_percent": 100.0,
+          "mae_to_app_live": 0.0,
+          "sdk_status": "confirmed_on_bt638"
+        },
+        "1509.voltage_V": {
+          "samples": 31,
+          "min": 49.7,
+          "max": 50.7,
+          "mean": 50.60967741935484,
+          "comparisons_to_app_live": 31,
+          "match_percent": 100.0,
+          "mae_to_app_live": 0.0,
+          "sdk_status": "confirmed_on_bt638"
+        },
+        "150A.motor_current_A": {
+          "samples": 31,
+          "min": 0.0,
+          "max": 4.0,
+          "mean": 0.3225806451612903,
+          "comparisons_to_app_live": 0,
+          "match_percent": null,
+          "mae_to_app_live": null,
+          "sdk_status": "observed"
+        }
+      }
     }
   ],
   "aggregate_fields": {
     "1505.powerA_W": {
-      "samples": 473,
+      "samples": 505,
       "comparisons_to_app_live": 0,
       "match_percent": null,
       "mae_to_app_live": null,
       "verdict": "OBSERVED_NEEDS_MORE_PROOF"
     },
     "1505.powerB_W": {
-      "samples": 473,
+      "samples": 505,
       "comparisons_to_app_live": 0,
       "match_percent": null,
       "mae_to_app_live": null,
       "verdict": "OBSERVED_NEEDS_MORE_PROOF"
     },
     "1505.speed_kmh": {
-      "samples": 473,
-      "comparisons_to_app_live": 473,
+      "samples": 505,
+      "comparisons_to_app_live": 505,
       "match_percent": 100.0,
       "mae_to_app_live": 0.0,
       "verdict": "BT638_CONFIRMED"
     },
     "1509.current_A": {
-      "samples": 474,
-      "comparisons_to_app_live": 474,
+      "samples": 505,
+      "comparisons_to_app_live": 505,
       "match_percent": 100.0,
       "mae_to_app_live": 0.0,
       "verdict": "BT638_CONFIRMED"
     },
     "1509.direct_power_W": {
-      "samples": 474,
-      "comparisons_to_app_live": 474,
+      "samples": 505,
+      "comparisons_to_app_live": 505,
       "match_percent": 100.0,
       "mae_to_app_live": 0.0,
       "verdict": "BT638_CONFIRMED"
     },
     "1509.secondary_current_A": {
-      "samples": 474,
+      "samples": 505,
       "comparisons_to_app_live": 0,
       "match_percent": null,
       "mae_to_app_live": null,
       "verdict": "OBSERVED_NEEDS_MORE_PROOF"
     },
     "1509.soc_percent": {
-      "samples": 474,
-      "comparisons_to_app_live": 474,
+      "samples": 505,
+      "comparisons_to_app_live": 505,
       "match_percent": 100.0,
       "mae_to_app_live": 0.0,
       "verdict": "BT638_CONFIRMED"
     },
     "1509.voltage_V": {
-      "samples": 474,
-      "comparisons_to_app_live": 474,
+      "samples": 505,
+      "comparisons_to_app_live": 505,
       "match_percent": 100.0,
       "mae_to_app_live": 0.0,
       "verdict": "BT638_CONFIRMED"
     },
     "150A.motor_current_A": {
-      "samples": 474,
+      "samples": 505,
       "comparisons_to_app_live": 0,
       "match_percent": null,
       "mae_to_app_live": null,
