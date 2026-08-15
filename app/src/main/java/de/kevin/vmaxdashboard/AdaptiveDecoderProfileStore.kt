@@ -12,7 +12,10 @@ data class AdaptiveProfileSnapshot(
     val confirmedRuleCount: Int = 0,
     val generatedAtMs: Long = 0L,
     val source: String = "Noch kein KI-Profil",
-    val signals: Set<String> = emptySet()
+    val signals: Set<String> = emptySet(),
+    val cloudRuleCount: Int = 0,
+    val localRuleCount: Int = 0,
+    val confidenceSummary: String = "Noch keine Vertrauensdaten"
 )
 
 data class AdaptiveDecodedTelemetry(
@@ -30,7 +33,10 @@ data class AdaptiveDecodedTelemetry(
     val rightIndicator: Boolean? = null,
     val lightOn: Boolean? = null,
     val lockActive: Boolean? = null,
-    val charging: Boolean? = null
+    val charging: Boolean? = null,
+    val signalConfidence: Map<String, String> = emptyMap(),
+    val signalSources: Map<String, String> = emptyMap(),
+    val signalChannels: Map<String, String> = emptyMap()
 )
 
 private data class AdaptiveRule(
@@ -48,6 +54,15 @@ private data class AdaptiveRule(
     val observations: Int,
     val status: String,
     val source: String
+)
+
+private data class DecodedCandidate(
+    val signal: String,
+    val value: Any,
+    val confidenceLabel: String,
+    val sourceLabel: String,
+    val channel: String,
+    val priority: Int
 )
 
 class AdaptiveDecoderProfileStore private constructor(context: Context) {
@@ -195,71 +210,67 @@ class AdaptiveDecoderProfileStore private constructor(context: Context) {
                 .thenByDescending { it.observations })
         if (matching.isEmpty()) return AdaptiveDecodedTelemetry()
 
-        var batteryPercent: Int? = null
-        var speedKmh: Double? = null
-        var voltageV: Double? = null
-        var currentA: Double? = null
-        var powerW: Double? = null
-        var motorTemperatureC: Double? = null
-        var batteryTemperatureC: Double? = null
-        var tripDistanceKm: Double? = null
-        var odometerKm: Double? = null
-        var brakeActive: Boolean? = null
-        var leftIndicator: Boolean? = null
-        var rightIndicator: Boolean? = null
-        var lightOn: Boolean? = null
-        var lockActive: Boolean? = null
-        var charging: Boolean? = null
+        val candidates = linkedMapOf<String, MutableList<DecodedCandidate>>()
 
         matching.forEach { rule ->
             val raw = readRaw(rule, value) ?: return@forEach
+            val confidenceLabel = confidenceLabel(rule)
+            val sourceLabel = sourceLabel(rule)
+            val priority = priority(rule)
             val booleanValue = when (raw) {
                 rule.activeValue -> true
                 rule.inactiveValue -> false
                 else -> null
             }
             when (rule.signal) {
-                "brakeActive" -> if (brakeActive == null) brakeActive = booleanValue
-                "leftIndicator" -> if (leftIndicator == null) leftIndicator = booleanValue
-                "rightIndicator" -> if (rightIndicator == null) rightIndicator = booleanValue
-                "lightOn" -> if (lightOn == null) lightOn = booleanValue
-                "lockActive" -> if (lockActive == null) lockActive = booleanValue
-                "charging" -> if (charging == null) charging = booleanValue
+                "brakeActive", "leftIndicator", "rightIndicator", "lightOn", "lockActive", "charging" -> {
+                    booleanValue?.let {
+                        candidates.getOrPut(rule.signal) { mutableListOf() }.add(
+                            DecodedCandidate(rule.signal, it, confidenceLabel, sourceLabel, rule.channel, priority)
+                        )
+                    }
+                }
                 else -> {
                     val numeric = raw.toDouble() * rule.scale + rule.bias
                     if (!numeric.isFinite() || !plausible(rule.signal, numeric)) return@forEach
                     val rounded = round(numeric * 1000.0) / 1000.0
-                    when (rule.signal) {
-                        "batteryPercent" -> if (batteryPercent == null) batteryPercent = rounded.toInt().coerceIn(0, 100)
-                        "speedKmh" -> if (speedKmh == null) speedKmh = rounded
-                        "voltageV" -> if (voltageV == null) voltageV = rounded
-                        "currentA" -> if (currentA == null) currentA = rounded
-                        "powerW" -> if (powerW == null) powerW = rounded
-                        "motorTemperatureC" -> if (motorTemperatureC == null) motorTemperatureC = rounded
-                        "batteryTemperatureC" -> if (batteryTemperatureC == null) batteryTemperatureC = rounded
-                        "tripDistanceKm" -> if (tripDistanceKm == null) tripDistanceKm = rounded
-                        "odometerKm" -> if (odometerKm == null) odometerKm = rounded
+                    val normalized: Any = when (rule.signal) {
+                        "batteryPercent" -> rounded.toInt().coerceIn(0, 100)
+                        else -> rounded
                     }
+                    candidates.getOrPut(rule.signal) { mutableListOf() }.add(
+                        DecodedCandidate(rule.signal, normalized, confidenceLabel, sourceLabel, rule.channel, priority)
+                    )
                 }
             }
         }
 
+        val selected = candidates.mapValues { (_, values) ->
+            values.sortedWith(
+                compareByDescending<DecodedCandidate> { it.priority }
+                    .thenByDescending { confidenceWeight(it.confidenceLabel) }
+            ).first()
+        }
+
         return AdaptiveDecodedTelemetry(
-            batteryPercent = batteryPercent,
-            speedKmh = speedKmh,
-            voltageV = voltageV,
-            currentA = currentA,
-            powerW = powerW,
-            motorTemperatureC = motorTemperatureC,
-            batteryTemperatureC = batteryTemperatureC,
-            tripDistanceKm = tripDistanceKm,
-            odometerKm = odometerKm,
-            brakeActive = brakeActive,
-            leftIndicator = leftIndicator,
-            rightIndicator = rightIndicator,
-            lightOn = lightOn,
-            lockActive = lockActive,
-            charging = charging
+            batteryPercent = selected["batteryPercent"]?.value as? Int,
+            speedKmh = selected["speedKmh"]?.value as? Double,
+            voltageV = selected["voltageV"]?.value as? Double,
+            currentA = selected["currentA"]?.value as? Double,
+            powerW = selected["powerW"]?.value as? Double,
+            motorTemperatureC = selected["motorTemperatureC"]?.value as? Double,
+            batteryTemperatureC = selected["batteryTemperatureC"]?.value as? Double,
+            tripDistanceKm = selected["tripDistanceKm"]?.value as? Double,
+            odometerKm = selected["odometerKm"]?.value as? Double,
+            brakeActive = selected["brakeActive"]?.value as? Boolean,
+            leftIndicator = selected["leftIndicator"]?.value as? Boolean,
+            rightIndicator = selected["rightIndicator"]?.value as? Boolean,
+            lightOn = selected["lightOn"]?.value as? Boolean,
+            lockActive = selected["lockActive"]?.value as? Boolean,
+            charging = selected["charging"]?.value as? Boolean,
+            signalConfidence = selected.mapValues { it.value.confidenceLabel },
+            signalSources = selected.mapValues { it.value.sourceLabel },
+            signalChannels = selected.mapValues { it.value.channel }
         )
     }
 
@@ -274,9 +285,11 @@ class AdaptiveDecoderProfileStore private constructor(context: Context) {
             .filter { it.status == "confirmed" && it.confidence >= 92 && it.signal in SUPPORTED_SIGNALS }
             .groupBy { "${it.signal}|${it.channel}|${it.offset}|${it.encoding}" }
             .mapNotNull { (_, values) ->
-                values.maxWithOrNull(compareBy<AdaptiveRule> { it.source == "cloud-consensus" }
-                    .thenBy { it.confidence }
-                    .thenBy { it.observations })
+                values.maxWithOrNull(
+                    compareByDescending<AdaptiveRule> { it.source == "cloud-consensus" }
+                        .thenByDescending { it.confidence }
+                        .thenByDescending { it.observations }
+                )
             }
         activeRules = confirmed
 
@@ -286,6 +299,9 @@ class AdaptiveDecoderProfileStore private constructor(context: Context) {
             cloudRoot?.optLong("generatedAtMs", 0L) ?: 0L,
             localRoot?.optLong("generatedAtMs", 0L) ?: 0L
         )
+        val highConfidence = confirmed.count { it.confidence >= 97 }
+        val goodConfidence = confirmed.count { it.confidence in 94..96 }
+        val carefulConfidence = confirmed.count { it.confidence in 92..93 }
         currentSnapshot = AdaptiveProfileSnapshot(
             revision = cloudRevision.ifBlank { localRevision },
             ruleCount = allRules.size,
@@ -297,7 +313,10 @@ class AdaptiveDecoderProfileStore private constructor(context: Context) {
                 localAll.isNotEmpty() -> "Lokales Lernen"
                 else -> "Noch kein KI-Profil"
             },
-            signals = confirmed.map { it.signal }.toSet()
+            signals = confirmed.map { it.signal }.toSet(),
+            cloudRuleCount = cloudAll.size,
+            localRuleCount = localAll.size,
+            confidenceSummary = "Hoch: $highConfidence • Gut: $goodConfidence • Vorsichtig: $carefulConfidence"
         )
     }
 
@@ -397,6 +416,35 @@ class AdaptiveDecoderProfileStore private constructor(context: Context) {
         "u16be", "u16le", "s16be", "s16le" -> 2
         "u32be", "u32le" -> 4
         else -> 0
+    }
+
+    private fun confidenceLabel(rule: AdaptiveRule): String = when {
+        rule.confidence >= 97 -> "hoch"
+        rule.confidence >= 94 -> "gut"
+        rule.confidence >= 92 -> "vorsichtig"
+        else -> "experimentell"
+    }
+
+    private fun sourceLabel(rule: AdaptiveRule): String = when (rule.source) {
+        "cloud-consensus" -> "GitHub-Konsens"
+        "local-learning" -> "Lokales Lernen"
+        else -> rule.source
+    }
+
+    private fun priority(rule: AdaptiveRule): Int {
+        val sourcePriority = when (rule.source) {
+            "cloud-consensus" -> 200
+            "local-learning" -> 100
+            else -> 0
+        }
+        return sourcePriority + rule.confidence + rule.observations.coerceAtMost(20)
+    }
+
+    private fun confidenceWeight(label: String): Int = when (label) {
+        "hoch" -> 4
+        "gut" -> 3
+        "vorsichtig" -> 2
+        else -> 1
     }
 
     private fun JSONObject.optLongOrNull(name: String): Long? =
