@@ -1,6 +1,6 @@
 {
   "schema": "vmax-adaptive-decoder-v1",
-  "revision": "2b775c2c835fca6b",
+  "revision": "6999cf70d7a70bfd",
   "generatedAtMs": 1786899088337,
   "rideCount": 6,
   "ruleCount": 6,
@@ -20,7 +20,7 @@
       "rides": 3,
       "correlation": 1.0,
       "mae": 0.0,
-      "source": "libble-ground-truth+numeric",
+      "source": "original-sdk-layout+app-extraction-check",
       "status": "confirmed"
     },
     {
@@ -37,7 +37,7 @@
       "rides": 2,
       "correlation": 1.0,
       "mae": 0.0,
-      "source": "libble-ground-truth+numeric",
+      "source": "original-sdk-layout+app-extraction-check",
       "status": "confirmed"
     },
     {
@@ -54,7 +54,7 @@
       "rides": 4,
       "correlation": 1.0,
       "mae": 0.0,
-      "source": "libble-ground-truth+numeric",
+      "source": "original-sdk-layout+app-extraction-check",
       "status": "confirmed"
     },
     {
@@ -71,7 +71,7 @@
       "rides": 3,
       "correlation": 1.0,
       "mae": 0.0,
-      "source": "libble-ground-truth+numeric",
+      "source": "original-sdk-layout+app-extraction-check",
       "status": "confirmed"
     },
     {
@@ -88,7 +88,7 @@
       "rides": 1,
       "correlation": 1.0,
       "mae": 0.0,
-      "source": "libble-ground-truth+numeric",
+      "source": "original-sdk-layout+app-extraction-check",
       "status": "candidate"
     },
     {
@@ -105,7 +105,7 @@
       "rides": 1,
       "correlation": 1.0,
       "mae": 0.0,
-      "source": "numeric-correlation",
+      "source": "original-sdk-layout+app-extraction-check",
       "status": "candidate"
     }
   ]

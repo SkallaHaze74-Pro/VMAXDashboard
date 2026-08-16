@@ -9,15 +9,28 @@ Ausgewertete Messfahrten: **6**
 |---|---:|---:|---:|---:|---|
 | 1505.powerA_W | 612 | 0 | – | – | OBSERVED_NEEDS_MORE_PROOF |
 | 1505.powerB_W | 612 | 0 | – | – | OBSERVED_NEEDS_MORE_PROOF |
-| 1505.speed_kmh | 612 | 612 | 100.00% | 0.000000 | BT638_CONFIRMED |
-| 1509.current_A | 614 | 614 | 100.00% | 0.000000 | BT638_CONFIRMED |
-| 1509.direct_power_W | 614 | 614 | 100.00% | 0.000000 | BT638_CONFIRMED |
+| 1505.speed_kmh | 612 | 612 | 100.00% | 0.000000 | APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT |
+| 1509.current_A | 614 | 614 | 100.00% | 0.000000 | APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT |
+| 1509.direct_power_W | 614 | 613 | 74.23% | 27.318923 | OBSERVED_NEEDS_MORE_PROOF |
 | 1509.secondary_current_A | 614 | 0 | – | – | OBSERVED_NEEDS_MORE_PROOF |
-| 1509.soc_percent | 614 | 614 | 100.00% | 0.000000 | BT638_CONFIRMED |
-| 1509.voltage_V | 614 | 614 | 100.00% | 0.000000 | BT638_CONFIRMED |
+| 1509.soc_percent | 614 | 614 | 100.00% | 0.000000 | APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT |
+| 1509.voltage_V | 614 | 614 | 100.00% | 0.000000 | APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT |
 | 150A.motor_current_A | 614 | 0 | – | – | OBSERVED_NEEDS_MORE_PROOF |
+
+## Datenqualität je Export
+
+| Messfahrt | RAW-Exportzeilen | Akzeptierte Exportzeilen | READ im Export | Hybrid im Export | READ laut Zusammenfassung | Hybrid laut Zusammenfassung |
+|---|---:|---:|---:|---:|---:|---:|
+| Messfahrt_2026-08-13_19-17-14 | 3235 | 3234 | ? | 1 | ? | ? |
+| Messfahrt_2026-08-13_20-26-18 | 41 | 41 | ? | 0 | ? | ? |
+| Messfahrt_2026-08-15_21-09-05 | 533 | 532 | ? | 1 | ? | ? |
+| Messfahrt_2026-08-15_21-12-46 | 104 | 104 | ? | 0 | ? | ? |
+| Messfahrt_2026-08-16_00-09-26 | 251 | 251 | ? | 0 | ? | ? |
+| Messfahrt_2026-08-16_18-46-03 | 871 | 871 | ? | 0 | ? | ? |
 
 ## Schutzregel
 
-SDK-bekannte Live-Felder werden als Ground Truth behandelt und dürfen nicht als Licht/Bremse/Blinker-Kandidaten umgedeutet werden.
+SDK-bekannte Layouts dürfen nicht als Licht/Bremse/Blinker-Kandidaten umgedeutet werden.
+Der Vergleich prüft die App-Extraktion gegen dasselbe RAW-Paket; er ist kein unabhängiger semantischer Sensornachweis.
+READ-/Hybrid-Verwerfungen stammen nur aus `Zusammenfassung.txt`. Fehlt dort der jeweilige Zähler, bleibt er unbekannt; eine Null wird nicht aus den bereits akzeptierten RAW-Exportzeilen abgeleitet.
 Unbekannte Felder werden erst danach statistisch gelernt. 150C wird bis zur erneuten Bestätigung der exakten Byte-Offets nur als BatteryCellUpdate-Präsenz ausgewertet.

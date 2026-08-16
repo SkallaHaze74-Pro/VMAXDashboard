@@ -1,13 +1,24 @@
 {
-  "schema": "vmax-libble-ground-truth-v1",
+  "schema": "vmax-libble-layout-consistency-v2",
   "sdk_source": "libble-sdk-native-lib.so",
   "rides": [
     {
       "ride": "Messfahrt_2026-08-13_19-17-14",
-      "raw_packets": 3235,
-      "accepted_raw_packets": 3234,
-      "rejected_read_packets": 0,
-      "rejected_hybrid_packets": 1,
+      "raw_export_rows": 3235,
+      "accepted_export_rows": 3234,
+      "export_observations": {
+        "scope": "BLE_Rohdaten.csv rows only; these are not recorder rejection counters",
+        "origin_column_available": false,
+        "observed_exported_read_rows": null,
+        "observed_exported_hybrid_rows": 1
+      },
+      "quality_counters": {
+        "source": "unknown",
+        "received_notification_packets": null,
+        "accepted_notification_packets": null,
+        "rejected_read_packets": null,
+        "rejected_hybrid_packets": null
+      },
       "live_rows": 3245,
       "channels": {
         "0203": {
@@ -217,6 +228,8 @@
           "comparisons_to_app_live": 0,
           "match_percent": null,
           "mae_to_app_live": null,
+          "evidence_type": "sdk_layout_observation",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         },
         "1505.powerB_W": {
@@ -227,6 +240,8 @@
           "comparisons_to_app_live": 0,
           "match_percent": null,
           "mae_to_app_live": null,
+          "evidence_type": "sdk_layout_observation",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         },
         "1505.speed_kmh": {
@@ -237,7 +252,9 @@
           "comparisons_to_app_live": 396,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
-          "sdk_status": "confirmed_on_bt638"
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
+          "sdk_status": "app_export_consistent_with_sdk_layout"
         },
         "1509.current_A": {
           "samples": 397,
@@ -247,7 +264,9 @@
           "comparisons_to_app_live": 397,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
-          "sdk_status": "confirmed_on_bt638"
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
+          "sdk_status": "app_export_consistent_with_sdk_layout"
         },
         "1509.direct_power_W": {
           "samples": 397,
@@ -255,9 +274,11 @@
           "max": 766.0,
           "mean": 79.77581863979849,
           "comparisons_to_app_live": 397,
-          "match_percent": 100.0,
-          "mae_to_app_live": 0.0,
-          "sdk_status": "confirmed_on_bt638"
+          "match_percent": 64.74,
+          "mae_to_app_live": 34.646096,
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
+          "sdk_status": "observed"
         },
         "1509.secondary_current_A": {
           "samples": 397,
@@ -267,6 +288,8 @@
           "comparisons_to_app_live": 0,
           "match_percent": null,
           "mae_to_app_live": null,
+          "evidence_type": "sdk_layout_observation",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         },
         "1509.soc_percent": {
@@ -277,7 +300,9 @@
           "comparisons_to_app_live": 397,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
-          "sdk_status": "confirmed_on_bt638"
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
+          "sdk_status": "app_export_consistent_with_sdk_layout"
         },
         "1509.voltage_V": {
           "samples": 397,
@@ -287,7 +312,9 @@
           "comparisons_to_app_live": 397,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
-          "sdk_status": "confirmed_on_bt638"
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
+          "sdk_status": "app_export_consistent_with_sdk_layout"
         },
         "150A.motor_current_A": {
           "samples": 397,
@@ -297,16 +324,29 @@
           "comparisons_to_app_live": 0,
           "match_percent": null,
           "mae_to_app_live": null,
+          "evidence_type": "sdk_layout_observation",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         }
       }
     },
     {
       "ride": "Messfahrt_2026-08-13_20-26-18",
-      "raw_packets": 41,
-      "accepted_raw_packets": 41,
-      "rejected_read_packets": 0,
-      "rejected_hybrid_packets": 0,
+      "raw_export_rows": 41,
+      "accepted_export_rows": 41,
+      "export_observations": {
+        "scope": "BLE_Rohdaten.csv rows only; these are not recorder rejection counters",
+        "origin_column_available": false,
+        "observed_exported_read_rows": null,
+        "observed_exported_hybrid_rows": 0
+      },
+      "quality_counters": {
+        "source": "unknown",
+        "received_notification_packets": null,
+        "accepted_notification_packets": null,
+        "rejected_read_packets": null,
+        "rejected_hybrid_packets": null
+      },
       "live_rows": 2612,
       "channels": {
         "1501": {
@@ -446,6 +486,8 @@
           "comparisons_to_app_live": 0,
           "match_percent": null,
           "mae_to_app_live": null,
+          "evidence_type": "sdk_layout_observation",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         },
         "1505.powerB_W": {
@@ -456,6 +498,8 @@
           "comparisons_to_app_live": 0,
           "match_percent": null,
           "mae_to_app_live": null,
+          "evidence_type": "sdk_layout_observation",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         },
         "1505.speed_kmh": {
@@ -466,6 +510,8 @@
           "comparisons_to_app_live": 4,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         },
         "1509.current_A": {
@@ -476,6 +522,8 @@
           "comparisons_to_app_live": 4,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         },
         "1509.direct_power_W": {
@@ -486,6 +534,8 @@
           "comparisons_to_app_live": 4,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         },
         "1509.secondary_current_A": {
@@ -496,6 +546,8 @@
           "comparisons_to_app_live": 0,
           "match_percent": null,
           "mae_to_app_live": null,
+          "evidence_type": "sdk_layout_observation",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         },
         "1509.soc_percent": {
@@ -506,6 +558,8 @@
           "comparisons_to_app_live": 4,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         },
         "1509.voltage_V": {
@@ -516,6 +570,8 @@
           "comparisons_to_app_live": 4,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         },
         "150A.motor_current_A": {
@@ -526,16 +582,29 @@
           "comparisons_to_app_live": 0,
           "match_percent": null,
           "mae_to_app_live": null,
+          "evidence_type": "sdk_layout_observation",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         }
       }
     },
     {
       "ride": "Messfahrt_2026-08-15_21-09-05",
-      "raw_packets": 533,
-      "accepted_raw_packets": 532,
-      "rejected_read_packets": 0,
-      "rejected_hybrid_packets": 1,
+      "raw_export_rows": 533,
+      "accepted_export_rows": 532,
+      "export_observations": {
+        "scope": "BLE_Rohdaten.csv rows only; these are not recorder rejection counters",
+        "origin_column_available": false,
+        "observed_exported_read_rows": null,
+        "observed_exported_hybrid_rows": 1
+      },
+      "quality_counters": {
+        "source": "unknown",
+        "received_notification_packets": null,
+        "accepted_notification_packets": null,
+        "rejected_read_packets": null,
+        "rejected_hybrid_packets": null
+      },
       "live_rows": 533,
       "channels": {
         "0203": {
@@ -745,6 +814,8 @@
           "comparisons_to_app_live": 0,
           "match_percent": null,
           "mae_to_app_live": null,
+          "evidence_type": "sdk_layout_observation",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         },
         "1505.powerB_W": {
@@ -755,6 +826,8 @@
           "comparisons_to_app_live": 0,
           "match_percent": null,
           "mae_to_app_live": null,
+          "evidence_type": "sdk_layout_observation",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         },
         "1505.speed_kmh": {
@@ -765,7 +838,9 @@
           "comparisons_to_app_live": 63,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
-          "sdk_status": "confirmed_on_bt638"
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
+          "sdk_status": "app_export_consistent_with_sdk_layout"
         },
         "1509.current_A": {
           "samples": 64,
@@ -775,17 +850,21 @@
           "comparisons_to_app_live": 64,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
-          "sdk_status": "confirmed_on_bt638"
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
+          "sdk_status": "app_export_consistent_with_sdk_layout"
         },
         "1509.direct_power_W": {
           "samples": 64,
           "min": 0.0,
           "max": 680.0,
           "mean": 50.75,
-          "comparisons_to_app_live": 64,
-          "match_percent": 100.0,
-          "mae_to_app_live": 0.0,
-          "sdk_status": "confirmed_on_bt638"
+          "comparisons_to_app_live": 63,
+          "match_percent": 71.43,
+          "mae_to_app_live": 47.492063,
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
+          "sdk_status": "observed"
         },
         "1509.secondary_current_A": {
           "samples": 64,
@@ -795,6 +874,8 @@
           "comparisons_to_app_live": 0,
           "match_percent": null,
           "mae_to_app_live": null,
+          "evidence_type": "sdk_layout_observation",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         },
         "1509.soc_percent": {
@@ -805,7 +886,9 @@
           "comparisons_to_app_live": 64,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
-          "sdk_status": "confirmed_on_bt638"
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
+          "sdk_status": "app_export_consistent_with_sdk_layout"
         },
         "1509.voltage_V": {
           "samples": 64,
@@ -815,7 +898,9 @@
           "comparisons_to_app_live": 64,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
-          "sdk_status": "confirmed_on_bt638"
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
+          "sdk_status": "app_export_consistent_with_sdk_layout"
         },
         "150A.motor_current_A": {
           "samples": 64,
@@ -825,16 +910,29 @@
           "comparisons_to_app_live": 0,
           "match_percent": null,
           "mae_to_app_live": null,
+          "evidence_type": "sdk_layout_observation",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         }
       }
     },
     {
       "ride": "Messfahrt_2026-08-15_21-12-46",
-      "raw_packets": 104,
-      "accepted_raw_packets": 104,
-      "rejected_read_packets": 0,
-      "rejected_hybrid_packets": 0,
+      "raw_export_rows": 104,
+      "accepted_export_rows": 104,
+      "export_observations": {
+        "scope": "BLE_Rohdaten.csv rows only; these are not recorder rejection counters",
+        "origin_column_available": false,
+        "observed_exported_read_rows": null,
+        "observed_exported_hybrid_rows": 0
+      },
+      "quality_counters": {
+        "source": "unknown",
+        "received_notification_packets": null,
+        "accepted_notification_packets": null,
+        "rejected_read_packets": null,
+        "rejected_hybrid_packets": null
+      },
       "live_rows": 104,
       "channels": {
         "0203": {
@@ -1044,6 +1142,8 @@
           "comparisons_to_app_live": 0,
           "match_percent": null,
           "mae_to_app_live": null,
+          "evidence_type": "sdk_layout_observation",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         },
         "1505.powerB_W": {
@@ -1054,6 +1154,8 @@
           "comparisons_to_app_live": 0,
           "match_percent": null,
           "mae_to_app_live": null,
+          "evidence_type": "sdk_layout_observation",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         },
         "1505.speed_kmh": {
@@ -1064,7 +1166,9 @@
           "comparisons_to_app_live": 10,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
-          "sdk_status": "confirmed_on_bt638"
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
+          "sdk_status": "app_export_consistent_with_sdk_layout"
         },
         "1509.current_A": {
           "samples": 9,
@@ -1074,6 +1178,8 @@
           "comparisons_to_app_live": 9,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         },
         "1509.direct_power_W": {
@@ -1084,6 +1190,8 @@
           "comparisons_to_app_live": 9,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         },
         "1509.secondary_current_A": {
@@ -1094,6 +1202,8 @@
           "comparisons_to_app_live": 0,
           "match_percent": null,
           "mae_to_app_live": null,
+          "evidence_type": "sdk_layout_observation",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         },
         "1509.soc_percent": {
@@ -1104,6 +1214,8 @@
           "comparisons_to_app_live": 9,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         },
         "1509.voltage_V": {
@@ -1114,6 +1226,8 @@
           "comparisons_to_app_live": 9,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         },
         "150A.motor_current_A": {
@@ -1124,16 +1238,29 @@
           "comparisons_to_app_live": 0,
           "match_percent": null,
           "mae_to_app_live": null,
+          "evidence_type": "sdk_layout_observation",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         }
       }
     },
     {
       "ride": "Messfahrt_2026-08-16_00-09-26",
-      "raw_packets": 251,
-      "accepted_raw_packets": 251,
-      "rejected_read_packets": 0,
-      "rejected_hybrid_packets": 0,
+      "raw_export_rows": 251,
+      "accepted_export_rows": 251,
+      "export_observations": {
+        "scope": "BLE_Rohdaten.csv rows only; these are not recorder rejection counters",
+        "origin_column_available": false,
+        "observed_exported_read_rows": null,
+        "observed_exported_hybrid_rows": 0
+      },
+      "quality_counters": {
+        "source": "unknown",
+        "received_notification_packets": null,
+        "accepted_notification_packets": null,
+        "rejected_read_packets": null,
+        "rejected_hybrid_packets": null
+      },
       "live_rows": 251,
       "channels": {
         "1502": {
@@ -1202,6 +1329,8 @@
           "comparisons_to_app_live": 0,
           "match_percent": null,
           "mae_to_app_live": null,
+          "evidence_type": "sdk_layout_observation",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         },
         "1505.powerB_W": {
@@ -1212,6 +1341,8 @@
           "comparisons_to_app_live": 0,
           "match_percent": null,
           "mae_to_app_live": null,
+          "evidence_type": "sdk_layout_observation",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         },
         "1505.speed_kmh": {
@@ -1222,7 +1353,9 @@
           "comparisons_to_app_live": 32,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
-          "sdk_status": "confirmed_on_bt638"
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
+          "sdk_status": "app_export_consistent_with_sdk_layout"
         },
         "1509.current_A": {
           "samples": 31,
@@ -1232,7 +1365,9 @@
           "comparisons_to_app_live": 31,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
-          "sdk_status": "confirmed_on_bt638"
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
+          "sdk_status": "app_export_consistent_with_sdk_layout"
         },
         "1509.direct_power_W": {
           "samples": 31,
@@ -1242,7 +1377,9 @@
           "comparisons_to_app_live": 31,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
-          "sdk_status": "confirmed_on_bt638"
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
+          "sdk_status": "app_export_consistent_with_sdk_layout"
         },
         "1509.secondary_current_A": {
           "samples": 31,
@@ -1252,6 +1389,8 @@
           "comparisons_to_app_live": 0,
           "match_percent": null,
           "mae_to_app_live": null,
+          "evidence_type": "sdk_layout_observation",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         },
         "1509.soc_percent": {
@@ -1262,7 +1401,9 @@
           "comparisons_to_app_live": 31,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
-          "sdk_status": "confirmed_on_bt638"
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
+          "sdk_status": "app_export_consistent_with_sdk_layout"
         },
         "1509.voltage_V": {
           "samples": 31,
@@ -1272,7 +1413,9 @@
           "comparisons_to_app_live": 31,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
-          "sdk_status": "confirmed_on_bt638"
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
+          "sdk_status": "app_export_consistent_with_sdk_layout"
         },
         "150A.motor_current_A": {
           "samples": 31,
@@ -1282,16 +1425,29 @@
           "comparisons_to_app_live": 0,
           "match_percent": null,
           "mae_to_app_live": null,
+          "evidence_type": "sdk_layout_observation",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         }
       }
     },
     {
       "ride": "Messfahrt_2026-08-16_18-46-03",
-      "raw_packets": 871,
-      "accepted_raw_packets": 871,
-      "rejected_read_packets": 0,
-      "rejected_hybrid_packets": 0,
+      "raw_export_rows": 871,
+      "accepted_export_rows": 871,
+      "export_observations": {
+        "scope": "BLE_Rohdaten.csv rows only; these are not recorder rejection counters",
+        "origin_column_available": false,
+        "observed_exported_read_rows": null,
+        "observed_exported_hybrid_rows": 0
+      },
+      "quality_counters": {
+        "source": "unknown",
+        "received_notification_packets": null,
+        "accepted_notification_packets": null,
+        "rejected_read_packets": null,
+        "rejected_hybrid_packets": null
+      },
       "live_rows": 871,
       "channels": {
         "1502": {
@@ -1360,6 +1516,8 @@
           "comparisons_to_app_live": 0,
           "match_percent": null,
           "mae_to_app_live": null,
+          "evidence_type": "sdk_layout_observation",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         },
         "1505.powerB_W": {
@@ -1370,6 +1528,8 @@
           "comparisons_to_app_live": 0,
           "match_percent": null,
           "mae_to_app_live": null,
+          "evidence_type": "sdk_layout_observation",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         },
         "1505.speed_kmh": {
@@ -1380,7 +1540,9 @@
           "comparisons_to_app_live": 107,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
-          "sdk_status": "confirmed_on_bt638"
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
+          "sdk_status": "app_export_consistent_with_sdk_layout"
         },
         "1509.current_A": {
           "samples": 109,
@@ -1390,7 +1552,9 @@
           "comparisons_to_app_live": 109,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
-          "sdk_status": "confirmed_on_bt638"
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
+          "sdk_status": "app_export_consistent_with_sdk_layout"
         },
         "1509.direct_power_W": {
           "samples": 109,
@@ -1400,7 +1564,9 @@
           "comparisons_to_app_live": 109,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
-          "sdk_status": "confirmed_on_bt638"
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
+          "sdk_status": "app_export_consistent_with_sdk_layout"
         },
         "1509.secondary_current_A": {
           "samples": 109,
@@ -1410,6 +1576,8 @@
           "comparisons_to_app_live": 0,
           "match_percent": null,
           "mae_to_app_live": null,
+          "evidence_type": "sdk_layout_observation",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         },
         "1509.soc_percent": {
@@ -1420,7 +1588,9 @@
           "comparisons_to_app_live": 109,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
-          "sdk_status": "confirmed_on_bt638"
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
+          "sdk_status": "app_export_consistent_with_sdk_layout"
         },
         "1509.voltage_V": {
           "samples": 109,
@@ -1430,7 +1600,9 @@
           "comparisons_to_app_live": 109,
           "match_percent": 100.0,
           "mae_to_app_live": 0.0,
-          "sdk_status": "confirmed_on_bt638"
+          "evidence_type": "same_raw_app_export_layout_consistency",
+          "independent_semantic_confirmation": false,
+          "sdk_status": "app_export_consistent_with_sdk_layout"
         },
         "150A.motor_current_A": {
           "samples": 109,
@@ -1440,6 +1612,8 @@
           "comparisons_to_app_live": 0,
           "match_percent": null,
           "mae_to_app_live": null,
+          "evidence_type": "sdk_layout_observation",
+          "independent_semantic_confirmation": false,
           "sdk_status": "observed"
         }
       }
@@ -1451,6 +1625,8 @@
       "comparisons_to_app_live": 0,
       "match_percent": null,
       "mae_to_app_live": null,
+      "evidence_type": "sdk_layout_observation",
+      "independent_semantic_confirmation": false,
       "verdict": "OBSERVED_NEEDS_MORE_PROOF"
     },
     "1505.powerB_W": {
@@ -1458,6 +1634,8 @@
       "comparisons_to_app_live": 0,
       "match_percent": null,
       "mae_to_app_live": null,
+      "evidence_type": "sdk_layout_observation",
+      "independent_semantic_confirmation": false,
       "verdict": "OBSERVED_NEEDS_MORE_PROOF"
     },
     "1505.speed_kmh": {
@@ -1465,27 +1643,35 @@
       "comparisons_to_app_live": 612,
       "match_percent": 100.0,
       "mae_to_app_live": 0.0,
-      "verdict": "BT638_CONFIRMED"
+      "evidence_type": "same_raw_app_export_layout_consistency",
+      "independent_semantic_confirmation": false,
+      "verdict": "APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT"
     },
     "1509.current_A": {
       "samples": 614,
       "comparisons_to_app_live": 614,
       "match_percent": 100.0,
       "mae_to_app_live": 0.0,
-      "verdict": "BT638_CONFIRMED"
+      "evidence_type": "same_raw_app_export_layout_consistency",
+      "independent_semantic_confirmation": false,
+      "verdict": "APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT"
     },
     "1509.direct_power_W": {
       "samples": 614,
-      "comparisons_to_app_live": 614,
-      "match_percent": 100.0,
-      "mae_to_app_live": 0.0,
-      "verdict": "BT638_CONFIRMED"
+      "comparisons_to_app_live": 613,
+      "match_percent": 74.23,
+      "mae_to_app_live": 27.318923,
+      "evidence_type": "same_raw_app_export_layout_consistency",
+      "independent_semantic_confirmation": false,
+      "verdict": "OBSERVED_NEEDS_MORE_PROOF"
     },
     "1509.secondary_current_A": {
       "samples": 614,
       "comparisons_to_app_live": 0,
       "match_percent": null,
       "mae_to_app_live": null,
+      "evidence_type": "sdk_layout_observation",
+      "independent_semantic_confirmation": false,
       "verdict": "OBSERVED_NEEDS_MORE_PROOF"
     },
     "1509.soc_percent": {
@@ -1493,20 +1679,26 @@
       "comparisons_to_app_live": 614,
       "match_percent": 100.0,
       "mae_to_app_live": 0.0,
-      "verdict": "BT638_CONFIRMED"
+      "evidence_type": "same_raw_app_export_layout_consistency",
+      "independent_semantic_confirmation": false,
+      "verdict": "APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT"
     },
     "1509.voltage_V": {
       "samples": 614,
       "comparisons_to_app_live": 614,
       "match_percent": 100.0,
       "mae_to_app_live": 0.0,
-      "verdict": "BT638_CONFIRMED"
+      "evidence_type": "same_raw_app_export_layout_consistency",
+      "independent_semantic_confirmation": false,
+      "verdict": "APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT"
     },
     "150A.motor_current_A": {
       "samples": 614,
       "comparisons_to_app_live": 0,
       "match_percent": null,
       "mae_to_app_live": null,
+      "evidence_type": "sdk_layout_observation",
+      "independent_semantic_confirmation": false,
       "verdict": "OBSERVED_NEEDS_MORE_PROOF"
     }
   }

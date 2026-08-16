@@ -1,9 +1,9 @@
 {
-  "schema": "vmax-original-app-vs-bt638-v1",
+  "schema": "vmax-original-app-vs-bt638-v2",
   "source": {
     "class": "com.gpstuner.mapviewer.androidbase.bluetooth.manager.HyenaSDKManager",
     "sdk": "io.hylink.hbp / libble-sdk-native-lib.so",
-    "note": "Semantics are taken from the original app listeners. Byte mappings are only marked confirmed when independently matched to BT638/libble parser data. First real ride on 2026-08-13 disproved 150D as a second current-speed source."
+    "note": "Semantics are taken from the original app listeners and native parser mapping. Layout agreement with values exported by this app is not counted as independent live-semantic confirmation. First real ride on 2026-08-13 disproved 150D as a second current-speed source."
   },
   "signals": [
     {
@@ -12,6 +12,7 @@
       "originalCommand": "257",
       "unit": "level",
       "declaredStatus": "bt638_confirmed_as_drive_level",
+      "declaredEvidence": null,
       "runtimeStatus": "MAPPED_VERIFY_WITH_MORE_BT638_DATA",
       "mapping": {
         "channel": "1508",
@@ -21,7 +22,12 @@
       },
       "mappingCandidates": [],
       "libbleEvidenceKey": null,
-      "libbleEvidence": null
+      "libbleEvidence": null,
+      "evidenceAssessment": {
+        "verdict": null,
+        "type": null,
+        "independentSemanticConfirmation": false
+      }
     },
     {
       "signal": "odometerKm",
@@ -29,6 +35,7 @@
       "originalCommand": "258",
       "unit": "km",
       "declaredStatus": "bt638_confirmed",
+      "declaredEvidence": null,
       "runtimeStatus": "MAPPED_VERIFY_WITH_MORE_BT638_DATA",
       "mapping": {
         "channel": "1506",
@@ -38,7 +45,12 @@
       },
       "mappingCandidates": [],
       "libbleEvidenceKey": null,
-      "libbleEvidence": null
+      "libbleEvidence": null,
+      "evidenceAssessment": {
+        "verdict": null,
+        "type": null,
+        "independentSemanticConfirmation": false
+      }
     },
     {
       "signal": "rpm",
@@ -46,6 +58,7 @@
       "originalCommand": "259",
       "unit": "rpm",
       "declaredStatus": "libble_known_verify_on_bt638",
+      "declaredEvidence": null,
       "runtimeStatus": "MAPPED_VERIFY_WITH_MORE_BT638_DATA",
       "mapping": {
         "channel": "1505",
@@ -55,19 +68,42 @@
       },
       "mappingCandidates": [],
       "libbleEvidenceKey": "1505.rpm",
-      "libbleEvidence": null
+      "libbleEvidence": null,
+      "evidenceAssessment": {
+        "verdict": null,
+        "type": null,
+        "independentSemanticConfirmation": false
+      }
     },
     {
       "signal": "remainingDistanceKm",
       "callback": "ControllerPartListener.onRemainDistanceInKm",
       "originalCommand": "260",
       "unit": "km",
-      "declaredStatus": "original_app_known_mapping_open",
-      "runtimeStatus": "TARGETED_MAPPING_REQUIRED",
-      "mapping": null,
+      "declaredStatus": "original_app_native_layout_bt638_numeric_value_not_observed",
+      "declaredEvidence": {
+        "layoutBasis": "Original-app callback/native BikePerformance parser mapping",
+        "bt638Observation": "All accepted BT638 values observed at 1505 offset 10 so far were 0xFFFF (unavailable); no numeric remaining-range value has been observed."
+      },
+      "runtimeStatus": "MAPPED_VERIFY_WITH_MORE_BT638_DATA",
+      "mapping": {
+        "channel": "1505",
+        "offset": 10,
+        "encoding": "u16be",
+        "scale": 1.0,
+        "invalidRaw": [
+          65535
+        ],
+        "plausibleKmMax": 1000
+      },
       "mappingCandidates": [],
-      "libbleEvidenceKey": null,
-      "libbleEvidence": null
+      "libbleEvidenceKey": "1505.remaining_range_km",
+      "libbleEvidence": null,
+      "evidenceAssessment": {
+        "verdict": null,
+        "type": null,
+        "independentSemanticConfirmation": false
+      }
     },
     {
       "signal": "speedKmh",
@@ -75,7 +111,8 @@
       "originalCommand": "261",
       "unit": "km/h",
       "declaredStatus": "bt638_confirmed",
-      "runtimeStatus": "BT638_CONFIRMED_BY_LIBBLE_AND_LIVE",
+      "declaredEvidence": null,
+      "runtimeStatus": "APP_EXPORT_LAYOUT_CONSISTENT_NON_INDEPENDENT",
       "mapping": {
         "channel": "1505",
         "offset": 6,
@@ -89,7 +126,14 @@
         "comparisons_to_app_live": 612,
         "match_percent": 100.0,
         "mae_to_app_live": 0.0,
-        "verdict": "BT638_CONFIRMED"
+        "evidence_type": "same_raw_app_export_layout_consistency",
+        "independent_semantic_confirmation": false,
+        "verdict": "APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT"
+      },
+      "evidenceAssessment": {
+        "verdict": "APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT",
+        "type": "same_raw_app_export_layout_consistency",
+        "independentSemanticConfirmation": false
       }
     },
     {
@@ -98,6 +142,7 @@
       "originalCommand": "262",
       "unit": "original callback unit: mw",
       "declaredStatus": "role_assignment_open",
+      "declaredEvidence": null,
       "runtimeStatus": "ROLE_ASSIGNMENT_REQUIRED",
       "mapping": null,
       "mappingCandidates": [
@@ -117,7 +162,12 @@
         }
       ],
       "libbleEvidenceKey": null,
-      "libbleEvidence": null
+      "libbleEvidence": null,
+      "evidenceAssessment": {
+        "verdict": null,
+        "type": null,
+        "independentSemanticConfirmation": false
+      }
     },
     {
       "signal": "treadlePower",
@@ -125,6 +175,7 @@
       "originalCommand": "263",
       "unit": "original callback unit: mw",
       "declaredStatus": "role_assignment_open",
+      "declaredEvidence": null,
       "runtimeStatus": "ROLE_ASSIGNMENT_REQUIRED",
       "mapping": null,
       "mappingCandidates": [
@@ -144,7 +195,12 @@
         }
       ],
       "libbleEvidenceKey": null,
-      "libbleEvidence": null
+      "libbleEvidence": null,
+      "evidenceAssessment": {
+        "verdict": null,
+        "type": null,
+        "independentSemanticConfirmation": false
+      }
     },
     {
       "signal": "batteryVoltageMv",
@@ -152,7 +208,8 @@
       "originalCommand": "513",
       "unit": "mV",
       "declaredStatus": "bt638_confirmed",
-      "runtimeStatus": "BT638_CONFIRMED_BY_LIBBLE_AND_LIVE",
+      "declaredEvidence": null,
+      "runtimeStatus": "APP_EXPORT_LAYOUT_CONSISTENT_NON_INDEPENDENT",
       "mapping": {
         "channel": "1509",
         "offset": 5,
@@ -166,7 +223,14 @@
         "comparisons_to_app_live": 614,
         "match_percent": 100.0,
         "mae_to_app_live": 0.0,
-        "verdict": "BT638_CONFIRMED"
+        "evidence_type": "same_raw_app_export_layout_consistency",
+        "independent_semantic_confirmation": false,
+        "verdict": "APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT"
+      },
+      "evidenceAssessment": {
+        "verdict": "APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT",
+        "type": "same_raw_app_export_layout_consistency",
+        "independentSemanticConfirmation": false
       }
     },
     {
@@ -175,7 +239,8 @@
       "originalCommand": "DriverInfo02.SID",
       "unit": "%",
       "declaredStatus": "bt638_confirmed",
-      "runtimeStatus": "BT638_CONFIRMED_BY_LIBBLE_AND_LIVE",
+      "declaredEvidence": null,
+      "runtimeStatus": "APP_EXPORT_LAYOUT_CONSISTENT_NON_INDEPENDENT",
       "mapping": {
         "channel": "1509",
         "offset": 4,
@@ -189,7 +254,14 @@
         "comparisons_to_app_live": 614,
         "match_percent": 100.0,
         "mae_to_app_live": 0.0,
-        "verdict": "BT638_CONFIRMED"
+        "evidence_type": "same_raw_app_export_layout_consistency",
+        "independent_semantic_confirmation": false,
+        "verdict": "APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT"
+      },
+      "evidenceAssessment": {
+        "verdict": "APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT",
+        "type": "same_raw_app_export_layout_consistency",
+        "independentSemanticConfirmation": false
       }
     },
     {
@@ -198,11 +270,17 @@
       "originalCommand": "DriverInfo03.SID",
       "unit": "mWh",
       "declaredStatus": "original_app_known_mapping_open",
+      "declaredEvidence": null,
       "runtimeStatus": "TARGETED_MAPPING_REQUIRED",
       "mapping": null,
       "mappingCandidates": [],
       "libbleEvidenceKey": null,
-      "libbleEvidence": null
+      "libbleEvidence": null,
+      "evidenceAssessment": {
+        "verdict": null,
+        "type": null,
+        "independentSemanticConfirmation": false
+      }
     },
     {
       "signal": "chargingRemainSeconds",
@@ -210,11 +288,17 @@
       "originalCommand": "516",
       "unit": "s",
       "declaredStatus": "original_app_known_mapping_open",
+      "declaredEvidence": null,
       "runtimeStatus": "TARGETED_MAPPING_REQUIRED",
       "mapping": null,
       "mappingCandidates": [],
       "libbleEvidenceKey": null,
-      "libbleEvidence": null
+      "libbleEvidence": null,
+      "evidenceAssessment": {
+        "verdict": null,
+        "type": null,
+        "independentSemanticConfirmation": false
+      }
     },
     {
       "signal": "charging",
@@ -222,11 +306,17 @@
       "originalCommand": "517",
       "unit": "boolean",
       "declaredStatus": "original_app_known_mapping_open_marker_learnable",
+      "declaredEvidence": null,
       "runtimeStatus": "TARGETED_MAPPING_REQUIRED",
       "mapping": null,
       "mappingCandidates": [],
       "libbleEvidenceKey": null,
-      "libbleEvidence": null
+      "libbleEvidence": null,
+      "evidenceAssessment": {
+        "verdict": null,
+        "type": null,
+        "independentSemanticConfirmation": false
+      }
     },
     {
       "signal": "stateOfHealthPercent",
@@ -234,11 +324,17 @@
       "originalCommand": "518",
       "unit": "%",
       "declaredStatus": "original_app_known_mapping_open",
+      "declaredEvidence": null,
       "runtimeStatus": "TARGETED_MAPPING_REQUIRED",
       "mapping": null,
       "mappingCandidates": [],
       "libbleEvidenceKey": null,
-      "libbleEvidence": null
+      "libbleEvidence": null,
+      "evidenceAssessment": {
+        "verdict": null,
+        "type": null,
+        "independentSemanticConfirmation": false
+      }
     },
     {
       "signal": "stateOfHealthMwh",
@@ -246,11 +342,17 @@
       "originalCommand": "519",
       "unit": "mWh",
       "declaredStatus": "original_app_known_mapping_open",
+      "declaredEvidence": null,
       "runtimeStatus": "TARGETED_MAPPING_REQUIRED",
       "mapping": null,
       "mappingCandidates": [],
       "libbleEvidenceKey": null,
-      "libbleEvidence": null
+      "libbleEvidence": null,
+      "evidenceAssessment": {
+        "verdict": null,
+        "type": null,
+        "independentSemanticConfirmation": false
+      }
     },
     {
       "signal": "batteryCurrentMa",
@@ -258,7 +360,8 @@
       "originalCommand": "520",
       "unit": "mA",
       "declaredStatus": "bt638_confirmed",
-      "runtimeStatus": "BT638_CONFIRMED_BY_LIBBLE_AND_LIVE",
+      "declaredEvidence": null,
+      "runtimeStatus": "APP_EXPORT_LAYOUT_CONSISTENT_NON_INDEPENDENT",
       "mapping": {
         "channel": "1509",
         "offset": 0,
@@ -272,7 +375,14 @@
         "comparisons_to_app_live": 614,
         "match_percent": 100.0,
         "mae_to_app_live": 0.0,
-        "verdict": "BT638_CONFIRMED"
+        "evidence_type": "same_raw_app_export_layout_consistency",
+        "independent_semantic_confirmation": false,
+        "verdict": "APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT"
+      },
+      "evidenceAssessment": {
+        "verdict": "APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT",
+        "type": "same_raw_app_export_layout_consistency",
+        "independentSemanticConfirmation": false
       }
     },
     {
@@ -281,6 +391,7 @@
       "originalCommand": "769",
       "unit": "boolean",
       "declaredStatus": "bt638_confirmed",
+      "declaredEvidence": null,
       "runtimeStatus": "MAPPED_VERIFY_WITH_MORE_BT638_DATA",
       "mapping": {
         "channel": "1508",
@@ -291,16 +402,15 @@
       },
       "mappingCandidates": [],
       "libbleEvidenceKey": null,
-      "libbleEvidence": null
+      "libbleEvidence": null,
+      "evidenceAssessment": {
+        "verdict": null,
+        "type": null,
+        "independentSemanticConfirmation": false
+      }
     }
   ],
   "unresolvedTargets": [
-    {
-      "signal": "remainingDistanceKm",
-      "callback": "ControllerPartListener.onRemainDistanceInKm",
-      "originalCommand": "260",
-      "unit": "km"
-    },
     {
       "signal": "batteryCapacityMwh",
       "callback": "BatteryPartListener.onCapacityInmwh",
@@ -334,9 +444,10 @@
   ],
   "summary": {
     "signals": 16,
-    "confirmedByLiveEvidence": 4,
-    "mappedNeedMoreData": 4,
+    "confirmedByLiveEvidence": 0,
+    "layoutConsistentWithAppExportOnly": 4,
+    "mappedNeedMoreData": 5,
     "roleAssignmentsOpen": 2,
-    "targetedMappingsOpen": 6
+    "targetedMappingsOpen": 5
   }
 }
