@@ -61,15 +61,23 @@ jobs:
   decoder-ai:
     runs-on: ubuntu-latest
     env:
-      ANALYZER_ROOT: ${{ github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data' && '.decoder-main' || '.' }}
+      ANALYZER_ROOT: ${{ (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data')) && '.decoder-main' || '.' }}
     steps:
       - name: Repository laden
+        if: github.event_name != 'workflow_dispatch'
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
+      - name: Telemetriedaten für manuelle Neuberechnung laden
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@v4
+        with:
+          ref: telemetry-data
+          fetch-depth: 1
+
       - name: Aktuelle Decoder-Logik aus main laden
-        if: github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data'
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data')
         uses: actions/checkout@v4
         with:
           ref: main
@@ -88,11 +96,12 @@ jobs:
 
       - name: Decoder-AI Tests
         run: |
-          python "$ANALYZER_ROOT/tools/decoder_ai/test_consensus.py"
-          python "$ANALYZER_ROOT/tools/decoder_ai/test_libble_compare.py"
+          python -m unittest discover \
+            -s "$ANALYZER_ROOT/tools/decoder_ai" \
+            -p 'test_*.py'
 
       - name: libble SDK gegen BT638-Livestand vergleichen
-        if: github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data'
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data')
         run: |
           python "$ANALYZER_ROOT/tools/decoder_ai/libble_compare.py" \
             --root fahrdaten \
@@ -100,7 +109,7 @@ jobs:
             --report decoder-ai/libble_comparison.md
 
       - name: Original-App Sollwerte gegen BT638 abgleichen
-        if: github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data'
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data')
         run: |
           python "$ANALYZER_ROOT/tools/decoder_ai/original_app_compare.py" \
             --semantics "$ANALYZER_ROOT/tools/decoder_ai/original_app_semantics.json" \
@@ -109,7 +118,7 @@ jobs:
             --report decoder-ai/original_app_comparison.md
 
       - name: Unbekannte Felder über mehrere Fahrten lernen
-        if: github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data'
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data')
         run: |
           python "$ANALYZER_ROOT/tools/decoder_ai/consensus.py" \
             --root fahrdaten \
@@ -117,7 +126,7 @@ jobs:
             --report decoder-ai/analysis_report.md
 
       - name: Neue Decoder-Ergebnisse speichern
-        if: github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data'
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data')
         run: |
           git config user.name 'VMAX Decoder AI'
           git config user.email 'actions@users.noreply.github.com'
