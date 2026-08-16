@@ -132,9 +132,22 @@ jobs:
           signer_output="$("$apksigner" verify --verbose --print-certs "$apk_path")"
           printf '%s\n' "$signer_output"
 
+          signer_count="$(
+            printf '%s\n' "$signer_output" |
+              awk -F': ' '/^Number of signers:/ { print $NF }'
+          )"
+          [ "$signer_count" = "1" ] || {
+            echo "Erwartet wurde genau ein APK-Signer, gefunden: ${signer_count:-unbekannt}" >&2
+            exit 1
+          }
+
+          # apksigner versions label the same certificate either as
+          # "Signer #1 certificate ..." or "V2 Signer: certificate ...".
+          # Deduplicate the digest when multiple signature schemes report it.
           mapfile -t signer_digests < <(
             printf '%s\n' "$signer_output" |
-              awk -F': ' '/^Signer #[0-9]+ certificate SHA-256 digest:/ { print tolower($NF) }'
+              awk -F': ' '/certificate SHA-256 digest:/ { print tolower($NF) }' |
+              sort -u
           )
           if [ "${#signer_digests[@]}" -ne 1 ]; then
             echo "Erwartet wurde genau ein APK-Signaturzertifikat, gefunden: ${#signer_digests[@]}" >&2
