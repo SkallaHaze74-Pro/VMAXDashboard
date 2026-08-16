@@ -2,6 +2,12 @@ package de.kevin.vmaxdashboard
 
 import kotlin.math.round
 
+internal fun isUnavailable150dPayload(value: ByteArray): Boolean =
+    value.size >= 4 &&
+        (value[0].toInt() and 0xFF) == 0 &&
+        (value[1].toInt() and 0xFF) == 0 &&
+        value.drop(2).all { (it.toInt() and 0xFF) == 0xFF }
+
 data class DecodedTelemetry(
     val batteryPercent: Int? = null,
     val speedKmh: Double? = null,
@@ -10,6 +16,7 @@ data class DecodedTelemetry(
     val batteryStateRaw: Int? = null,
     val accessoryByte0: Int? = null,
     val accessoryByte3: Int? = null,
+    val startModeRaw: Int? = null,
     val lightOn: Boolean? = null,
     val brakeActive: Boolean? = null,
     val leftIndicator: Boolean? = null,
@@ -28,6 +35,7 @@ data class DecodedTelemetry(
 
 object LiveTelemetryDecoder {
     private const val MAX_PLAUSIBLE_SPEED_KMH = 100.0
+    private const val MAX_PLAUSIBLE_DIRECT_POWER_W = 30_000
 
     fun decode(channel: String, value: ByteArray): DecodedTelemetry {
         if (value.isEmpty()) return DecodedTelemetry()
@@ -39,6 +47,7 @@ object LiveTelemetryDecoder {
         var motorLoadRaw: Int? = null
         var accessoryByte0: Int? = null
         var accessoryByte3: Int? = null
+        var startModeRaw: Int? = null
         var lightOn: Boolean? = null
         var voltageV: Double? = null
         var currentA: Double? = null
@@ -69,7 +78,7 @@ object LiveTelemetryDecoder {
                     }
                 }
                 validUnsigned16BE(value, 8)?.let { notes += "libble RPM: $it" }
-                validUnsigned16BE(value, 10)?.let { notes += "libble Distanz-/Wegfeld RAW: $it" }
+                validUnsigned16BE(value, 10)?.let { notes += "SDK-Restreichweite: $it km" }
             }
 
             "1506" -> {
@@ -87,12 +96,13 @@ object LiveTelemetryDecoder {
             "1508" -> {
                 accessoryByte0 = u8OrNull(value, 0)
                 accessoryByte3 = u8OrNull(value, 3)
+                startModeRaw = VmaxStartModeProtocol.decodeLive1508(value)?.rawValue
                 lightOn = when (accessoryByte0) {
                     0 -> false
                     1 -> true
                     else -> null
                 }
-                notes += "1508 Byte 0: 0=Licht aus, 1=Licht an; Byte 3=Fahrstufe/Assistenz RAW"
+                notes += "1508 Byte 0: Licht; Byte 3: Fahrstufe; Byte 11: 0=Zero-Start, 1=Kick-Start"
             }
 
             "1509" -> {
@@ -118,11 +128,13 @@ object LiveTelemetryDecoder {
                 signed16BE(value, 7)?.let { raw ->
                     notes += "Zweiter libble-Stromwert: ${rounded(raw / 1000.0)} A"
                 }
-                validUnsigned16BE(value, 9)?.let { raw ->
-                    motorLoadRaw = raw
-                    powerW = raw.toDouble()
-                    notes += "Direkte Leistung: 1509 Byte 9-10, W"
-                }
+                validUnsigned16BE(value, 9)
+                    ?.takeIf { it <= MAX_PLAUSIBLE_DIRECT_POWER_W }
+                    ?.let { raw ->
+                        motorLoadRaw = raw
+                        powerW = raw.toDouble()
+                        notes += "Direkte Leistung: 1509 Byte 9-10, W"
+                    }
             }
 
             "150A" -> {
@@ -147,11 +159,15 @@ object LiveTelemetryDecoder {
             }
 
             "150D" -> {
-                validUnsigned16BE(value, 0)?.let { raw ->
-                    notes += "150D Fahrt-Maximum: ${rounded(raw / 10.0)} km/h; kein Live-Tempo"
-                }
-                validUnsigned16BE(value, 2)?.let { raw ->
-                    notes += "150D Fahrt-Durchschnitt: ${rounded(raw / 10.0)} km/h"
+                if (isUnavailable150dPayload(value)) {
+                    notes += "150D Fahrtstatistik vorübergehend nicht verfügbar"
+                } else {
+                    validUnsigned16BE(value, 0)?.let { raw ->
+                        notes += "150D Fahrt-Maximum: ${rounded(raw / 10.0)} km/h; kein Live-Tempo"
+                    }
+                    validUnsigned16BE(value, 2)?.let { raw ->
+                        notes += "150D Fahrt-Durchschnitt: ${rounded(raw / 10.0)} km/h"
+                    }
                 }
             }
         }
@@ -171,6 +187,7 @@ object LiveTelemetryDecoder {
             motorLoadRaw = motorLoadRaw,
             accessoryByte0 = accessoryByte0,
             accessoryByte3 = accessoryByte3,
+            startModeRaw = startModeRaw,
             lightOn = lightOn ?: adaptive.lightOn,
             brakeActive = adaptive.brakeActive,
             leftIndicator = adaptive.leftIndicator,

@@ -37,12 +37,17 @@ SDK_CANONICAL = {
     ("batteryPercent", "1509"): (4, "u8"),
     ("voltageV", "1509"): (5, "u16be"),
     ("currentA", "1509"): (0, "s16be"),
+    ("powerW", "1509"): (9, "u16be"),
     ("odometerKm", "1506"): (0, "u32be"),
 }
 
 # First real ride disproved the old interpretation of 150D/0 as a second live speed.
 # It behaves like a statistic/limit value and is therefore excluded from speed learning.
 FORBIDDEN_NUMERIC = {("speedKmh", "150D")}
+BLOCKED_DISCRETE_CHANNELS = {
+    "1505", "1506", "1509", "150A", "150C", "150D",
+    "2A00", "2A01", "2A02", "2A04", "2A05", "2A28",
+}
 
 REFERENCE_SOURCE_CHANNEL = {
     "speedKmh": "1505",
@@ -119,6 +124,15 @@ def candidate_allowed(signal: str, channel: str, offset: int, encoding: str) -> 
     canonical = SDK_CANONICAL.get((signal, channel))
     if canonical is not None:
         return canonical == (offset, encoding)
+    return True
+
+
+def discrete_candidate_allowed(signal: str, channel: str, offset: int) -> bool:
+    channel = channel.upper()
+    if offset < 0 or channel in BLOCKED_DISCRETE_CHANNELS:
+        return False
+    if channel == "1508":
+        return signal == "lightOn" and offset == 0
     return True
 
 
@@ -340,6 +354,8 @@ def collect_discrete_rules(ride_dirs: list[Path]) -> list[dict]:
             if not channel or offset < 0 or orientation is None:
                 continue
             signal, active, inactive = orientation
+            if not discrete_candidate_allowed(signal, channel, offset):
+                continue
             grouped[(signal, channel, offset)].append({
                 "ride": ride_name, "increment": increment, "confidence": confidence,
                 "active": active, "inactive": inactive, "label": label,
@@ -398,7 +414,7 @@ def aggregate_numeric(evidence: list[NumericEvidence]) -> list[dict]:
             "offset": offset, "width": ENCODING_WIDTH[encoding], "encoding": encoding,
             "scale": round(slope, 12), "bias": round(bias, 8), "confidence": confidence,
             "observations": total, "rides": len(rides), "correlation": round(corr, 6), "mae": round(mae, 6),
-            "source": "libble-ground-truth+numeric" if (signal, channel) in SDK_CANONICAL else "numeric-correlation",
+            "source": "original-sdk-layout+app-extraction-check" if (signal, channel) in SDK_CANONICAL else "numeric-correlation",
             "status": status,
         })
 
@@ -472,7 +488,8 @@ def render_report(profile: dict) -> str:
             )
     lines += [
         "", "## Ground-Truth-Regeln", "",
-        "1505/6 u16be = Geschwindigkeit; 1509/0 s16be = Strom; 1509/4 u8 = SOC; 1509/5 u16be = Spannung; 1506/0 u32be = Kilometerstand.",
+        "1505/6 u16be = Geschwindigkeit; 1509/0 s16be = Strom; 1509/4 u8 = SOC; 1509/5 u16be = Spannung; 1509/9 u16be = direkte Leistung; 1506/0 u32be = Kilometerstand.",
+        "Die Prozentwerte prüfen die konsistente App-Extraktion derselben RAW-Pakete; sie sind kein unabhängiger semantischer Sensorvergleich.",
         "150D wird nach der ersten echten Fahrt nicht mehr als Live-Geschwindigkeit gelernt.",
         "", "## Sicherheitsregel", "",
         "Dieses Profil enthält ausschließlich **Lese-/Decoderregeln**. Es erzeugt keine BLE-Schreibbefehle und verändert keine Motorparameter.", "",

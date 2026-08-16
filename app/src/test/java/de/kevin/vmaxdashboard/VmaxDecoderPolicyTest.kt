@@ -14,6 +14,13 @@ class VmaxDecoderPolicyTest {
         assertFalse(VmaxDecoderPolicy.isAdaptiveRuleAllowed("speedKmh", "150D", 0, "u16be"))
         assertFalse(VmaxDecoderPolicy.isAdaptiveRuleAllowed("currentA", "150A", 0, "s16be"))
         assertFalse(VmaxDecoderPolicy.isAdaptiveRuleAllowed("speedKmh", "151D", 6, "u16be"))
+        assertTrue(VmaxDecoderPolicy.isAdaptiveRuleAllowed("powerW", "1509", 9, "u16be"))
+        assertFalse(VmaxDecoderPolicy.isAdaptiveRuleAllowed("powerW", "1509", 7, "u16be"))
+        assertFalse(VmaxDecoderPolicy.isAdaptiveRuleAllowed("powerW", "150A", 9, "u16be"))
+        assertTrue(VmaxDecoderPolicy.isAdaptiveRuleAllowed("lightOn", "1508", 0, "u8"))
+        assertFalse(VmaxDecoderPolicy.isAdaptiveRuleAllowed("lightOn", "1509", 0, "u8"))
+        assertFalse(VmaxDecoderPolicy.isAdaptiveRuleAllowed("brakeActive", "150D", 8, "u8"))
+        assertFalse(VmaxDecoderPolicy.isAdaptiveRuleAllowed("brakeActive", "1508", 3, "u8"))
     }
 
     @Test
@@ -22,6 +29,8 @@ class VmaxDecoderPolicyTest {
         assertFalse(VmaxDecoderPolicy.isLearningCandidateAllowed("Auto Fahrt/Ruhe", "1508", 3))
         assertFalse(VmaxDecoderPolicy.isLearningCandidateAllowed("Auto Zustandswechsel", "150D", 0))
         assertFalse(VmaxDecoderPolicy.isLearningCandidateAllowed("Auto Zustandswechsel", "150D", 3))
+        assertFalse(VmaxDecoderPolicy.isLearningCandidateAllowed("Auto Zustandswechsel", "150D", 8))
+        assertFalse(VmaxDecoderPolicy.isLearningCandidateAllowed("Licht AN", "150D", 19))
         assertTrue(VmaxDecoderPolicy.isLearningCandidateAllowed("Licht AN", "1508", 0))
         assertTrue(VmaxDecoderPolicy.isLearningCandidateAllowed("SPORT", "1508", 3))
         assertTrue(VmaxDecoderPolicy.isLearningCandidateAllowed("Auto Impuls A-B-A", "151D", 2))

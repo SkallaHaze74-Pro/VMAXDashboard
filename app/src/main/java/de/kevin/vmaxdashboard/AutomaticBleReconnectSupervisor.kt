@@ -37,8 +37,14 @@ class AutomaticBleReconnectSupervisor private constructor(
     private var observeJob: Job? = null
     private var observedManager: BleScooterManager? = null
     private var reconnectGuard: MeasurementReconnectGuard? = null
-    private var previousConnected = false
-    private var unexpectedDisconnectPending = false
+    private var transitionTracker: ReconnectTransitionTracker? = null
+
+    private data class Observation(
+        val connected: Boolean,
+        val telemetryReady: Boolean,
+        val recordingActive: Boolean,
+        val scanning: Boolean
+    )
 
     override fun onActivityResumed(activity: Activity) {
         if (activity !is MainActivity) return
@@ -51,16 +57,15 @@ class AutomaticBleReconnectSupervisor private constructor(
         observeJob?.cancel()
         observedManager = manager
         reconnectGuard = MeasurementReconnectGuard(manager)
-        previousConnected = manager.state.value.connected
-        unexpectedDisconnectPending = false
+        transitionTracker = ReconnectTransitionTracker(manager.state.value.connected)
 
         observeJob = scope.launch {
             manager.state
-                .map { Triple(it.connected, it.recordingActive, it.scanning) }
+                .map { Observation(it.connected, it.telemetryReady, it.recordingActive, it.scanning) }
                 .distinctUntilChanged()
-                .collect { (connected, recordingActive, scanning) ->
+                .collect { observation ->
                     mainHandler.post {
-                        handleState(manager, connected, recordingActive, scanning)
+                        handleState(manager, observation)
                     }
                 }
         }
@@ -68,35 +73,38 @@ class AutomaticBleReconnectSupervisor private constructor(
 
     private fun handleState(
         manager: BleScooterManager,
-        connected: Boolean,
-        recordingActive: Boolean,
-        scanning: Boolean
+        observation: Observation
     ) {
         if (observedManager !== manager) return
-
-        val wasConnected = previousConnected
-        previousConnected = connected
-
-        if (wasConnected && !connected && recordingActive) {
-            val savedRows = reconnectGuard?.captureIfRecording() ?: 0
-            unexpectedDisconnectPending = true
-            manager.addMeasurementMarker("BLE getrennt • RAW $savedRows gesichert")
-        }
-
-        if (!wasConnected && connected && recordingActive && unexpectedDisconnectPending) {
-            val restoredRows = reconnectGuard?.restoreIfPending() ?: 0
-            unexpectedDisconnectPending = false
-            manager.addMeasurementMarker("BLE wieder verbunden • RAW $restoredRows wiederhergestellt")
-        }
-
-        if (!recordingActive && unexpectedDisconnectPending) {
-            reconnectGuard?.clear()
-            unexpectedDisconnectPending = false
+        transitionTracker?.observe(
+            observation.connected,
+            observation.telemetryReady,
+            observation.recordingActive
+        ).orEmpty().forEach { transition ->
+            when (transition) {
+                ReconnectTransition.UNEXPECTED_DISCONNECT -> {
+                    val savedRows = reconnectGuard?.captureIfRecording() ?: 0
+                    manager.addMeasurementMarker("BLE getrennt • RAW $savedRows gesichert")
+                }
+                ReconnectTransition.LINK_RESTORED -> {
+                    val restoredRows = reconnectGuard?.restoreIfPending() ?: 0
+                    manager.addMeasurementMarker(
+                        if (restoredRows > 0) {
+                            "BLE-Link wieder verbunden • RAW $restoredRows wiederhergestellt"
+                        } else {
+                            "BLE-Link wieder verbunden • Messfahrtdaten erhalten"
+                        }
+                    )
+                }
+                ReconnectTransition.TELEMETRY_RESTORED ->
+                    manager.addMeasurementMarker("Telemetrie wieder aktiv")
+                ReconnectTransition.CLEAR_PENDING -> reconnectGuard?.clear()
+            }
         }
 
         // Unexpected disconnect: recording stays active, so reconnect automatically.
         // Manual disconnect stops the recording first and therefore never reaches here.
-        if (!connected && recordingActive && !scanning && manager.hasRequiredPermissions()) {
+        if (!observation.connected && observation.recordingActive && !observation.scanning && manager.hasRequiredPermissions()) {
             manager.startScan()
         }
     }
@@ -115,7 +123,7 @@ class AutomaticBleReconnectSupervisor private constructor(
             observeJob = null
             observedManager = null
             reconnectGuard = null
-            unexpectedDisconnectPending = false
+            transitionTracker = null
         }
     }
 

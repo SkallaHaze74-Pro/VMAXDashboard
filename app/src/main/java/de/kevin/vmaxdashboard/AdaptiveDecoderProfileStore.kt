@@ -65,6 +65,51 @@ private data class DecodedCandidate(
     val priority: Int
 )
 
+internal fun shouldInstallCloudProfile(
+    incomingGeneratedAtMs: Long,
+    currentGeneratedAtMs: Long,
+    usableRuleCount: Int
+): Boolean = usableRuleCount > 0 && incomingGeneratedAtMs >= currentGeneratedAtMs
+
+internal fun isActivatableAdaptiveRule(status: String, confidence: Int): Boolean =
+    status == "confirmed" && confidence >= 92
+
+private val ADAPTIVE_BOOLEAN_SIGNALS = setOf(
+    "brakeActive", "leftIndicator", "rightIndicator", "lightOn", "lockActive", "charging"
+)
+
+internal fun isSemanticallyUsableAdaptiveRule(
+    signal: String,
+    status: String,
+    confidence: Int,
+    observations: Int,
+    offset: Int,
+    width: Int,
+    encoding: String,
+    scale: Double,
+    bias: Double,
+    activeValue: Long?,
+    inactiveValue: Long?
+): Boolean {
+    if (!isActivatableAdaptiveRule(status, confidence) || observations <= 0) return false
+    if (width !in 1..4 || offset !in 0..(4_096 - width)) return false
+    if (!scale.isFinite() || !bias.isFinite()) return false
+    return if (signal in ADAPTIVE_BOOLEAN_SIGNALS) {
+        activeValue != null && inactiveValue != null && activeValue != inactiveValue &&
+            rawValueFitsEncoding(activeValue, encoding) && rawValueFitsEncoding(inactiveValue, encoding)
+    } else {
+        scale != 0.0
+    }
+}
+
+private fun rawValueFitsEncoding(value: Long, encoding: String): Boolean = when (encoding) {
+    "u8" -> value in 0L..0xFFL
+    "u16be", "u16le" -> value in 0L..0xFFFFL
+    "s16be", "s16le" -> value in Short.MIN_VALUE.toLong()..Short.MAX_VALUE.toLong()
+    "u32be", "u32le" -> value in 0L..0xFFFFFFFFL
+    else -> false
+}
+
 class AdaptiveDecoderProfileStore private constructor(context: Context) {
     companion object {
         private const val CLOUD_SCHEMA = "vmax-adaptive-decoder-v1"
@@ -112,6 +157,31 @@ class AdaptiveDecoderProfileStore private constructor(context: Context) {
         require(root.optString("schema") == CLOUD_SCHEMA) { "Unbekanntes Decoder-AI-Profil" }
         val rules = root.optJSONArray("rules") ?: JSONArray()
         require(rules.length() <= 500) { "Decoder-AI-Profil enthält zu viele Regeln" }
+        val parsedRules = parseRules(root, "cloud-consensus")
+        val activatableRuleCount = parsedRules.count {
+            isSemanticallyUsableAdaptiveRule(
+                signal = it.signal,
+                status = it.status,
+                confidence = it.confidence,
+                observations = it.observations,
+                offset = it.offset,
+                width = it.width,
+                encoding = it.encoding,
+                scale = it.scale,
+                bias = it.bias,
+                activeValue = it.activeValue,
+                inactiveValue = it.inactiveValue
+            )
+        }
+        val existingGeneratedAt = readRoot(cloudFile)?.optLong("generatedAtMs", 0L) ?: 0L
+        val incomingGeneratedAt = root.optLong("generatedAtMs", 0L)
+        require(shouldInstallCloudProfile(incomingGeneratedAt, existingGeneratedAt, activatableRuleCount)) {
+            if (activatableRuleCount == 0) {
+                "Decoder-AI-Profil enthält keine sichere nutzbare Regel"
+            } else {
+                "Älteres Decoder-AI-Profil wird nicht installiert"
+            }
+        }
         cloudFile.writeText(root.toString(2))
         rebuildCache()
         return currentSnapshot
@@ -282,7 +352,22 @@ class AdaptiveDecoderProfileStore private constructor(context: Context) {
         val localAll = parseRules(localRoot, "local-learning")
         val allRules = cloudAll + localAll
         val confirmed = allRules
-            .filter { it.status == "confirmed" && it.confidence >= 92 && it.signal in SUPPORTED_SIGNALS }
+            .filter {
+                isSemanticallyUsableAdaptiveRule(
+                    signal = it.signal,
+                    status = it.status,
+                    confidence = it.confidence,
+                    observations = it.observations,
+                    offset = it.offset,
+                    width = it.width,
+                    encoding = it.encoding,
+                    scale = it.scale,
+                    bias = it.bias,
+                    activeValue = it.activeValue,
+                    inactiveValue = it.inactiveValue
+                ) &&
+                    it.signal in SUPPORTED_SIGNALS
+            }
             .groupBy { "${it.signal}|${it.channel}|${it.offset}|${it.encoding}" }
             .mapNotNull { (_, values) ->
                 values.maxWithOrNull(
@@ -358,7 +443,7 @@ class AdaptiveDecoderProfileStore private constructor(context: Context) {
     }
 
     private fun readRaw(rule: AdaptiveRule, value: ByteArray): Long? {
-        if (rule.offset < 0 || rule.offset + rule.width > value.size) return null
+        if (rule.offset < 0 || rule.width <= 0 || rule.offset > value.size - rule.width) return null
         val bytes = value.copyOfRange(rule.offset, rule.offset + rule.width)
         if (bytes.all { (it.toInt() and 0xFF) == 0xFF }) return null
         fun u8(index: Int): Int = bytes[index].toInt() and 0xFF

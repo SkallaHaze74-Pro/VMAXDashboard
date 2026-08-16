@@ -78,7 +78,11 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
             .padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Text("VMAX Dashboard • GitHub & Decoder AI V7.6", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Text(
+            "VMAX Dashboard • GitHub & Decoder AI • ${BuildConfig.VERSION_NAME}",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold
+        )
         Text("Messfahrten sichern, automatisch vergleichen und bestätigte Decoder ohne neue APK übernehmen")
 
         Card(Modifier.fillMaxWidth()) {

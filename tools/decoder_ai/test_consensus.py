@@ -27,6 +27,17 @@ class ConsensusPolicyTests(unittest.TestCase):
         self.assertTrue(consensus.candidate_allowed("odometerKm", "1506", 0, "u32be"))
         self.assertFalse(consensus.candidate_allowed("odometerKm", "1506", 2, "u16be"))
 
+    def test_direct_power_keeps_original_sdk_layout(self):
+        self.assertTrue(consensus.candidate_allowed("powerW", "1509", 9, "u16be"))
+        self.assertFalse(consensus.candidate_allowed("powerW", "1509", 7, "u16be"))
+        self.assertFalse(consensus.candidate_allowed("powerW", "150A", 9, "u16be"))
+
+    def test_discrete_rules_cannot_reinterpret_known_telemetry(self):
+        self.assertTrue(consensus.discrete_candidate_allowed("lightOn", "1508", 0))
+        self.assertFalse(consensus.discrete_candidate_allowed("lightOn", "1509", 0))
+        self.assertFalse(consensus.discrete_candidate_allowed("brakeActive", "150D", 8))
+        self.assertFalse(consensus.discrete_candidate_allowed("brakeActive", "1508", 3))
+
     def test_live_reference_values_keep_their_real_source_channel(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "Live_Telemetrie.csv"
