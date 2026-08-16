@@ -1,0 +1,32 @@
+{
+  "format": "VMAX_LEARNING_PROFILE_V1",
+  "updatedAt": 1786646573458,
+  "candidates": [
+    {
+      "key": "Auto Zustandswechsel|1508|11",
+      "model": "BT638",
+      "label": "Auto Zustandswechsel",
+      "channel": "1508",
+      "byteIndex": 11,
+      "confidence": 71,
+      "observations": 1,
+      "lastBefore": 0,
+      "lastAfter": 1,
+      "updatedAt": 1786642596578,
+      "status": "candidate"
+    },
+    {
+      "key": "Auto Zustandswechsel|150D|0",
+      "model": "BT638",
+      "label": "Auto Zustandswechsel",
+      "channel": "150D",
+      "byteIndex": 0,
+      "confidence": 68,
+      "observations": 1,
+      "lastBefore": 0,
+      "lastAfter": 1,
+      "updatedAt": 1786642596578,
+      "status": "candidate"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+VMAX Dashboard Messfahrt
+Start: 1786898763713
+Ende: 1786899088069
+Dauer_ms: 324356
+BLE_Pakete: 871
+Marker: 4
+Gerät: BT638
+Kanäle: 1502,1505,1506,1508,1509,150A,150B,150D

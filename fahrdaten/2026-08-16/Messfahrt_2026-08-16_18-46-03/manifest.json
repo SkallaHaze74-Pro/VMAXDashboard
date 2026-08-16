@@ -1,0 +1,18 @@
+{
+  "schema": "vmax-github-telemetry-v1",
+  "measurement": "Messfahrt_2026-08-16_18-46-03",
+  "device": "BT638",
+  "start_ms": 1786898763713,
+  "end_ms": 1786899088069,
+  "duration_ms": 324356,
+  "ble_packets": 871,
+  "markers": 4,
+  "channels": "1502,1505,1506,1508,1509,150A,150B,150D",
+  "live_rows": 871,
+  "max_speed_kmh": 21.8,
+  "max_power_w": 834.7,
+  "decoder_ai_analysis": true,
+  "learning_profile": true,
+  "app_version": "7.0.115-fahrdaten",
+  "created_at_ms": 1786899088337
+}
