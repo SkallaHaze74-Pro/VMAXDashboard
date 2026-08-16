@@ -32,8 +32,11 @@ object VmaxSdkCapabilityCatalog {
             family = family("1505"),
             meaning = "Live-Fahrdatenkanal mit bestätigter Geschwindigkeitssemantik.",
             sources = listOf("Original SDK", "Original APK", "BT638 bestätigt", "Live beobachtet"),
-            confirmedDetails = listOf("Geschwindigkeit Byte 6-7 bestätigt"),
-            unknownDetails = listOf("weitere Leistungs- und Distanzfelder weiter absichern"),
+            confirmedDetails = listOf(
+                "Geschwindigkeit Byte 6-7 bestätigt",
+                "SDK-Restreichweite Byte 10-11 in km; FFFF=nicht verfügbar"
+            ),
+            unknownDetails = listOf("BT638 lieferte noch keinen numerischen Restreichweitenwert"),
             uiHint = "prominent als Live-Fahrdaten anzeigen"
         ),
         "1506" to VmaxGattKnowledge(
@@ -50,7 +53,11 @@ object VmaxSdkCapabilityCatalog {
             family = family("1508"),
             meaning = "Settings-naher Kanal mit bestätigten Zuständen für Licht und Fahrmodus.",
             sources = listOf("Original SDK", "Original APK", "BT638 bestätigt"),
-            confirmedDetails = listOf("Licht Byte 0 bestätigt", "ECO/SPORT Byte 3 bestätigt"),
+            confirmedDetails = listOf(
+                "Licht Byte 0 bestätigt",
+                "ECO/SPORT Byte 3 bestätigt",
+                "Startmodus Byte 11: 0=Zero-Start, 1=Kick-Start"
+            ),
             unknownDetails = listOf("weitere Bits nur bei klarer Übereinstimmung benennen"),
             uiHint = "bestätigte Schaltzustände direkt anzeigen"
         ),

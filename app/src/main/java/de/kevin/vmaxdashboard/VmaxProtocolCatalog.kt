@@ -106,9 +106,10 @@ object VmaxProtocolCatalog {
                 "Byte 4-5 Drehmoment /100 Nm",
                 "Byte 6-7 Geschwindigkeit /10 km/h",
                 "Byte 8-9 RPM/Cadence",
+                "Byte 10-11 SDK-Restreichweite in km; FFFF=nicht verfügbar",
                 "BT638-Tempo ist bestätigt"
             ),
-            unknownDetails = listOf("Distanz-/Wegfeld Byte 10-11 weiter präzisieren"),
+            unknownDetails = listOf("BT638 hat für die Restreichweite bisher nur FFFF geliefert"),
             uiHint = "als zentralen Live-Fahrdatenkanal anzeigen"
         ),
         ChannelKnowledge(

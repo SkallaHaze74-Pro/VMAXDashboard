@@ -3,10 +3,9 @@ package de.kevin.vmaxdashboard
 /**
  * Keeps an active measurement continuous across an unexpected BLE disconnect.
  *
- * BleScooterManager intentionally resets per-connection bookkeeping when a new
- * GATT connection comes up. A measurement, however, is a longer-lived session.
- * This guard snapshots only the measurement RAW rows while disconnected and
- * prepends them again after the next connection is established.
+ * A measurement is longer-lived than one GATT connection. The manager now
+ * retains those rows itself; this guard still keeps a defensive snapshot and
+ * restores it only if a future/reset path did not retain the rows.
  *
  * It does not read or write scooter characteristics and it does not change any
  * decoder or motor setting.
@@ -17,8 +16,7 @@ class MeasurementReconnectGuard(private val manager: BleScooterManager) {
 
     fun captureIfRecording(): Int {
         if (!manager.state.value.recordingActive) return 0
-        val rows = sessionRows() ?: return 0
-        val snapshot = rows.toList()
+        val snapshot = manager.snapshotMeasurementRowsForReconnect() ?: return 0
         pendingRows = snapshot
         pendingLastRow = snapshot.lastOrNull()
         return snapshot.size
@@ -31,17 +29,9 @@ class MeasurementReconnectGuard(private val manager: BleScooterManager) {
             return 0
         }
 
-        val rows = sessionRows() ?: return 0
-        val last = pendingLastRow
-
-        // If the manager did not clear the list, do not duplicate anything.
-        if (last != null && rows.contains(last)) {
-            clear()
-            return 0
-        }
-
-        if (backup.isNotEmpty()) rows.addAll(0, backup)
-        val restored = backup.size
+        // New managers retain measurement rows themselves; this method remains a
+        // compatibility guard for any reset path and never duplicates retained data.
+        val restored = manager.restoreMeasurementRowsForReconnect(backup, pendingLastRow)
         clear()
         return restored
     }
@@ -51,10 +41,4 @@ class MeasurementReconnectGuard(private val manager: BleScooterManager) {
         pendingLastRow = null
     }
 
-    @Suppress("UNCHECKED_CAST")
-    private fun sessionRows(): MutableList<String>? = runCatching {
-        val field = BleScooterManager::class.java.getDeclaredField("sessionRows")
-        field.isAccessible = true
-        field.get(manager) as? MutableList<String>
-    }.getOrNull()
 }

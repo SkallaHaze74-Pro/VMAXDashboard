@@ -16,7 +16,7 @@ FIELD_LAYOUTS = {
         ("torque_Nm", 4, 2, "u16be", 0.01, None),
         ("speed_kmh", 6, 2, "u16be", 0.1, "speed_kmh_candidate"),
         ("rpm", 8, 2, "u16be", 1.0, None),
-        ("distance_raw", 10, 2, "u16be", 1.0, None),
+        ("remaining_range_km", 10, 2, "u16be", 1.0, None),
     ],
     "1509": [
         ("current_A", 0, 2, "s16be", 0.001, "current_a"),
@@ -24,7 +24,7 @@ FIELD_LAYOUTS = {
         ("soc_percent", 4, 1, "u8", 1.0, "battery_percent"),
         ("voltage_V", 5, 2, "u16be", 0.001, "voltage_v"),
         ("secondary_current_A", 7, 2, "s16be", 0.001, None),
-        ("direct_power_W", 9, 2, "u16be", 1.0, "motor_load_raw_be"),
+        ("direct_power_W", 9, 2, "u16be", 1.0, "power_w"),
     ],
     "150A": [
         ("motor_current_A", 0, 2, "s16be", 0.001, None),
@@ -41,7 +41,9 @@ PLAUSIBLE = {
     "torque_Nm": (-500, 500),
     "speed_kmh": (0, 200),
     "rpm": (0, 50000),
-    "distance_raw": (0, 2**16 - 1),
+    # Defensive UI/analysis ceiling. The native layout is unsigned 16-bit, but
+    # a four-digit scooter range is not plausible and indicates a corrupt frame.
+    "remaining_range_km": (0, 1000),
     "current_A": (-300, 300),
     "battery_temp_C": (-50, 150),
     "soc_percent": (0, 100),
@@ -110,6 +112,44 @@ def read_csv(path: Path):
         return list(csv.DictReader(handle, delimiter=";"))
 
 
+def csv_fieldnames(path: Path):
+    if not path.is_file():
+        return set()
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        return set(csv.DictReader(handle, delimiter=";").fieldnames or [])
+
+
+def read_summary_quality(path: Path):
+    """Read recorder-side counters without inferring them from accepted RAW rows."""
+    keys = {
+        "BLE_Empfangen": "received_notification_packets",
+        "BLE_Akzeptiert": "accepted_notification_packets",
+        "READ_Verworfen": "rejected_read_packets",
+        "Hybrid_Verworfen": "rejected_hybrid_packets",
+    }
+    values = {target: None for target in keys.values()}
+    if not path.is_file():
+        return {"source": "unknown", **values}
+
+    try:
+        lines = path.read_text(encoding="utf-8-sig").splitlines()
+    except OSError:
+        return {"source": "unknown", **values}
+
+    observed = False
+    for line in lines:
+        key, separator, raw = line.partition(":")
+        target = keys.get(key.strip())
+        if not separator or target is None:
+            continue
+        try:
+            values[target] = int(raw.strip())
+            observed = True
+        except ValueError:
+            continue
+    return {"source": "Zusammenfassung.txt" if observed else "unknown", **values}
+
+
 def nearest_live(live_rows, timestamp_ms: int, source_channel: str, max_delta_ms: int = 200):
     if not live_rows:
         return None
@@ -151,12 +191,14 @@ def summarize(values):
 
 def analyze_ride(ride: Path):
     raw_rows = read_csv(ride / "BLE_Rohdaten.csv")
+    raw_columns = csv_fieldnames(ride / "BLE_Rohdaten.csv")
     live_rows = read_csv(ride / "Live_Telemetrie.csv")
+    quality_counters = read_summary_quality(ride / "Zusammenfassung.txt")
     by_field = defaultdict(lambda: {"values": [], "matches": 0, "comparisons": 0, "abs_errors": []})
     channel_packets = defaultdict(int)
     channel_nonplaceholder = defaultdict(int)
-    rejected_read_packets = 0
-    rejected_hybrid_packets = 0
+    observed_exported_read_rows = 0
+    observed_exported_hybrid_rows = 0
 
     for row in raw_rows:
         channel = str(row.get("channel") or "").upper()
@@ -165,10 +207,10 @@ def analyze_ride(ride: Path):
         if not channel or not data:
             continue
         if origin == "READ":
-            rejected_read_packets += 1
+            observed_exported_read_rows += 1
             continue
         if suspicious_read_payload(channel, data):
-            rejected_hybrid_packets += 1
+            observed_exported_hybrid_rows += 1
             continue
         channel_packets[channel] += 1
         if not all(b == 0xFF for b in data):
@@ -201,11 +243,14 @@ def analyze_ride(ride: Path):
     for key, stat in sorted(by_field.items()):
         summary = summarize(stat["values"])
         comparisons = stat["comparisons"]
+        layout_consistent = comparisons >= 10 and stat["matches"] / comparisons >= 0.95
         summary.update({
             "comparisons_to_app_live": comparisons,
             "match_percent": round(stat["matches"] * 100.0 / comparisons, 2) if comparisons else None,
             "mae_to_app_live": round(statistics.fmean(stat["abs_errors"]), 6) if stat["abs_errors"] else None,
-            "sdk_status": "confirmed_on_bt638" if comparisons >= 10 and stat["matches"] / comparisons >= 0.95 else (
+            "evidence_type": "same_raw_app_export_layout_consistency" if comparisons else "sdk_layout_observation",
+            "independent_semantic_confirmation": False,
+            "sdk_status": "app_export_consistent_with_sdk_layout" if layout_consistent else (
                 "observed" if summary.get("samples", 0) else "not_observed"
             ),
         })
@@ -234,10 +279,15 @@ def analyze_ride(ride: Path):
 
     return {
         "ride": ride.name,
-        "raw_packets": len(raw_rows),
-        "accepted_raw_packets": sum(channel_packets.values()),
-        "rejected_read_packets": rejected_read_packets,
-        "rejected_hybrid_packets": rejected_hybrid_packets,
+        "raw_export_rows": len(raw_rows),
+        "accepted_export_rows": sum(channel_packets.values()),
+        "export_observations": {
+            "scope": "BLE_Rohdaten.csv rows only; these are not recorder rejection counters",
+            "origin_column_available": "origin" in raw_columns,
+            "observed_exported_read_rows": observed_exported_read_rows if "origin" in raw_columns else None,
+            "observed_exported_hybrid_rows": observed_exported_hybrid_rows,
+        },
+        "quality_counters": quality_counters,
         "live_rows": len(live_rows),
         "channels": channels,
         "fields": fields,
@@ -274,7 +324,11 @@ def aggregate(rides):
             "comparisons_to_app_live": comps,
             "match_percent": round(match * 100.0, 2) if match is not None else None,
             "mae_to_app_live": round(agg["mae_weighted"] / agg["mae_weight"], 6) if agg["mae_weight"] else None,
-            "verdict": "BT638_CONFIRMED" if comps >= 20 and match is not None and match >= 0.95 else (
+            "evidence_type": (
+                "same_raw_app_export_layout_consistency" if comps else "sdk_layout_observation"
+            ),
+            "independent_semantic_confirmation": False,
+            "verdict": "APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT" if comps >= 20 and match is not None and match >= 0.95 else (
                 "OBSERVED_NEEDS_MORE_PROOF" if agg["samples"] else "NOT_OBSERVED"
             ),
         }
@@ -300,9 +354,29 @@ def write_report(payload, path: Path):
         lines.append(f"| {key} | {item['samples']} | {item['comparisons_to_app_live']} | {hit} | {mae} | {item['verdict']} |")
     lines += [
         "",
+        "## Datenqualität je Export",
+        "",
+        "| Messfahrt | RAW-Exportzeilen | Akzeptierte Exportzeilen | READ im Export | Hybrid im Export | READ laut Zusammenfassung | Hybrid laut Zusammenfassung |",
+        "|---|---:|---:|---:|---:|---:|---:|",
+    ]
+    for ride in payload["rides"]:
+        exported = ride["export_observations"]
+        quality = ride["quality_counters"]
+        exported_read = exported["observed_exported_read_rows"]
+        summary_read = quality["rejected_read_packets"]
+        summary_hybrid = quality["rejected_hybrid_packets"]
+        lines.append(
+            f"| {ride['ride']} | {ride['raw_export_rows']} | {ride['accepted_export_rows']} | "
+            f"{'?' if exported_read is None else exported_read} | {exported['observed_exported_hybrid_rows']} | "
+            f"{'?' if summary_read is None else summary_read} | {'?' if summary_hybrid is None else summary_hybrid} |"
+        )
+    lines += [
+        "",
         "## Schutzregel",
         "",
-        "SDK-bekannte Live-Felder werden als Ground Truth behandelt und dürfen nicht als Licht/Bremse/Blinker-Kandidaten umgedeutet werden.",
+        "SDK-bekannte Layouts dürfen nicht als Licht/Bremse/Blinker-Kandidaten umgedeutet werden.",
+        "Der Vergleich prüft die App-Extraktion gegen dasselbe RAW-Paket; er ist kein unabhängiger semantischer Sensornachweis.",
+        "READ-/Hybrid-Verwerfungen stammen nur aus `Zusammenfassung.txt`. Fehlt dort der jeweilige Zähler, bleibt er unbekannt; eine Null wird nicht aus den bereits akzeptierten RAW-Exportzeilen abgeleitet.",
         "Unbekannte Felder werden erst danach statistisch gelernt. 150C wird bis zur erneuten Bestätigung der exakten Byte-Offets nur als BatteryCellUpdate-Präsenz ausgewertet.",
     ]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -316,7 +390,7 @@ def main():
     args = parser.parse_args()
     rides = [analyze_ride(p) for p in ride_dirs(Path(args.root))]
     payload = {
-        "schema": "vmax-libble-ground-truth-v1",
+        "schema": "vmax-libble-layout-consistency-v2",
         "sdk_source": SDK_SOURCE,
         "rides": rides,
         "aggregate_fields": aggregate(rides),

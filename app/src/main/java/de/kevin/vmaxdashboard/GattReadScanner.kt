@@ -1,13 +1,11 @@
 package de.kevin.vmaxdashboard
 
 import android.annotation.SuppressLint
-import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCharacteristic
 import android.os.Handler
 import android.os.Looper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import java.util.ArrayDeque
 
 /**
  * Read-only GATT inventory and safe READ scanner.
@@ -51,29 +49,46 @@ data class GattScanState(
 )
 
 class GattReadScanner(private val manager: BleScooterManager) {
+    private data class ReadKey(val serviceUuid: String, val characteristicUuid: String)
+
     private val handler = Handler(Looper.getMainLooper())
-    private val queue = ArrayDeque<BluetoothGattCharacteristic>()
+    private val readCoordinator = SequentialGattReadCoordinator<ReadKey>()
+    private val characteristicsByKey = mutableMapOf<ReadKey, BluetoothGattCharacteristic>()
     private val _state = MutableStateFlow(GattScanState())
     val state: StateFlow<GattScanState> = _state
 
     private var generation = 0
+    private var activeSession: DiagnosticGattReadSession? = null
+    private var readTimeout: Runnable? = null
 
     fun reset() {
         generation++
-        handler.removeCallbacksAndMessages(null)
-        queue.clear()
+        cancelReadTimeout()
+        readCoordinator.cancel()
+        characteristicsByKey.clear()
+        val session = activeSession
+        activeSession = null
+        if (session != null) manager.cancelDiagnosticGattReadScan(session, this)
         _state.value = GattScanState()
     }
 
     @SuppressLint("MissingPermission")
-    fun scanAndRead() {
-        val gatt = resolveGatt()
-        if (gatt == null) {
+    fun scanAndRead(): Boolean {
+        if (_state.value.running) return false
+        val session = manager.beginDiagnosticGattReadScan(this)
+        if (session == null) {
             _state.value = GattScanState(status = "GATT-Verbindung noch nicht bereit")
-            return
+            return false
         }
+        activeSession = session
 
-        val services = gatt.services.orEmpty()
+        val services = manager.diagnosticGattServices(session)
+        if (services == null) {
+            activeSession = null
+            manager.finishDiagnosticGattReadScan(session, this)
+            _state.value = GattScanState(status = "GATT-Verbindung wurde während des Scans gewechselt")
+            return false
+        }
         val entries = services.flatMap { service ->
             val serviceShort = shortUuid(service.uuid.toString())
             service.characteristics.map { characteristic ->
@@ -103,12 +118,18 @@ class GattReadScanner(private val manager: BleScooterManager) {
             compareBy<GattCharacteristicInfo>({ evidenceRank(it.evidence) }, { it.serviceUuid }, { it.characteristicUuid })
         )
 
-        queue.clear()
-        services.forEach { service ->
-            service.characteristics
-                .filter { it.properties and BluetoothGattCharacteristic.PROPERTY_READ != 0 }
-                .forEach(queue::addLast)
+        val readableCharacteristics = buildList {
+            services.forEach { service ->
+                service.characteristics
+                    .filter { it.properties and BluetoothGattCharacteristic.PROPERTY_READ != 0 }
+                    .forEach(::add)
+            }
         }
+        characteristicsByKey.clear()
+        readableCharacteristics.forEach { characteristic ->
+            characteristicsByKey[readKey(characteristic)] = characteristic
+        }
+        readCoordinator.reset(readableCharacteristics.map(::readKey))
 
         val confirmed = entries.count { it.evidence == CapabilityEvidence.BT638_CONFIRMED.label }
         val observed = entries.count { it.evidence == CapabilityEvidence.BT638_OBSERVED.label }
@@ -119,7 +140,7 @@ class GattReadScanner(private val manager: BleScooterManager) {
             running = true,
             serviceCount = services.size,
             characteristicCount = entries.size,
-            readableCount = queue.size,
+            readableCount = readableCharacteristics.size,
             confirmedCount = confirmed,
             observedCount = observed,
             sdkKnownCount = sdkKnown,
@@ -127,44 +148,113 @@ class GattReadScanner(private val manager: BleScooterManager) {
             entries = entries,
             status = "${services.size} Dienste, ${entries.size} Characteristics – $confirmed bestätigt, $observed beobachtet, $sdkKnown SDK-bekannt, $unknown unbekannt"
         )
-        readNext(gatt, currentGeneration, 0)
+        readNext(session, currentGeneration)
+        return true
     }
 
     @SuppressLint("MissingPermission")
-    private fun readNext(gatt: BluetoothGatt, expectedGeneration: Int, started: Int) {
-        if (expectedGeneration != generation) return
-        val characteristic = queue.pollFirst()
+    private fun readNext(session: DiagnosticGattReadSession, expectedGeneration: Int) {
+        if (expectedGeneration != generation || activeSession != session) return
+        val key = readCoordinator.beginNext()
+        if (key == null) {
+            finishScan(session, expectedGeneration)
+            return
+        }
+        val characteristic = characteristicsByKey[key]
         if (characteristic == null) {
-            _state.value = _state.value.copy(
-                running = false,
-                completed = true,
-                startedReads = started,
-                status = "READ-Scan fertig: $started/${_state.value.readableCount} gestartet • ${_state.value.confirmedCount} BT638 bestätigt • ${_state.value.sdkKnownCount} nur SDK"
-            )
+            readCoordinator.complete(key)
+            handler.post { readNext(session, expectedGeneration) }
             return
         }
 
-        val readStarted = runCatching { gatt.readCharacteristic(characteristic) }.getOrDefault(false)
+        val readStarted = manager.readDiagnosticCharacteristic(session, characteristic)
         val uuid = shortUuid(characteristic.uuid.toString())
         _state.value = _state.value.copy(
-            startedReads = started + if (readStarted) 1 else 0,
-            status = "Lese $uuid • ${queue.size} übrig",
+            startedReads = _state.value.startedReads + if (readStarted) 1 else 0,
+            status = "Lese $uuid • ${readCoordinator.remaining} übrig",
             entries = _state.value.entries.map {
                 if (it.characteristicUuid == uuid) it.copy(lastReadStarted = readStarted) else it
             }
         )
 
-        handler.postDelayed(
-            { readNext(gatt, expectedGeneration, started + if (readStarted) 1 else 0) },
-            650L
-        )
+        if (!readStarted) {
+            readCoordinator.complete(key)
+            handler.post { readNext(session, expectedGeneration) }
+            return
+        }
+
+        val timeout = Runnable {
+            if (expectedGeneration == generation && activeSession == session && readCoordinator.timeout(key)) {
+                _state.value = _state.value.copy(
+                    status = "READ $uuid ohne Callback – fahre nach Timeout fort"
+                )
+                readNext(session, expectedGeneration)
+            }
+        }
+        readTimeout = timeout
+        handler.postDelayed(timeout, READ_TIMEOUT_MS)
     }
 
-    private fun resolveGatt(): BluetoothGatt? = runCatching {
-        val field = BleScooterManager::class.java.getDeclaredField("gatt")
-        field.isAccessible = true
-        field.get(manager) as? BluetoothGatt
-    }.getOrNull()
+    internal fun onDiagnosticCharacteristicRead(
+        session: DiagnosticGattReadSession,
+        characteristic: BluetoothGattCharacteristic,
+        status: Int
+    ) {
+        handler.post {
+            if (activeSession != session) return@post
+            val key = readKey(characteristic)
+            if (!readCoordinator.complete(key)) return@post
+            cancelReadTimeout()
+            val uuid = shortUuid(characteristic.uuid.toString())
+            _state.value = _state.value.copy(
+                status = if (status == android.bluetooth.BluetoothGatt.GATT_SUCCESS) {
+                    "READ $uuid beantwortet • ${readCoordinator.remaining} übrig"
+                } else {
+                    "READ $uuid fehlgeschlagen ($status) • ${readCoordinator.remaining} übrig"
+                }
+            )
+            readNext(session, generation)
+        }
+    }
+
+    internal fun onDiagnosticConnectionClosed(session: DiagnosticGattReadSession) {
+        handler.post {
+            if (activeSession != session) return@post
+            generation++
+            cancelReadTimeout()
+            readCoordinator.cancel()
+            characteristicsByKey.clear()
+            activeSession = null
+            _state.value = _state.value.copy(
+                running = false,
+                completed = false,
+                status = "READ-Scan abgebrochen: Verbindung beendet"
+            )
+        }
+    }
+
+    private fun finishScan(session: DiagnosticGattReadSession, expectedGeneration: Int) {
+        if (expectedGeneration != generation || activeSession != session || readCoordinator.running) return
+        cancelReadTimeout()
+        activeSession = null
+        characteristicsByKey.clear()
+        _state.value = _state.value.copy(
+            running = false,
+            completed = true,
+            status = "READ-Scan fertig: ${_state.value.startedReads}/${_state.value.readableCount} gestartet • ${_state.value.confirmedCount} BT638 bestätigt • ${_state.value.sdkKnownCount} nur SDK"
+        )
+        manager.finishDiagnosticGattReadScan(session, this)
+    }
+
+    private fun cancelReadTimeout() {
+        readTimeout?.let(handler::removeCallbacks)
+        readTimeout = null
+    }
+
+    private fun readKey(characteristic: BluetoothGattCharacteristic): ReadKey = ReadKey(
+        serviceUuid = characteristic.service.uuid.toString(),
+        characteristicUuid = characteristic.uuid.toString()
+    )
 
     private fun propertyText(properties: Int): String = buildList {
         if (properties and BluetoothGattCharacteristic.PROPERTY_READ != 0) add("READ")
@@ -186,4 +276,8 @@ class GattReadScanner(private val manager: BleScooterManager) {
     private fun shortUuid(uuid: String): String =
         if (uuid.startsWith("da1a") && uuid.length >= 8) uuid.substring(4, 8).uppercase()
         else uuid.uppercase()
+
+    private companion object {
+        const val READ_TIMEOUT_MS = 3_000L
+    }
 }

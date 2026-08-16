@@ -6,6 +6,7 @@ import android.Manifest
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -106,7 +107,10 @@ private fun VmaxApp(manager: BleScooterManager) {
             delay(700)
             if (!manager.state.value.recordingActive) manager.startMeasurement()
             delay(1_400)
-            gattScanner.scanAndRead()
+            for (attempt in 0 until 8) {
+                if (gattScanner.scanAndRead()) break
+                if (attempt < 7) delay(750)
+            }
             if (chargeMode && !previousConnected) marker("BLE beim Laden wieder verbunden", false)
         } else {
             gattScanner.reset()
@@ -129,7 +133,7 @@ private fun VmaxApp(manager: BleScooterManager) {
             TopAppBar(
                 title = {
                     Column {
-                        Text("VMAX Dashboard • Version 7.6")
+                        Text("VMAX Dashboard • ${BuildConfig.VERSION_NAME}")
                         Text(
                             "Original SDK Live + Adaptive Decoder AI • Build ${BuildConfig.VERSION_NAME}",
                             style = MaterialTheme.typography.labelSmall
@@ -150,7 +154,16 @@ private fun VmaxApp(manager: BleScooterManager) {
             item { MetricRow("Akku", state.batteryPercent?.let { "$it %" } ?: "–", "Kilometer", state.odometerKm?.let { "%.1f km".format(it) } ?: "–") }
             item { MetricRow("Spannung", state.voltageV?.let { "%.2f V".format(it) } ?: "–", "Strom", state.currentA?.let { "%.2f A".format(it) } ?: "–") }
             item { MetricRow("Leistung direkt", state.sdkDirectPowerW?.let { "%.0f W".format(it) } ?: state.motorLoadRaw?.let { "$it W" } ?: "–", "Leistung V×A", state.currentPowerW?.let { "%.0f W".format(it) } ?: "–") }
+            item {
+                MetricRow(
+                    "Restreichweite (SDK)",
+                    state.sdkRemainingRangeKm?.let { "%.0f km".format(it) } ?: "–",
+                    "Startmodus",
+                    VmaxStartMode.fromRaw(state.startModeRaw)?.label ?: "–"
+                )
+            }
             item { LightModeCard(state) }
+            item { StartModeCard(state, manager::setStartMode) }
             item { OriginalSdkRealtimeCard(state) }
 
             item {
@@ -199,7 +212,7 @@ private fun VmaxApp(manager: BleScooterManager) {
             }
             item { SectionTitle("Direkttests – einmal drücken") }
             item { DirectMarkerCard(state) { marker(it) } }
-            item { GattSummaryCard(gattState, gattScanner::scanAndRead, state.connected) }
+            item { GattSummaryCard(gattState, { gattScanner.scanAndRead() }, state.connected) }
 
             item {
                 Card(shape = RoundedCornerShape(18.dp)) {
@@ -292,8 +305,14 @@ private fun StatusCard(state: ScooterState, gatt: GattScanState, chargeMode: Boo
     Card(shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text(state.status, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("Version 7.6 • Build ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodySmall)
-            Text(if (state.connected) "● Bluetooth verbunden" else "○ Bluetooth nicht verbunden")
+            Text("Build ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodySmall)
+            Text(
+                when {
+                    state.telemetryReady -> "● Bluetooth verbunden • Telemetrie aktiv"
+                    state.connected -> "◐ Bluetooth-Link verbunden • warte auf Telemetrie"
+                    else -> "○ Bluetooth nicht verbunden"
+                }
+            )
             Text(if (state.recordingActive) "● Auto-KI-Aufnahme läuft" else "○ Aufnahme wartet")
             Text("Original-SDK live: ${state.sdkLiveFieldCount} Felder • Decoder AI: ${aiProfile.confirmedRuleCount}/${aiProfile.ruleCount} bestätigt", style = MaterialTheme.typography.bodySmall)
             if (chargeMode) Text("🔌 Lademodus aktiv – Auto-Reconnect alle 15 Sekunden")
@@ -328,6 +347,73 @@ private fun LightModeCard(state: ScooterState) {
 }
 
 @Composable
+private fun StartModeCard(state: ScooterState, onSetMode: (VmaxStartMode) -> Unit) {
+    val current = VmaxStartMode.fromRaw(state.startModeRaw)
+    var safetyNowElapsedMs by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
+    LaunchedEffect(state.connected, state.connectionEpoch, state.lastSpeedSampleElapsedRealtimeMs) {
+        safetyNowElapsedMs = SystemClock.elapsedRealtime()
+        if (state.connected && state.lastSpeedSampleElapsedRealtimeMs > 0L) {
+            val ageMs = safetyNowElapsedMs - state.lastSpeedSampleElapsedRealtimeMs
+            val untilStaleMs = StartModeWriteSafetyPolicy.MAX_SPEED_SAMPLE_AGE_MS - ageMs
+            if (untilStaleMs >= 0L) {
+                delay(untilStaleMs + 1L)
+                safetyNowElapsedMs = SystemClock.elapsedRealtime()
+            }
+        }
+    }
+    val safetyBlock = StartModeWriteSafetyPolicy.blockReason(
+        StartModeWriteSafetyInput(
+            connected = state.connected,
+            telemetryReady = state.telemetryReady,
+            recordingActive = state.recordingActive,
+            startModeBusy = state.startModeBusy,
+            pendingStartModeWrite = false,
+            legacyRouteConfirmed = state.startModeWriteAvailable,
+            gattBusy = state.gattOperationBusy,
+            speedKmh = state.speedKmh,
+            speedSampleAtElapsedMs = state.lastSpeedSampleElapsedRealtimeMs,
+            speedSampleConnectionEpoch = state.speedSampleConnectionEpoch,
+            connectionEpoch = state.connectionEpoch,
+            nowElapsedMs = safetyNowElapsedMs
+        )
+    )
+    val safeToWrite = safetyBlock == null
+    Card(shape = RoundedCornerShape(22.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("🛴 Anfahrmodus", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("Aktiv: ${current?.label ?: "noch nicht gelesen"} • ${state.startModeStatus}")
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(
+                    onClick = { onSetMode(VmaxStartMode.ZERO_START) },
+                    enabled = safeToWrite && current != VmaxStartMode.ZERO_START,
+                    modifier = Modifier.weight(1f)
+                ) { Text("Zero-Start") }
+                Button(
+                    onClick = { onSetMode(VmaxStartMode.KICK_START) },
+                    enabled = safeToWrite && current != VmaxStartMode.KICK_START,
+                    modifier = Modifier.weight(1f)
+                ) { Text("Kick-Start") }
+            }
+            Text(
+                when {
+                    state.recordingActive -> "Zum Ändern zuerst die Messfahrt stoppen."
+                    !state.startModeWriteAvailable -> "Der Modus wird sicher aus 1508/11 angezeigt; Schreiben bleibt bei unbekannter Protokollroute gesperrt."
+                    safetyBlock == StartModeWriteBlockReason.SPEED_NOT_AVAILABLE ||
+                        safetyBlock == StartModeWriteBlockReason.SPEED_FROM_PREVIOUS_CONNECTION ||
+                        safetyBlock == StartModeWriteBlockReason.SPEED_SAMPLE_STALE ->
+                        "Ändern erst nach einer frischen 1505-Stillstandsmessung der aktuellen Verbindung."
+                    safetyBlock == StartModeWriteBlockReason.GATT_BUSY ->
+                        "Ein anderer BLE-Vorgang läuft; danach wird die Änderung wieder freigegeben."
+                    else -> "Änderung nur im Stillstand; danach bestätigt die App den Wert über 1508/11."
+                },
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text("Kick-Start verlangt erst Anschieben/Antreten, bevor der Gashebel anfährt.", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
 private fun OriginalSdkRealtimeCard(state: ScooterState) {
     fun d(value: Double?, unit: String, digits: Int = 2): String =
         value?.let { "% .${digits}f".format(it).trim() + " " + unit } ?: "–"
@@ -339,7 +425,7 @@ private fun OriginalSdkRealtimeCard(state: ScooterState) {
             Text("libble Ground Truth • ${state.sdkLiveFieldCount} aktuell dekodierbare Felder", style = MaterialTheme.typography.bodySmall)
             Text("1505 Leistung A/B: ${d(state.sdkPerformancePowerAW, "W", 1)} • ${d(state.sdkPerformancePowerBW, "W", 1)}")
             Text("1505 Drehmoment: ${d(state.sdkPerformanceTorqueNm, "Nm", 2)} • RPM: ${i(state.sdkPerformanceRpm)}")
-            Text("1505 Weg RAW: ${i(state.sdkPerformanceDistanceRaw)} • 1506 Zähler RAW: ${state.sdkOperatingCounterRaw ?: "–"}")
+            Text("1505 Restreichweite: ${d(state.sdkRemainingRangeKm, "km", 0)} • 1506 Zähler RAW: ${state.sdkOperatingCounterRaw ?: "–"}")
             Text("1509 Akku-Temp: ${d(state.resolvedBatteryTemperatureC, "°C", 1)} • 2. Strom: ${d(state.sdkSecondaryBatteryCurrentA, "A", 3)}")
             Text("1509 direkte Leistung: ${d(state.sdkDirectPowerW, "W", 0)}")
             Text("150A Motorstrom: ${d(state.sdkMotorCurrentA, "A", 3)} • Motorspannung: ${d(state.sdkMotorVoltageV, "V", 3)}")
@@ -347,7 +433,14 @@ private fun OriginalSdkRealtimeCard(state: ScooterState) {
             Text("150A Motortemperatur: ${d(state.resolvedMotorTemperatureC, "°C", 1)}")
             Text("Assistenz/Fahrstufe RAW: ${i(state.sdkAssistanceLevelRaw)}")
             Text(
-                "Leistung A/B bleiben absichtlich neutral benannt, bis der Original-App↔BT638-Vergleich eindeutig Motor- und Tretleistung zuordnet. 0xFFFF-Felder werden nicht erfunden.",
+                when {
+                    state.sdkRemainingRangeKm != null ->
+                        "Restreichweite ist der direkte Controllerwert aus 1505/10–11 in km – keine App-Schätzung."
+                    state.connected && state.telemetryReady ->
+                        "1505/10–11 liefert aktuell 0xFFFF; deshalb zeigt die App korrekt „–“ statt einer erfundenen Schätzung."
+                    else ->
+                        "Der direkte Restreichweitenwert aus 1505/10–11 erscheint, sobald der Controller einen gültigen Wert liefert."
+                },
                 style = MaterialTheme.typography.bodySmall
             )
         }
@@ -464,7 +557,12 @@ private fun ChannelCard(c: BleChannelState) = InfoCard("${c.channel} • ${c.tit
 private fun MetricRow(t1:String,v1:String,t2:String,v2:String) { Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(10.dp)) { MetricCard(t1,v1,Modifier.weight(1f)); MetricCard(t2,v2,Modifier.weight(1f)) } }
 @Composable private fun MetricCard(t:String,v:String,m:Modifier=Modifier) { Card(m, shape=RoundedCornerShape(18.dp)) { Column(Modifier.fillMaxWidth().padding(14.dp), horizontalAlignment=Alignment.CenterHorizontally) { Text(t); Text(v, fontWeight=FontWeight.Bold) } } }
 @Composable private fun InfoCard(t:String,x:String) { Card(shape=RoundedCornerShape(18.dp)) { Column(Modifier.fillMaxWidth().padding(16.dp)) { Text(t,fontWeight=FontWeight.Bold); Text(x,style=MaterialTheme.typography.bodySmall) } } }
-private fun decode150dStatistic(hex:String?, offset:Int):Double? { val r=u16be(parseHex(hex),offset)?:return null; return if(r==0xFFFF||r==0x8000)null else r/10.0 }
+internal fun decode150dStatistic(hex:String?, offset:Int):Double? {
+    val packet = parseHex(hex)
+    if (isUnavailable150dPayload(packet.map(Int::toByte).toByteArray())) return null
+    val raw = u16be(packet, offset) ?: return null
+    return if (raw == 0xFFFF || raw == 0x8000) null else raw / 10.0
+}
 private fun parseHex(hex:String?):List<Int> = hex.orEmpty().split('-',' ',':').mapNotNull { it.trim().takeIf { x->x.length==2 }?.toIntOrNull(16) }
 private fun u16be(b:List<Int>,i:Int):Int? = if(i<0||i+1>=b.size)null else (b[i] shl 8) or b[i+1]
 private fun formatElapsed(ms:Long):String = "%02d:%02d:%02d".format(ms/3_600_000,(ms/60_000)%60,(ms/1_000)%60)

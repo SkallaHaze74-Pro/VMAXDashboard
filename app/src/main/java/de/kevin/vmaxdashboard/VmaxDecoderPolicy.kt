@@ -13,10 +13,18 @@ internal object VmaxDecoderPolicy {
         ("batteryPercent" to "1509") to Layout(4, "u8"),
         ("voltageV" to "1509") to Layout(5, "u16be"),
         ("currentA" to "1509") to Layout(0, "s16be"),
+        ("powerW" to "1509") to Layout(9, "u16be"),
         ("odometerKm" to "1506") to Layout(0, "u32be")
     )
 
     private val forbiddenAdaptiveMappings = setOf("speedKmh" to "150D")
+    private val booleanSignals = setOf(
+        "leftIndicator", "rightIndicator", "brakeActive", "lightOn", "charging", "lockActive"
+    )
+    private val blockedAdaptiveBooleanChannels = setOf(
+        "1505", "1506", "1509", "150A", "150C", "150D",
+        "2A00", "2A01", "2A02", "2A04", "2A05", "2A28"
+    )
     private val blockedLearningChannels = setOf(
         "1505", "1506", "1509", "150A", "150C",
         "2A00", "2A01", "2A02", "2A04", "2A05", "2A28"
@@ -25,6 +33,12 @@ internal object VmaxDecoderPolicy {
     fun isAdaptiveRuleAllowed(signal: String, channel: String, offset: Int, encoding: String): Boolean {
         val key = signal to channel.uppercase()
         if (key in forbiddenAdaptiveMappings) return false
+        if (signal in booleanSignals) {
+            if (key.second in blockedAdaptiveBooleanChannels) return false
+            if (key.second == "1508") {
+                return signal == "lightOn" && offset == 0 && encoding == "u8"
+            }
+        }
         val canonicalChannel = canonicalLayouts.keys.firstOrNull { it.first == signal }?.second
         if (canonicalChannel != null && key.second != canonicalChannel) return false
         val canonical = canonicalLayouts[key] ?: return true
@@ -48,9 +62,10 @@ internal object VmaxDecoderPolicy {
                     label.contains("SPORT", ignoreCase = true)
                 else -> true
             }
-            // The latest real ride and the following stationary session show that
-            // 0..1 persist the maximum and 2..3 the average ride speed.
-            "150D" -> byteIndex !in 0..3
+            // Six rides show that 150D is a persisted ride-statistics block. The
+            // BT638 can temporarily replace bytes 2..19 with 0xFF while keeping
+            // 0..1 at zero; those unavailable frames must never become switches.
+            "150D" -> false
             else -> true
         }
     }

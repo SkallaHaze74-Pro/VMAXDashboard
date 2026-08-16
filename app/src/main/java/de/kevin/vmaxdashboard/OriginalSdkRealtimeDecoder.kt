@@ -15,6 +15,7 @@ data class OriginalSdkRealtimeSnapshot(
     val performanceSpeedKmh: Double? = null,
     val performanceRpm: Int? = null,
     val performanceDistanceRaw: Int? = null,
+    val remainingRangeKm: Double? = null,
     val odometerKm: Double? = null,
     val operatingCounterRaw: Long? = null,
     val batteryCurrentA: Double? = null,
@@ -34,7 +35,7 @@ data class OriginalSdkRealtimeSnapshot(
     val availableFieldCount: Int
         get() = listOf(
             performancePowerAW, performancePowerBW, performanceTorqueNm, performanceSpeedKmh,
-            performanceRpm, performanceDistanceRaw, odometerKm, operatingCounterRaw,
+            performanceRpm, remainingRangeKm, odometerKm, operatingCounterRaw,
             batteryCurrentA, batteryTemperatureC, batteryPercent, batteryVoltageV,
             secondaryBatteryCurrentA, directPowerW, motorCurrentA, motorVoltageV,
             motorRpm, motorTorqueNm, motorTemperatureC, lightOn, assistanceLevelRaw
@@ -57,6 +58,8 @@ object OriginalSdkRealtimeDecoder {
             ?.takeIf { it in 0.0..100.0 }
         val rpm = validU16BE(p1505, 8)?.takeIf { it in 0..50_000 }
         val distanceRaw = validU16BE(p1505, 10)
+            ?.takeIf { it in 0..1_000 }
+        val remainingRange = distanceRaw?.toDouble()
 
         val odometer = u32BE(p1506, 0)
             ?.takeIf { it in 0..100_000_000L }
@@ -110,6 +113,7 @@ object OriginalSdkRealtimeDecoder {
             performanceSpeedKmh = speed,
             performanceRpm = rpm,
             performanceDistanceRaw = distanceRaw,
+            remainingRangeKm = remainingRange,
             odometerKm = odometer,
             operatingCounterRaw = operatingCounter,
             batteryCurrentA = batteryCurrent,

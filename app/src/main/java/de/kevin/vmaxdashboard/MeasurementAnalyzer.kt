@@ -21,8 +21,8 @@ object MeasurementAnalyzer {
 
     fun analyze(sessionRows: List<String>, markerRows: List<String>): Pair<List<MeasurementFinding>, String> {
         val packets = sessionRows.mapNotNull(::parsePacket)
-        val markers = markerRows.mapNotNull(::parseMarker)
-            .filterNot(::isSystemMarker)
+        val allMarkers = markerRows.mapNotNull(::parseMarker)
+        val markers = allMarkers.filterNot(::isSystemMarker)
 
         val markerFindings = analyzeMarkers(packets, markers)
         val rideFindings = analyzeLongRideAutomatically(packets)
@@ -34,12 +34,37 @@ object MeasurementAnalyzer {
             .sortedByDescending { it.confidence }
             .take(60)
 
-        val durationMs = packets.maxOfOrNull { it.t } ?: 0L
+        val telemetryFromMs = packets.minOfOrNull { it.t }
+        val telemetryUntilMs = packets.maxOfOrNull { it.t }
+        val measurementDurationMs = maxOf(
+            telemetryUntilMs ?: 0L,
+            allMarkers.maxOfOrNull { it.t } ?: 0L
+        )
+        val telemetrySpanMs = if (telemetryFromMs != null && telemetryUntilMs != null) {
+            telemetryUntilMs - telemetryFromMs
+        } else {
+            0L
+        }
+        val gapAnchors = buildList {
+            add(0L)
+            addAll(packets.map { it.t }.distinct().sorted())
+            add(measurementDurationMs)
+        }.distinct().sorted()
+        val largestDataGapMs = gapAnchors.zipWithNext { before, after -> after - before }
+            .maxOrNull()
+            ?: 0L
         val automaticPatternCount = patternFindings.size
         val report = buildString {
             appendLine("VMAX Automatische Messfahrt-Analyse")
             appendLine("Pakete: ${packets.size}")
-            appendLine("Dauer_ms: $durationMs")
+            // Dauer_ms remains as a backwards-compatible alias for consumers of
+            // older reports. The explicit fields distinguish wall time from data.
+            appendLine("Dauer_ms: $measurementDurationMs")
+            appendLine("Messdauer_ms: $measurementDurationMs")
+            appendLine("Telemetrie_von_ms: ${telemetryFromMs ?: 0L}")
+            appendLine("Telemetrie_bis_ms: ${telemetryUntilMs ?: 0L}")
+            appendLine("Telemetriezeitraum_ms: $telemetrySpanMs")
+            appendLine("Größte_Datenlücke_ms: $largestDataGapMs")
             appendLine("Manuelle Marker: ${markers.size}")
             appendLine("Automatische allgemeine Mustererkennung: aktiv")
             appendLine("Automatische Impuls-/Blink-Kandidaten: $automaticPatternCount")
@@ -266,6 +291,8 @@ object MeasurementAnalyzer {
     private fun isSystemMarker(marker: Marker): Boolean {
         val label = marker.label.lowercase()
         return marker.label in setOf("START", "STOP", "PAUSE", "FORTSETZEN") ||
-            (label.startsWith("ble ") && ("getrennt" in label || "wieder verbunden" in label))
+            ((label.startsWith("ble ") || label.startsWith("ble-link")) &&
+                ("getrennt" in label || "wieder verbunden" in label)) ||
+            label.startsWith("telemetrie wieder aktiv")
     }
 }

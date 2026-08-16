@@ -24,6 +24,12 @@ data class BleChannelState(
 data class ScooterState(
     val scanning: Boolean = false,
     val connected: Boolean = false,
+    val telemetryReady: Boolean = false,
+    val connectionEpoch: Long = 0L,
+    val speedSampleConnectionEpoch: Long = -1L,
+    val lastSpeedSampleElapsedRealtimeMs: Long = 0L,
+    val diagnosticGattReadRunning: Boolean = false,
+    val gattOperationBusy: Boolean = false,
     val status: String = "Bereit",
     val deviceName: String = "BT638",
     val address: String = "",
@@ -39,6 +45,10 @@ data class ScooterState(
     val batteryStateRaw: Int? = null,
     val accessoryByte0: Int? = null,
     val accessoryByte3: Int? = null,
+    val startModeRaw: Int? = null,
+    val startModeWriteAvailable: Boolean = false,
+    val startModeBusy: Boolean = false,
+    val startModeStatus: String = "Warte auf Controllerdaten",
     val tripDistanceKm: Double? = null,
     val odometerKm: Double? = null,
     val rssi: Int? = null,
@@ -132,61 +142,100 @@ data class ScooterState(
         get() = aiSnapshot.signals
 
     // Original VMAX/Hyena SDK semantics, decoded at the incoming BLE notification rate.
-    // Values are hidden when disconnected so a stale last packet is never presented as live.
+    // Values are hidden until the current connection has delivered fresh live telemetry.
     val sdkLiveFieldCount: Int
-        get() = if (connected) originalSdkLive.availableFieldCount else 0
+        get() = if (connected && telemetryReady) originalSdkLive.availableFieldCount else 0
 
     val sdkPerformancePowerAW: Double?
-        get() = originalSdkLive.performancePowerAW.takeIf { connected }
+        get() = originalSdkLive.performancePowerAW.takeIf { connected && telemetryReady }
 
     val sdkPerformancePowerBW: Double?
-        get() = originalSdkLive.performancePowerBW.takeIf { connected }
+        get() = originalSdkLive.performancePowerBW.takeIf { connected && telemetryReady }
 
     val sdkPerformanceTorqueNm: Double?
-        get() = originalSdkLive.performanceTorqueNm.takeIf { connected }
+        get() = originalSdkLive.performanceTorqueNm.takeIf { connected && telemetryReady }
 
     val sdkPerformanceRpm: Int?
-        get() = originalSdkLive.performanceRpm.takeIf { connected }
+        get() = originalSdkLive.performanceRpm.takeIf { connected && telemetryReady }
 
     val sdkPerformanceDistanceRaw: Int?
-        get() = originalSdkLive.performanceDistanceRaw.takeIf { connected }
+        get() = originalSdkLive.performanceDistanceRaw.takeIf { connected && telemetryReady }
+
+    val sdkRemainingRangeKm: Double?
+        get() = originalSdkLive.remainingRangeKm.takeIf { connected && telemetryReady }
 
     val sdkOperatingCounterRaw: Long?
-        get() = originalSdkLive.operatingCounterRaw.takeIf { connected }
+        get() = originalSdkLive.operatingCounterRaw.takeIf { connected && telemetryReady }
 
     val sdkBatteryTemperatureC: Double?
-        get() = originalSdkLive.batteryTemperatureC.takeIf { connected }
+        get() = originalSdkLive.batteryTemperatureC.takeIf { connected && telemetryReady }
 
     val sdkSecondaryBatteryCurrentA: Double?
-        get() = originalSdkLive.secondaryBatteryCurrentA.takeIf { connected }
+        get() = originalSdkLive.secondaryBatteryCurrentA.takeIf { connected && telemetryReady }
 
     val sdkDirectPowerW: Double?
-        get() = originalSdkLive.directPowerW.takeIf { connected }
+        get() = originalSdkLive.directPowerW.takeIf { connected && telemetryReady }
 
     val sdkMotorCurrentA: Double?
-        get() = originalSdkLive.motorCurrentA.takeIf { connected }
+        get() = originalSdkLive.motorCurrentA.takeIf { connected && telemetryReady }
 
     val sdkMotorVoltageV: Double?
-        get() = originalSdkLive.motorVoltageV.takeIf { connected }
+        get() = originalSdkLive.motorVoltageV.takeIf { connected && telemetryReady }
 
     val sdkMotorRpm: Int?
-        get() = originalSdkLive.motorRpm.takeIf { connected }
+        get() = originalSdkLive.motorRpm.takeIf { connected && telemetryReady }
 
     val sdkMotorTorqueNm: Double?
-        get() = originalSdkLive.motorTorqueNm.takeIf { connected }
+        get() = originalSdkLive.motorTorqueNm.takeIf { connected && telemetryReady }
 
     val sdkMotorTemperatureC: Double?
-        get() = originalSdkLive.motorTemperatureC.takeIf { connected }
+        get() = originalSdkLive.motorTemperatureC.takeIf { connected && telemetryReady }
 
     val sdkAssistanceLevelRaw: Int?
-        get() = originalSdkLive.assistanceLevelRaw.takeIf { connected }
+        get() = originalSdkLive.assistanceLevelRaw.takeIf { connected && telemetryReady }
 
     val resolvedBatteryTemperatureC: Double?
-        get() = if (connected) batteryTemperatureC ?: originalSdkLive.batteryTemperatureC ?: adaptiveLive.batteryTemperatureC else null
+        get() = if (connected && telemetryReady) batteryTemperatureC ?: originalSdkLive.batteryTemperatureC ?: adaptiveLive.batteryTemperatureC else null
 
     val resolvedMotorTemperatureC: Double?
-        get() = if (connected) motorTemperatureC ?: originalSdkLive.motorTemperatureC ?: adaptiveLive.motorTemperatureC else null
+        get() = if (connected && telemetryReady) motorTemperatureC ?: originalSdkLive.motorTemperatureC ?: adaptiveLive.motorTemperatureC else null
 
     val resolvedDirectPowerW: Double?
-        get() = if (connected) originalSdkLive.directPowerW ?: adaptiveLive.powerW ?: currentPowerW else null
+        get() = if (connected && telemetryReady) originalSdkLive.directPowerW ?: adaptiveLive.powerW ?: currentPowerW else null
 }
+
+/** Drops values that are only valid for one physical GATT connection. */
+internal fun ScooterState.clearConnectionScopedTelemetry(nextConnectionEpoch: Long): ScooterState = copy(
+    telemetryReady = false,
+    connectionEpoch = nextConnectionEpoch,
+    speedSampleConnectionEpoch = -1L,
+    lastSpeedSampleElapsedRealtimeMs = 0L,
+    diagnosticGattReadRunning = false,
+    gattOperationBusy = false,
+    batteryPercent = null,
+    voltageV = null,
+    currentA = null,
+    motorTemperatureC = null,
+    batteryTemperatureC = null,
+    temperatureC = null,
+    speedKmh = null,
+    driveRaw = null,
+    motorLoadRaw = null,
+    batteryStateRaw = null,
+    accessoryByte0 = null,
+    accessoryByte3 = null,
+    startModeRaw = null,
+    startModeWriteAvailable = false,
+    startModeBusy = false,
+    tripDistanceKm = null,
+    odometerKm = null,
+    lastCharacteristic = "",
+    lastRawHex = "",
+    lastChangedBytes = "–",
+    rawPackets = emptyMap(),
+    packetTotal = 0,
+    packetsPerSecond = 0.0,
+    lastPacketAt = 0L,
+    currentPowerW = null,
+    channels = emptyList()
+)

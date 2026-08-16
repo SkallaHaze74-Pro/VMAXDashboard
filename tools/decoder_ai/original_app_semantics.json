@@ -3,7 +3,7 @@
   "source": {
     "class": "com.gpstuner.mapviewer.androidbase.bluetooth.manager.HyenaSDKManager",
     "sdk": "io.hylink.hbp / libble-sdk-native-lib.so",
-    "note": "Semantics are taken from the original app listeners. Byte mappings are only marked confirmed when independently matched to BT638/libble parser data. First real ride on 2026-08-13 disproved 150D as a second current-speed source."
+    "note": "Semantics are taken from the original app listeners and native parser mapping. Layout agreement with values exported by this app is not counted as independent live-semantic confirmation. First real ride on 2026-08-13 disproved 150D as a second current-speed source."
   },
   "signals": [
     {
@@ -35,8 +35,12 @@
       "callback": "ControllerPartListener.onRemainDistanceInKm",
       "originalCommand": "260",
       "unit": "km",
-      "mapping": null,
-      "status": "original_app_known_mapping_open"
+      "mapping": {"channel": "1505", "offset": 10, "encoding": "u16be", "scale": 1.0, "invalidRaw": [65535], "plausibleKmMax": 1000},
+      "status": "original_app_native_layout_bt638_numeric_value_not_observed",
+      "evidence": {
+        "layoutBasis": "Original-app callback/native BikePerformance parser mapping",
+        "bt638Observation": "All accepted BT638 values observed at 1505 offset 10 so far were 0xFFFF (unavailable); no numeric remaining-range value has been observed."
+      }
     },
     {
       "signal": "speedKmh",

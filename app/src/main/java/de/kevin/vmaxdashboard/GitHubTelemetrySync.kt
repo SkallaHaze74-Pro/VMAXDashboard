@@ -37,6 +37,89 @@ data class GitHubSyncSnapshot(
     val lastStatus: String
 )
 
+internal data class TelemetryCsvMetrics(
+    val schemaVersion: Int = 1,
+    val liveRows: Int = 0,
+    val maxSpeedKmh: Double? = null,
+    val maxDirectPowerW: Double? = null,
+    val maxElectricalPowerW: Double? = null
+)
+
+private const val MAX_MANIFEST_SPEED_KMH = 100.0
+private const val MAX_MANIFEST_DIRECT_POWER_W = 30_000.0
+
+private fun csvFiniteDouble(cells: List<String>, index: Int?): Double? {
+    if (index == null) return null
+    return cells.getOrNull(index)
+        ?.trim()
+        ?.toDoubleOrNull()
+        ?.takeIf { it.isFinite() }
+}
+
+internal fun telemetryCsvMetrics(lines: Sequence<String>): TelemetryCsvMetrics {
+    val iterator = lines.iterator()
+    if (!iterator.hasNext()) return TelemetryCsvMetrics()
+    val header = iterator.next().split(';').mapIndexed { index, name ->
+        name.trim().removePrefix("\uFEFF").lowercase() to index
+    }.toMap()
+    val schemaVersion = if (
+        setOf("power_w", "electrical_power_w", "power_provenance", "source_channel").all(header::containsKey)
+    ) 2 else 1
+    val speedIndex = header["speed_kmh_candidate"] ?: header["speed_kmh"]
+    val directPowerIndex = header["power_w"]
+    val electricalPowerIndex = header["electrical_power_w"]
+    val powerProvenanceIndex = header["power_provenance"]
+    val legacyDirectRawIndex = header["motor_load_raw_be"]
+    val sourceIndex = header["source_channel"]
+    var rows = 0
+    var maxSpeed: Double? = null
+    var maxDirectPower: Double? = null
+    var maxElectricalPower: Double? = null
+
+    while (iterator.hasNext()) {
+        val line = iterator.next()
+        if (line.isBlank()) continue
+        val cells = line.split(';')
+        rows++
+        val source = sourceIndex?.let { cells.getOrNull(it) }?.trim()?.uppercase()
+        if (source == "1505") {
+            csvFiniteDouble(cells, speedIndex)
+                ?.takeIf { it in 0.0..MAX_MANIFEST_SPEED_KMH }
+                ?.let {
+                    maxSpeed = maxOf(maxSpeed ?: it, it)
+                }
+        }
+        if (source == "1509") {
+            val directPower = csvFiniteDouble(cells, directPowerIndex)
+                ?.takeIf { it in 0.0..MAX_MANIFEST_DIRECT_POWER_W }
+            val isConfirmedDirectPower = if (schemaVersion == 2) {
+                powerProvenanceIndex
+                    ?.let { cells.getOrNull(it) }
+                    ?.trim()
+                    ?.lowercase() == "1509_direct"
+            } else {
+                val legacyDirectRaw = csvFiniteDouble(cells, legacyDirectRawIndex)
+                directPower != null && legacyDirectRaw != null && directPower == legacyDirectRaw
+            }
+            if (isConfirmedDirectPower && directPower != null) {
+                maxDirectPower = maxOf(maxDirectPower ?: directPower, directPower)
+            }
+            if (schemaVersion == 2) {
+                csvFiniteDouble(cells, electricalPowerIndex)?.let {
+                    maxElectricalPower = maxOf(maxElectricalPower ?: it, it)
+                }
+            }
+        }
+    }
+    return TelemetryCsvMetrics(
+        schemaVersion = schemaVersion,
+        liveRows = rows,
+        maxSpeedKmh = maxSpeed,
+        maxDirectPowerW = maxDirectPower,
+        maxElectricalPowerW = maxElectricalPower
+    )
+}
+
 class GitHubTelemetrySync private constructor(context: Context) {
     companion object {
         private const val PREFS = "vmax_github_sync"
@@ -280,19 +363,10 @@ class GitHubTelemetrySync private constructor(context: Context) {
     private fun buildManifest(folder: File, folderName: String): JSONObject {
         val summary = File(folder, "Zusammenfassung.txt").takeIf(File::isFile)?.readText().orEmpty()
         val liveFile = File(folder, "Live_Telemetrie.csv")
-        var maxSpeed: Double? = null
-        var maxPower: Double? = null
-        var liveRows = 0
-        if (liveFile.isFile) {
-            liveFile.useLines { lines ->
-                lines.drop(1).forEach { line ->
-                    if (line.isBlank()) return@forEach
-                    val cells = line.split(';')
-                    liveRows++
-                    cells.getOrNull(2)?.toDoubleOrNull()?.let { maxSpeed = maxOf(maxSpeed ?: it, it) }
-                    cells.getOrNull(6)?.toDoubleOrNull()?.let { maxPower = maxOf(maxPower ?: it, it) }
-                }
-            }
+        val metrics = if (liveFile.isFile) {
+            liveFile.useLines { lines -> telemetryCsvMetrics(lines) }
+        } else {
+            TelemetryCsvMetrics()
         }
 
         val summaryValues = summary.lineSequence()
@@ -313,9 +387,19 @@ class GitHubTelemetrySync private constructor(context: Context) {
             .put("ble_packets", summaryValues["BLE_Pakete"]?.toLongOrNull() ?: JSONObject.NULL)
             .put("markers", summaryValues["Marker"]?.toIntOrNull() ?: JSONObject.NULL)
             .put("channels", summaryValues["Kanäle"].orEmpty())
-            .put("live_rows", liveRows)
-            .put("max_speed_kmh", maxSpeed ?: JSONObject.NULL)
-            .put("max_power_w", maxPower ?: JSONObject.NULL)
+            .put("live_rows", metrics.liveRows)
+            .put("max_speed_kmh", metrics.maxSpeedKmh ?: JSONObject.NULL)
+            // max_power_w stays as a backwards-compatible alias, but now has a
+            // single direct-power meaning and is evaluated only on fresh 1509 rows.
+            .put("max_power_w", metrics.maxDirectPowerW ?: JSONObject.NULL)
+            .put("max_direct_power_w", metrics.maxDirectPowerW ?: JSONObject.NULL)
+            .put("max_electrical_power_w", metrics.maxElectricalPowerW ?: JSONObject.NULL)
+            .put("telemetry_csv_schema", metrics.schemaVersion)
+            .put("received_notification_packets", summaryValues["BLE_Empfangen"]?.toIntOrNull() ?: JSONObject.NULL)
+            .put("accepted_notification_packets", summaryValues["BLE_Akzeptiert"]?.toIntOrNull() ?: JSONObject.NULL)
+            .put("rejected_read_packets", summaryValues["READ_Verworfen"]?.toIntOrNull() ?: JSONObject.NULL)
+            .put("rejected_hybrid_packets", summaryValues["Hybrid_Verworfen"]?.toIntOrNull() ?: JSONObject.NULL)
+            .put("connection_epochs", summaryValues["Verbindungsepochen"]?.toIntOrNull() ?: JSONObject.NULL)
             .put("decoder_ai_analysis", true)
             .put("learning_profile", true)
             .put("app_version", packageInfo.versionName.orEmpty())
