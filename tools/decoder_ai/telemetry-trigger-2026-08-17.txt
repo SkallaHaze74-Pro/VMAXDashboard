@@ -1,2 +1,0 @@
-Manuelle Decoder-Neuberechnung für Messfahrt_2026-08-17_17-05-47.
-Nur temporärer Workflow-Trigger; vor der Zusammenführung wieder entfernen.
