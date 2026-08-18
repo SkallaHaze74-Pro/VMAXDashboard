@@ -1,20 +1,20 @@
 # VMAX Decoder AI – Konsensbericht
 
-- Fahrten ausgewertet: **8**
+- Fahrten ausgewertet: **9**
 - Regeln gesamt: **6**
 - Davon bestätigt: **6**
-- Profil-Revision: `c7c13f35d2ef1a22`
+- Profil-Revision: `84ce6b4d3b6a299e`
 
 ## Regeln
 
 | Status | Signal | Kanal | Feld | Konfidenz | Evidenz | Quelle |
 |---|---|---:|---|---:|---:|---|
-| confirmed | batteryPercent | 1509 | u8@4 | 99% | 2 Fahrt(en), 531 Samples | original-sdk-layout+app-extraction-check |
-| confirmed | currentA | 1509 | s16be@0 | 99% | 5 Fahrt(en), 822 Samples | original-sdk-layout+app-extraction-check |
-| confirmed | odometerKm | 1506 | u32be@0 | 99% | 4 Fahrt(en), 759 Samples | original-sdk-layout+app-extraction-check |
-| confirmed | powerW | 1509 | u16be@9 | 99% | 3 Fahrt(en), 361 Samples | original-sdk-layout+app-extraction-check |
-| confirmed | speedKmh | 1505 | u16be@6 | 99% | 6 Fahrt(en), 839 Samples | original-sdk-layout+app-extraction-check |
-| confirmed | voltageV | 1509 | u16be@5 | 99% | 5 Fahrt(en), 822 Samples | original-sdk-layout+app-extraction-check |
+| confirmed | batteryPercent | 1509 | u8@4 | 99% | 3 Fahrt(en), 767 Samples | original-sdk-layout+app-extraction-check |
+| confirmed | currentA | 1509 | s16be@0 | 99% | 6 Fahrt(en), 1058 Samples | original-sdk-layout+app-extraction-check |
+| confirmed | odometerKm | 1506 | u32be@0 | 99% | 5 Fahrt(en), 995 Samples | original-sdk-layout+app-extraction-check |
+| confirmed | powerW | 1509 | u16be@9 | 99% | 4 Fahrt(en), 597 Samples | original-sdk-layout+app-extraction-check |
+| confirmed | speedKmh | 1505 | u16be@6 | 99% | 7 Fahrt(en), 1074 Samples | original-sdk-layout+app-extraction-check |
+| confirmed | voltageV | 1509 | u16be@5 | 99% | 6 Fahrt(en), 1058 Samples | original-sdk-layout+app-extraction-check |
 
 ## Ground-Truth-Regeln
 
