@@ -15,8 +15,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -55,7 +53,7 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
     val appContext = LocalContext.current.applicationContext
     val adaptiveStore = remember(appContext) { AdaptiveDecoderProfileStore.get(appContext) }
     val externalAiSecrets = remember(appContext) { ExternalAiSecretsStore(appContext) }
-    val externalAiClient = remember(externalAiSecrets) { ExternalAiClient(externalAiSecrets) }
+    val autoReviewCoordinator = remember(appContext) { ExternalAiAutoReviewCoordinator.get(appContext) }
     var token by remember { mutableStateOf("") }
     var snapshot by remember { mutableStateOf(sync.snapshot()) }
     var aiProfile by remember { mutableStateOf(adaptiveStore.snapshot()) }
@@ -65,15 +63,10 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
     var geminiKey by remember { mutableStateOf("") }
     var glmKey by remember { mutableStateOf("") }
     var externalAiStatus by remember { mutableStateOf(externalAiSecrets.status()) }
-    var externalAiMode by remember { mutableStateOf(ExternalAiMode.AUTO) }
-    var externalAiPrompt by remember {
-        mutableStateOf("Prüfe den aktuellen Decoder-Status. Welche Evidenz ist belastbar, wo gibt es Widersprüche und welcher nächste Messfahrt-Test bringt am meisten Erkenntnis?")
-    }
-    var externalAiBusy by remember { mutableStateOf(false) }
-    var externalAiResult by remember { mutableStateOf("") }
-    var externalAiResultMeta by remember { mutableStateOf("") }
+    var autoReview by remember { mutableStateOf(autoReviewCoordinator.snapshot()) }
 
     LaunchedEffect(Unit) {
+        autoReviewCoordinator.start()
         if (snapshot.enabled) {
             sync.start()
             aiSync.start()
@@ -82,6 +75,8 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
             snapshot = sync.snapshot()
             aiProfile = adaptiveStore.snapshot()
             aiStatus = aiSync.status()
+            externalAiStatus = externalAiSecrets.status()
+            autoReview = autoReviewCoordinator.snapshot()
             delay(750)
         }
     }
@@ -139,7 +134,11 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Gemini + GLM Pro-Prüfung", fontWeight = FontWeight.Bold)
                 Text(
-                    "Gemini 3.7 Flash läuft im Auto-Modus zuerst; GLM-5.3 dient als Fallback oder unabhängige Zweitprüfung.",
+                    "Automatisch: Bei neuer hochgeladener Messfahrt oder geändertem Decoder-Profil startet die Zweitprüfung selbst. Kein KI-Prüfen-Knopf ist nötig.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    "Auto-Kette: Gemini 3.7 Flash → bei 429 Gemini 3.6 Flash → GLM-5.3, sobald ein GLM-Key vorhanden ist.",
                     style = MaterialTheme.typography.bodySmall
                 )
                 Text(
@@ -148,13 +147,31 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
                     fontWeight = FontWeight.SemiBold
                 )
 
-                Text("Modus", fontWeight = FontWeight.Bold)
-                ExternalAiMode.values().forEach { mode ->
-                    FilterChip(
-                        selected = externalAiMode == mode,
-                        onClick = { externalAiMode = mode },
-                        label = { Text(mode.label) }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Automatische KI-Zweitprüfung", fontWeight = FontWeight.Bold)
+                        Text(if (autoReview.enabled) "Aktiv" else "Aus", style = MaterialTheme.typography.bodySmall)
+                    }
+                    Switch(
+                        checked = autoReview.enabled,
+                        onCheckedChange = {
+                            autoReviewCoordinator.setEnabled(it)
+                            autoReview = autoReviewCoordinator.snapshot()
+                        }
                     )
+                }
+
+                Text(autoReview.status)
+                if (autoReview.lastProvider.isNotBlank()) {
+                    Text(
+                        "Letzte KI: ${autoReview.lastProvider} • ${autoReview.lastModel}",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                if (autoReview.lastResult.isNotBlank()) {
+                    HorizontalDivider()
+                    Text("Letzte automatische Analyse", fontWeight = FontWeight.Bold)
+                    Text(autoReview.lastResult)
                 }
 
                 HorizontalDivider()
@@ -174,7 +191,8 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
                                 .onSuccess {
                                     geminiKey = ""
                                     externalAiStatus = externalAiSecrets.status()
-                                    localMessage = "✓ Gemini-Key mit Android Keystore gespeichert"
+                                    autoReviewCoordinator.requestNow("Gemini-Key gespeichert")
+                                    localMessage = "✓ Gemini-Key gespeichert • automatische Prüfung gestartet"
                                 }
                                 .onFailure { localMessage = it.message ?: "Gemini-Key konnte nicht gespeichert werden" }
                         },
@@ -208,7 +226,8 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
                                 .onSuccess {
                                     glmKey = ""
                                     externalAiStatus = externalAiSecrets.status()
-                                    localMessage = "✓ GLM-Key mit Android Keystore gespeichert"
+                                    autoReviewCoordinator.requestNow("GLM-Key gespeichert")
+                                    localMessage = "✓ GLM-Key gespeichert • automatische Prüfung gestartet"
                                 }
                                 .onFailure { localMessage = it.message ?: "GLM-Key konnte nicht gespeichert werden" }
                         },
@@ -231,49 +250,15 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
                     style = MaterialTheme.typography.bodySmall
                 )
 
-                HorizontalDivider()
-                OutlinedTextField(
-                    value = externalAiPrompt,
-                    onValueChange = { externalAiPrompt = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Frage an Decoder-KI") },
-                    minLines = 4,
-                    maxLines = 10
-                )
-                Button(
+                OutlinedButton(
                     onClick = {
-                        externalAiBusy = true
-                        externalAiResult = ""
-                        externalAiResultMeta = ""
-                        val context = ExternalAiPromptFactory.decoderContext(snapshot, aiProfile)
-                        externalAiClient.ask(externalAiMode, externalAiPrompt, context) { result ->
-                            externalAiBusy = false
-                            result.onSuccess { answer ->
-                                externalAiResultMeta = "${answer.provider} • ${answer.model}" +
-                                    if (answer.fallbackUsed) " • Fallback" else ""
-                                externalAiResult = answer.text
-                            }.onFailure { error ->
-                                externalAiResultMeta = "KI-Anfrage fehlgeschlagen"
-                                externalAiResult = error.message ?: error::class.java.simpleName
-                            }
-                        }
+                        autoReviewCoordinator.requestNow("Optionale Sofortprüfung")
+                        localMessage = "Automatische KI-Zweitprüfung sofort angestoßen"
                     },
-                    enabled = !externalAiBusy && externalAiPrompt.isNotBlank() &&
+                    enabled = !autoReview.running &&
                         (externalAiStatus.geminiConfigured || externalAiStatus.glmConfigured),
                     modifier = Modifier.fillMaxWidth()
-                ) {
-                    if (externalAiBusy) {
-                        CircularProgressIndicator(modifier = Modifier.height(22.dp), strokeWidth = 2.dp)
-                    } else {
-                        Text("DECODER-STATUS MIT KI PRÜFEN")
-                    }
-                }
-
-                if (externalAiResult.isNotBlank()) {
-                    HorizontalDivider()
-                    Text(externalAiResultMeta, fontWeight = FontWeight.Bold)
-                    Text(externalAiResult)
-                }
+                ) { Text("OPTIONAL: JETZT SOFORT NOCHMAL PRÜFEN") }
             }
         }
 
@@ -303,6 +288,7 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
                                 sync.start()
                                 aiSync.start()
                                 aiSync.refreshNow()
+                                autoReviewCoordinator.requestNow("GitHub-Sync aktiviert")
                             }
                             snapshot = sync.snapshot()
                         }
@@ -330,6 +316,7 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
                                 sync.start()
                                 aiSync.start()
                                 aiSync.refreshNow()
+                                autoReviewCoordinator.requestNow("GitHub-Token gespeichert")
                                 token = ""
                                 localMessage = "✓ Token verschlüsselt gespeichert"
                             }
@@ -367,7 +354,8 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
                         sync.start()
                         sync.retryNow()
                         aiSync.refreshNow()
-                        localMessage = "Upload und Decoder AI erneut angestoßen"
+                        autoReviewCoordinator.requestNow("Alles synchronisieren")
+                        localMessage = "Upload, Decoder AI und externe KI erneut angestoßen"
                     },
                     enabled = snapshot.enabled && snapshot.tokenConfigured,
                     modifier = Modifier.fillMaxWidth()
@@ -383,6 +371,7 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
                 Text("• Ereignisse.csv – Bremse, Blinker, Licht, Laden usw.")
                 Text("• Lernprofil.json – lokale Kandidaten über mehrere Fahrten")
                 Text("• Numerische Korrelationen für weitere Speed/Akku/Volt/Strom/Temperatur/Weg-Felder")
+                Text("• Gemini/GLM – automatische unabhängige Zweitprüfung bei neuer Evidenz")
                 Spacer(Modifier.height(2.dp))
                 Text(
                     "Neue Regeln werden erst nach hoher Konfidenz live verwendet. Unsichere Treffer bleiben Kandidaten.",

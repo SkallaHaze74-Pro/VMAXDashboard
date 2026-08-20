@@ -81,11 +81,21 @@ class DecoderAiCloudSync private constructor(context: Context) {
                     val encoded = github.optString("content")
                     if (encoded.isBlank()) error("Decoder-Profil ist leer")
                     val profileText = String(Base64.decode(encoded, Base64.DEFAULT), Charsets.UTF_8)
+                    val before = adaptiveStore.snapshot()
                     val snapshot = adaptiveStore.installCloudProfile(profileText)
                     setStatus(
                         "✓ Decoder AI ${snapshot.revision.ifBlank { "aktuell" }} • " +
                             "${snapshot.confirmedRuleCount}/${snapshot.ruleCount} Regeln bestätigt"
                     )
+                    if (
+                        snapshot.revision != before.revision ||
+                        snapshot.generatedAtMs != before.generatedAtMs ||
+                        snapshot.confirmedRuleCount != before.confirmedRuleCount ||
+                        snapshot.ruleCount != before.ruleCount
+                    ) {
+                        ExternalAiAutoReviewCoordinator.get(appContext)
+                            .requestNow("Decoder-Profil aktualisiert")
+                    }
                 }
                 404 -> setStatus("Decoder AI wartet auf die erste abgeschlossene GitHub-Auswertung")
                 else -> setStatus("Decoder AI GitHub-Fehler $code")
