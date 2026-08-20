@@ -24,6 +24,13 @@ data class ExternalAiAnswer(
     val fallbackUsed: Boolean = false
 )
 
+private class ProviderHttpException(
+    val providerName: String,
+    val code: Int,
+    message: String,
+    val retryAfterMs: Long? = null
+) : IOException(message)
+
 /**
  * Read-only external AI assistant for decoder/code review.
  *
@@ -36,15 +43,17 @@ class ExternalAiClient(
 ) {
     companion object {
         const val GEMINI_MODEL = "gemini-3.7-flash"
+        const val GEMINI_QUOTA_FALLBACK_MODEL = "gemini-3.6-flash"
         const val GLM_MODEL = "glm-5.3"
 
-        // Interactions API is the GA/recommended Gemini API for new projects.
         private const val GEMINI_URL =
             "https://generativelanguage.googleapis.com/v1/interactions"
         private const val GLM_URL =
             "https://open.bigmodel.cn/api/paas/v4/chat/completions"
         private const val MAX_PROMPT_CHARS = 30_000
         private const val MAX_CONTEXT_CHARS = 18_000
+        private const val MAX_PROVIDER_ERROR_CHARS = 260
+        private const val MAX_RETRY_DELAY_MS = 20_000L
 
         private val SYSTEM_PROMPT = """
             Du bist ein technischer, rein lesender Prüfer für VMAXDashboard.
@@ -109,16 +118,38 @@ class ExternalAiClient(
         require(geminiKey != null || glmKey != null) { "Noch kein Gemini- oder GLM-Key eingerichtet" }
 
         if (geminiKey != null) {
-            val gemini = runCatching { askGemini(payload, geminiKey) }
-            if (gemini.isSuccess) {
+            val primary = runCatching { askGemini(payload, geminiKey, GEMINI_MODEL) }
+            if (primary.isSuccess) {
                 return ExternalAiAnswer(
                     mode = ExternalAiMode.AUTO,
                     provider = "Google Gemini",
                     model = GEMINI_MODEL,
-                    text = gemini.getOrThrow()
+                    text = primary.getOrThrow()
                 )
             }
-            if (glmKey == null) throw gemini.exceptionOrNull() ?: IOException("Gemini-Anfrage fehlgeschlagen")
+
+            val primaryError = primary.exceptionOrNull()
+            if (isRateLimited(primaryError)) {
+                val secondary = runCatching {
+                    askGemini(payload, geminiKey, GEMINI_QUOTA_FALLBACK_MODEL)
+                }
+                if (secondary.isSuccess) {
+                    return ExternalAiAnswer(
+                        mode = ExternalAiMode.AUTO,
+                        provider = "Google Gemini • Quota-Fallback",
+                        model = GEMINI_QUOTA_FALLBACK_MODEL,
+                        text = secondary.getOrThrow(),
+                        fallbackUsed = true
+                    )
+                }
+                if (glmKey == null) {
+                    throw secondary.exceptionOrNull()
+                        ?: primaryError
+                        ?: IOException("Gemini-Anfrage fehlgeschlagen")
+                }
+            } else if (glmKey == null) {
+                throw primaryError ?: IOException("Gemini-Anfrage fehlgeschlagen")
+            }
         }
 
         return ExternalAiAnswer(
@@ -191,13 +222,16 @@ class ExternalAiClient(
         )
     }
 
-    private fun askGemini(payload: String, key: String? = secrets.geminiKeyOrNull()): String {
+    private fun askGemini(
+        payload: String,
+        key: String? = secrets.geminiKeyOrNull(),
+        model: String = GEMINI_MODEL
+    ): String {
         val apiKey = key ?: error("Gemini-Key fehlt")
         val body = JSONObject()
-            .put("model", GEMINI_MODEL)
+            .put("model", model)
             .put("system_instruction", SYSTEM_PROMPT)
             .put("input", payload)
-            // The app does not need server-side history yet; keep decoder data stateless.
             .put("store", false)
             .put(
                 "generation_config",
@@ -206,7 +240,7 @@ class ExternalAiClient(
                     .put("thinking_level", "high")
             )
 
-        val data = postJson(
+        val data = postJsonWithRetry(
             url = GEMINI_URL,
             headers = mapOf("x-goog-api-key" to apiKey),
             body = body,
@@ -255,7 +289,7 @@ class ExternalAiClient(
                     .put(JSONObject().put("role", "user").put("content", payload))
             )
 
-        val data = postJson(
+        val data = postJsonWithRetry(
             url = GLM_URL,
             headers = mapOf("Authorization" to "Bearer $apiKey"),
             body = body,
@@ -271,7 +305,29 @@ class ExternalAiClient(
         return text
     }
 
-    private fun postJson(
+    private fun postJsonWithRetry(
+        url: String,
+        headers: Map<String, String>,
+        body: JSONObject,
+        provider: String
+    ): JSONObject {
+        var fallbackDelayMs = 1_000L
+        repeat(3) { attempt ->
+            try {
+                return postJsonOnce(url, headers, body, provider)
+            } catch (error: ProviderHttpException) {
+                val retryable = error.code == 429 || error.code == 503 || error.code == 502
+                if (!retryable || attempt == 2) throw error
+                val waitMs = (error.retryAfterMs ?: fallbackDelayMs)
+                    .coerceIn(500L, MAX_RETRY_DELAY_MS)
+                Thread.sleep(waitMs)
+                fallbackDelayMs = (fallbackDelayMs * 3L).coerceAtMost(MAX_RETRY_DELAY_MS)
+            }
+        }
+        error("Unreachable")
+    }
+
+    private fun postJsonOnce(
         url: String,
         headers: Map<String, String>,
         body: JSONObject,
@@ -294,7 +350,18 @@ class ExternalAiClient(
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             val responseText = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
-            if (code !in 200..299) throw IOException(httpErrorMessage(provider, code))
+            if (code !in 200..299) {
+                val retryAfterMs = connection.getHeaderField("Retry-After")
+                    ?.trim()
+                    ?.toLongOrNull()
+                    ?.times(1_000L)
+                throw ProviderHttpException(
+                    providerName = provider,
+                    code = code,
+                    message = httpErrorMessage(provider, code, responseText),
+                    retryAfterMs = retryAfterMs
+                )
+            }
             require(responseText.isNotBlank()) { "$provider hat leer geantwortet" }
             return JSONObject(responseText)
         } finally {
@@ -302,13 +369,30 @@ class ExternalAiClient(
         }
     }
 
-    private fun httpErrorMessage(provider: String, code: Int): String = when (code) {
-        401, 403 -> "$provider: API-Key nicht akzeptiert ($code)"
-        408 -> "$provider: Zeitüberschreitung ($code)"
-        429 -> "$provider: Gratis-/Ratenlimit erreicht ($code)"
-        in 500..599 -> "$provider: Dienst vorübergehend nicht verfügbar ($code)"
-        else -> "$provider: API-Fehler $code"
+    private fun httpErrorMessage(provider: String, code: Int, responseText: String): String {
+        val providerMessage = runCatching {
+            JSONObject(responseText)
+                .optJSONObject("error")
+                ?.optString("message")
+                ?.trim()
+                .orEmpty()
+        }.getOrDefault("")
+            .replace(Regex("[\\r\\n]+"), " ")
+            .take(MAX_PROVIDER_ERROR_CHARS)
+
+        val base = when (code) {
+            401, 403 -> "$provider: API-Key nicht akzeptiert ($code)"
+            408 -> "$provider: Zeitüberschreitung ($code)"
+            429 -> "$provider: Rate-Limit/Quota erreicht ($code)"
+            in 500..599 -> "$provider: Dienst vorübergehend nicht verfügbar ($code)"
+            else -> "$provider: API-Fehler $code"
+        }
+        return if (providerMessage.isBlank()) base else "$base • $providerMessage"
     }
+
+    private fun isRateLimited(error: Throwable?): Boolean =
+        (error as? ProviderHttpException)?.code == 429 ||
+            error?.message?.contains("(429)") == true
 
     private fun buildUserPayload(prompt: String, context: String): String = buildString {
         appendLine("Aufgabe:")
