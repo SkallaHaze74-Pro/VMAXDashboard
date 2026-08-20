@@ -12,7 +12,8 @@ import javax.crypto.spec.GCMParameterSpec
 
 data class ExternalAiSecretStatus(
     val geminiConfigured: Boolean,
-    val glmConfigured: Boolean
+    val glmConfigured: Boolean,
+    val openAiConfigured: Boolean
 )
 
 /**
@@ -27,26 +28,34 @@ class ExternalAiSecretsStore(context: Context) {
         private const val KEY_ALIAS = "vmax_external_ai_provider_keys_v1"
         private const val GEMINI = "gemini"
         private const val GLM = "glm"
+        private const val OPENAI = "openai"
     }
 
     private val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     fun status(): ExternalAiSecretStatus = ExternalAiSecretStatus(
         geminiConfigured = readEncrypted(GEMINI)?.isNotBlank() == true,
-        glmConfigured = readEncrypted(GLM)?.isNotBlank() == true
+        glmConfigured = readEncrypted(GLM)?.isNotBlank() == true,
+        openAiConfigured = readEncrypted(OPENAI)?.isNotBlank() == true
     )
 
     fun saveGeminiKey(value: String) = saveEncrypted(GEMINI, normalize(value, "Gemini"))
 
     fun saveGlmKey(value: String) = saveEncrypted(GLM, normalize(value, "GLM"))
 
+    fun saveOpenAiKey(value: String) = saveEncrypted(OPENAI, normalize(value, "OpenAI"))
+
     fun clearGeminiKey() = clear(GEMINI)
 
     fun clearGlmKey() = clear(GLM)
 
+    fun clearOpenAiKey() = clear(OPENAI)
+
     internal fun geminiKeyOrNull(): String? = readEncrypted(GEMINI)?.takeIf { it.isNotBlank() }
 
     internal fun glmKeyOrNull(): String? = readEncrypted(GLM)?.takeIf { it.isNotBlank() }
+
+    internal fun openAiKeyOrNull(): String? = readEncrypted(OPENAI)?.takeIf { it.isNotBlank() }
 
     private fun normalize(value: String, provider: String): String {
         val normalized = value.trim()
