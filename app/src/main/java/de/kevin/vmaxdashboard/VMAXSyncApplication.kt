@@ -8,6 +8,7 @@ class VMAXSyncApplication : Application() {
         super.onCreate()
         AdaptiveDecoderRuntime.initialize(this)
         AutomaticBleReconnectSupervisor.install(this)
+        ExternalAiAutoReviewCoordinator.get(this).start()
 
         val enabled = getSharedPreferences("vmax_github_sync", Context.MODE_PRIVATE)
             .getBoolean("enabled", false)
