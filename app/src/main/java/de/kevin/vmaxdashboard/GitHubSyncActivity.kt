@@ -15,6 +15,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -52,11 +54,24 @@ class GitHubSyncActivity : ComponentActivity() {
 private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSync, onClose: () -> Unit) {
     val appContext = LocalContext.current.applicationContext
     val adaptiveStore = remember(appContext) { AdaptiveDecoderProfileStore.get(appContext) }
+    val externalAiSecrets = remember(appContext) { ExternalAiSecretsStore(appContext) }
+    val externalAiClient = remember(externalAiSecrets) { ExternalAiClient(externalAiSecrets) }
     var token by remember { mutableStateOf("") }
     var snapshot by remember { mutableStateOf(sync.snapshot()) }
     var aiProfile by remember { mutableStateOf(adaptiveStore.snapshot()) }
     var aiStatus by remember { mutableStateOf(aiSync.status()) }
     var localMessage by remember { mutableStateOf("") }
+
+    var geminiKey by remember { mutableStateOf("") }
+    var glmKey by remember { mutableStateOf("") }
+    var externalAiStatus by remember { mutableStateOf(externalAiSecrets.status()) }
+    var externalAiMode by remember { mutableStateOf(ExternalAiMode.AUTO) }
+    var externalAiPrompt by remember {
+        mutableStateOf("Prüfe den aktuellen Decoder-Status. Welche Evidenz ist belastbar, wo gibt es Widersprüche und welcher nächste Messfahrt-Test bringt am meisten Erkenntnis?")
+    }
+    var externalAiBusy by remember { mutableStateOf(false) }
+    var externalAiResult by remember { mutableStateOf("") }
+    var externalAiResultMeta by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         if (snapshot.enabled) {
@@ -117,6 +132,148 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
                     enabled = snapshot.enabled && snapshot.tokenConfigured,
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("DECODER AI JETZT ABGLEICHEN") }
+            }
+        }
+
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Gemini + GLM Pro-Prüfung", fontWeight = FontWeight.Bold)
+                Text(
+                    "Gemini 3.7 Flash läuft im Auto-Modus zuerst; GLM-5.3 dient als Fallback oder unabhängige Zweitprüfung.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    "Gemini: ${if (externalAiStatus.geminiConfigured) "✓ Key gespeichert" else "○ Key fehlt"} • " +
+                        "GLM: ${if (externalAiStatus.glmConfigured) "✓ Key gespeichert" else "○ Key fehlt"}",
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                Text("Modus", fontWeight = FontWeight.Bold)
+                ExternalAiMode.values().forEach { mode ->
+                    FilterChip(
+                        selected = externalAiMode == mode,
+                        onClick = { externalAiMode = mode },
+                        label = { Text(mode.label) }
+                    )
+                }
+
+                HorizontalDivider()
+                Text("Gemini API-Key", fontWeight = FontWeight.Bold)
+                OutlinedTextField(
+                    value = geminiKey,
+                    onValueChange = { geminiKey = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(if (externalAiStatus.geminiConfigured) "Neuen Gemini-Key eintragen" else "Gemini-Key eintragen") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            runCatching { externalAiSecrets.saveGeminiKey(geminiKey) }
+                                .onSuccess {
+                                    geminiKey = ""
+                                    externalAiStatus = externalAiSecrets.status()
+                                    localMessage = "✓ Gemini-Key mit Android Keystore gespeichert"
+                                }
+                                .onFailure { localMessage = it.message ?: "Gemini-Key konnte nicht gespeichert werden" }
+                        },
+                        enabled = geminiKey.isNotBlank(),
+                        modifier = Modifier.weight(1f)
+                    ) { Text("GEMINI SPEICHERN") }
+                    OutlinedButton(
+                        onClick = {
+                            externalAiSecrets.clearGeminiKey()
+                            externalAiStatus = externalAiSecrets.status()
+                            localMessage = "Gemini-Key entfernt"
+                        },
+                        enabled = externalAiStatus.geminiConfigured,
+                        modifier = Modifier.weight(1f)
+                    ) { Text("ENTFERNEN") }
+                }
+
+                Text("GLM-5.3 API-Key", fontWeight = FontWeight.Bold)
+                OutlinedTextField(
+                    value = glmKey,
+                    onValueChange = { glmKey = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(if (externalAiStatus.glmConfigured) "Neuen GLM-Key eintragen" else "GLM-Key eintragen") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            runCatching { externalAiSecrets.saveGlmKey(glmKey) }
+                                .onSuccess {
+                                    glmKey = ""
+                                    externalAiStatus = externalAiSecrets.status()
+                                    localMessage = "✓ GLM-Key mit Android Keystore gespeichert"
+                                }
+                                .onFailure { localMessage = it.message ?: "GLM-Key konnte nicht gespeichert werden" }
+                        },
+                        enabled = glmKey.isNotBlank(),
+                        modifier = Modifier.weight(1f)
+                    ) { Text("GLM SPEICHERN") }
+                    OutlinedButton(
+                        onClick = {
+                            externalAiSecrets.clearGlmKey()
+                            externalAiStatus = externalAiSecrets.status()
+                            localMessage = "GLM-Key entfernt"
+                        },
+                        enabled = externalAiStatus.glmConfigured,
+                        modifier = Modifier.weight(1f)
+                    ) { Text("ENTFERNEN") }
+                }
+
+                Text(
+                    "Die Keys stehen nicht im Quellcode und werden nicht zu GitHub hochgeladen. Für eine öffentlich verteilte APK bleibt ein eigener Backend-Proxy die stärkere Sicherheitsstufe.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+
+                HorizontalDivider()
+                OutlinedTextField(
+                    value = externalAiPrompt,
+                    onValueChange = { externalAiPrompt = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Frage an Decoder-KI") },
+                    minLines = 4,
+                    maxLines = 10
+                )
+                Button(
+                    onClick = {
+                        externalAiBusy = true
+                        externalAiResult = ""
+                        externalAiResultMeta = ""
+                        val context = ExternalAiPromptFactory.decoderContext(snapshot, aiProfile)
+                        externalAiClient.ask(externalAiMode, externalAiPrompt, context) { result ->
+                            externalAiBusy = false
+                            result.onSuccess { answer ->
+                                externalAiResultMeta = "${answer.provider} • ${answer.model}" +
+                                    if (answer.fallbackUsed) " • Fallback" else ""
+                                externalAiResult = answer.text
+                            }.onFailure { error ->
+                                externalAiResultMeta = "KI-Anfrage fehlgeschlagen"
+                                externalAiResult = error.message ?: error::class.java.simpleName
+                            }
+                        }
+                    },
+                    enabled = !externalAiBusy && externalAiPrompt.isNotBlank() &&
+                        (externalAiStatus.geminiConfigured || externalAiStatus.glmConfigured),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    if (externalAiBusy) {
+                        CircularProgressIndicator(modifier = Modifier.height(22.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text("DECODER-STATUS MIT KI PRÜFEN")
+                    }
+                }
+
+                if (externalAiResult.isNotBlank()) {
+                    HorizontalDivider()
+                    Text(externalAiResultMeta, fontWeight = FontWeight.Bold)
+                    Text(externalAiResult)
+                }
             }
         }
 
