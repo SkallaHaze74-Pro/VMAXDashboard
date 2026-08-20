@@ -10,6 +10,7 @@ on:
       - 'app/src/main/java/de/kevin/vmaxdashboard/AdaptiveDecoderRuntime.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/BleScooterManager.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/DecoderAiCloudSync.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/ExternalAi*.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/GitHubSyncActivity.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/GitHubTelemetrySync.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/LearningProfileStore.kt'
@@ -37,6 +38,7 @@ on:
       - 'app/src/main/java/de/kevin/vmaxdashboard/AdaptiveDecoderRuntime.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/BleScooterManager.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/DecoderAiCloudSync.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/ExternalAi*.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/GitHubSyncActivity.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/GitHubTelemetrySync.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/LearningProfileStore.kt'
@@ -125,6 +127,25 @@ jobs:
             --output decoder-ai/decoder_profile.json \
             --report decoder-ai/analysis_report.md
 
+      - name: Gemini und GLM als unabhängige Zweitprüfung
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data')
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GEMINI_API_KEY}${ZHIPU_API_KEY}" ]; then
+            echo 'Gemini/GLM Secrets noch nicht gesetzt – deterministische Decoder-AI läuft ohne externe Zweitprüfung weiter.'
+            exit 0
+          fi
+          python "$ANALYZER_ROOT/tools/decoder_ai/provider_review.py" \
+            --analysis-report decoder-ai/analysis_report.md \
+            --decoder-profile decoder-ai/decoder_profile.json \
+            --libble decoder-ai/libble_comparison.json \
+            --original-app decoder-ai/original_app_comparison.json \
+            --output decoder-ai/provider_review.json \
+            --report decoder-ai/provider_review.md
+
       - name: Neue Decoder-Ergebnisse speichern
         if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data')
         run: |
@@ -137,6 +158,11 @@ jobs:
             decoder-ai/libble_comparison.md \
             decoder-ai/original_app_comparison.json \
             decoder-ai/original_app_comparison.md
+          for file in decoder-ai/provider_review.json decoder-ai/provider_review.md; do
+            if [ -f "$file" ]; then
+              git add "$file"
+            fi
+          done
           if git diff --cached --quiet; then
             echo 'Keine neue Decoder-Evidenz.'
             exit 0
