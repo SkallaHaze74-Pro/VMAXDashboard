@@ -62,6 +62,7 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
 
     var geminiKey by remember { mutableStateOf("") }
     var glmKey by remember { mutableStateOf("") }
+    var openAiKey by remember { mutableStateOf("") }
     var externalAiStatus by remember { mutableStateOf(externalAiSecrets.status()) }
     var autoReview by remember { mutableStateOf(autoReviewCoordinator.snapshot()) }
 
@@ -132,24 +133,29 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
 
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Gemini + GLM Pro-Prüfung", fontWeight = FontWeight.Bold)
+                Text("KI-Team • GPT + Gemini + GLM", fontWeight = FontWeight.Bold)
                 Text(
-                    "Automatisch: Bei neuer hochgeladener Messfahrt oder geändertem Decoder-Profil startet die Zweitprüfung selbst. Kein KI-Prüfen-Knopf ist nötig.",
+                    "Automatisch: Gemini und GLM prüfen neue Evidenz günstig bzw. über vorhandene Kontingente. Ist OpenAI eingerichtet, fasst GPT-5.6 Luna nur bei geänderter Evidenz die unabhängigen Prüfungen zu einer finalen Analyse zusammen.",
                     style = MaterialTheme.typography.bodySmall
                 )
                 Text(
-                    "Auto-Kette: Gemini 3.7 Flash → bei 429 Gemini 3.6 Flash → GLM-5.3, sobald ein GLM-Key vorhanden ist.",
+                    "Sparmodus/Fallback: Gemini 3.7 Flash → bei 429 Gemini 3.6 Flash → GLM-5.3 → GPT-5.6 Luna nur als letzter Fallback. Im vollständigen KI-Team dient GPT als finale Prüfinstanz.",
                     style = MaterialTheme.typography.bodySmall
                 )
                 Text(
-                    "Gemini: ${if (externalAiStatus.geminiConfigured) "✓ Key gespeichert" else "○ Key fehlt"} • " +
-                        "GLM: ${if (externalAiStatus.glmConfigured) "✓ Key gespeichert" else "○ Key fehlt"}",
+                    "Gemini: ${if (externalAiStatus.geminiConfigured) "✓" else "○"} • " +
+                        "GLM: ${if (externalAiStatus.glmConfigured) "✓" else "○"} • " +
+                        "OpenAI: ${if (externalAiStatus.openAiConfigured) "✓" else "○"}",
                     fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    "Hinweis: Die OpenAI API hat keinen Free-Tier. Deshalb wird GPT automatisch nur bei neuer Evidenz bzw. einer bewusst angestoßenen Sofortprüfung verwendet.",
+                    style = MaterialTheme.typography.bodySmall
                 )
 
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Automatische KI-Zweitprüfung", fontWeight = FontWeight.Bold)
+                        Text("Automatische KI-Team-Prüfung", fontWeight = FontWeight.Bold)
                         Text(if (autoReview.enabled) "Aktiv" else "Aus", style = MaterialTheme.typography.bodySmall)
                     }
                     Switch(
@@ -245,18 +251,53 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
                     ) { Text("ENTFERNEN") }
                 }
 
+                Text("OpenAI API-Key", fontWeight = FontWeight.Bold)
+                OutlinedTextField(
+                    value = openAiKey,
+                    onValueChange = { openAiKey = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(if (externalAiStatus.openAiConfigured) "Neuen OpenAI-Key eintragen" else "OpenAI-Key eintragen") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            runCatching { externalAiSecrets.saveOpenAiKey(openAiKey) }
+                                .onSuccess {
+                                    openAiKey = ""
+                                    externalAiStatus = externalAiSecrets.status()
+                                    autoReviewCoordinator.requestNow("OpenAI-Key gespeichert")
+                                    localMessage = "✓ OpenAI-Key gespeichert • KI-Team-Prüfung gestartet"
+                                }
+                                .onFailure { localMessage = it.message ?: "OpenAI-Key konnte nicht gespeichert werden" }
+                        },
+                        enabled = openAiKey.isNotBlank(),
+                        modifier = Modifier.weight(1f)
+                    ) { Text("OPENAI SPEICHERN") }
+                    OutlinedButton(
+                        onClick = {
+                            externalAiSecrets.clearOpenAiKey()
+                            externalAiStatus = externalAiSecrets.status()
+                            localMessage = "OpenAI-Key entfernt"
+                        },
+                        enabled = externalAiStatus.openAiConfigured,
+                        modifier = Modifier.weight(1f)
+                    ) { Text("ENTFERNEN") }
+                }
+
                 Text(
-                    "Die Keys stehen nicht im Quellcode und werden nicht zu GitHub hochgeladen. Für eine öffentlich verteilte APK bleibt ein eigener Backend-Proxy die stärkere Sicherheitsstufe.",
+                    "Alle Provider-Keys werden mit Android Keystore verschlüsselt und nicht zu GitHub hochgeladen. Für eine öffentlich verteilte APK bleibt ein eigener Backend-Proxy die stärkere Sicherheitsstufe.",
                     style = MaterialTheme.typography.bodySmall
                 )
 
                 OutlinedButton(
                     onClick = {
                         autoReviewCoordinator.requestNow("Optionale Sofortprüfung")
-                        localMessage = "Automatische KI-Zweitprüfung sofort angestoßen"
+                        localMessage = "Automatische KI-Team-Prüfung sofort angestoßen"
                     },
                     enabled = !autoReview.running &&
-                        (externalAiStatus.geminiConfigured || externalAiStatus.glmConfigured),
+                        (externalAiStatus.geminiConfigured || externalAiStatus.glmConfigured || externalAiStatus.openAiConfigured),
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("OPTIONAL: JETZT SOFORT NOCHMAL PRÜFEN") }
             }
@@ -355,7 +396,7 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
                         sync.retryNow()
                         aiSync.refreshNow()
                         autoReviewCoordinator.requestNow("Alles synchronisieren")
-                        localMessage = "Upload, Decoder AI und externe KI erneut angestoßen"
+                        localMessage = "Upload, Decoder AI und KI-Team erneut angestoßen"
                     },
                     enabled = snapshot.enabled && snapshot.tokenConfigured,
                     modifier = Modifier.fillMaxWidth()
@@ -371,7 +412,8 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
                 Text("• Ereignisse.csv – Bremse, Blinker, Licht, Laden usw.")
                 Text("• Lernprofil.json – lokale Kandidaten über mehrere Fahrten")
                 Text("• Numerische Korrelationen für weitere Speed/Akku/Volt/Strom/Temperatur/Weg-Felder")
-                Text("• Gemini/GLM – automatische unabhängige Zweitprüfung bei neuer Evidenz")
+                Text("• Gemini + GLM – unabhängige Vorprüfung bei neuer Evidenz")
+                Text("• GPT-5.6 Luna – finale Synthese nur bei neuer Evidenz, wenn OpenAI eingerichtet ist")
                 Spacer(Modifier.height(2.dp))
                 Text(
                     "Neue Regeln werden erst nach hoher Konfidenz live verwendet. Unsichere Treffer bleiben Kandidaten.",
