@@ -19,10 +19,7 @@ from typing import Any
 
 GEMINI_MODEL = "gemini-3.7-flash"
 GLM_MODEL = "glm-5.3"
-GEMINI_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/models/"
-    f"{GEMINI_MODEL}:generateContent"
-)
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1/interactions"
 GLM_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
 MAX_SOURCE_CHARS = 24_000
 MAX_PROVIDER_TEXT = 16_000
@@ -105,24 +102,41 @@ def provider_http_error(code: int) -> str:
     return f"Provider-HTTP-Fehler {code}"
 
 
-def ask_gemini(api_key: str, prompt: str) -> str:
-    payload = {
-        "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "maxOutputTokens": 4096,
-            "thinkingConfig": {"thinkingLevel": "high"},
-        },
-    }
-    data = post_json(GEMINI_URL, {"x-goog-api-key": api_key}, payload)
-    candidates = data.get("candidates") or []
-    parts = ((candidates[0].get("content") or {}).get("parts") or []) if candidates else []
-    text = "\n".join(
-        part.get("text", "") for part in parts if isinstance(part, dict) and part.get("text")
-    ).strip()
+def extract_gemini_text(data: dict[str, Any]) -> str:
+    status = str(data.get("status") or "")
+    if status in {"failed", "cancelled", "budget_exceeded"}:
+        raise RuntimeError(f"Gemini-Interaktion beendet mit Status {status}")
+
+    chunks: list[str] = []
+    for step in data.get("steps") or []:
+        if not isinstance(step, dict) or step.get("type") != "model_output":
+            continue
+        for block in step.get("content") or []:
+            if not isinstance(block, dict) or block.get("type") != "text":
+                continue
+            text = str(block.get("text") or "").strip()
+            if text:
+                chunks.append(text)
+    text = "\n".join(chunks).strip()
     if not text:
         raise RuntimeError("Gemini hat keinen Text geliefert")
     return text[:MAX_PROVIDER_TEXT]
+
+
+def ask_gemini(api_key: str, prompt: str) -> str:
+    payload = {
+        "model": GEMINI_MODEL,
+        "system_instruction": SYSTEM_PROMPT,
+        "input": prompt,
+        # No server-side history is needed for the automated decoder review.
+        "store": False,
+        "generation_config": {
+            "max_output_tokens": 4096,
+            "thinking_level": "high",
+        },
+    }
+    data = post_json(GEMINI_URL, {"x-goog-api-key": api_key}, payload)
+    return extract_gemini_text(data)
 
 
 def ask_glm(api_key: str, prompt: str) -> str:
