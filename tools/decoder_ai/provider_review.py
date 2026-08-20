@@ -19,6 +19,8 @@ from typing import Any
 
 GEMINI_MODEL = "gemini-3.7-flash"
 GLM_MODEL = "glm-5.3"
+GLM_FREE_MODEL = "glm-4.7-flash"
+GLM_FREE_BACKUP_MODEL = "glm-4.5-flash"
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1/interactions"
 ZAI_GLM_URL = "https://api.z.ai/api/paas/v4/chat/completions"
 BIGMODEL_GLM_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
@@ -91,7 +93,8 @@ def post_json(url: str, headers: dict[str, str], payload: dict[str, Any]) -> dic
         with urllib.request.urlopen(request, timeout=75) as response:
             raw = response.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as error:
-        raise ProviderHttpError(error.code, provider_http_error(error.code)) from None
+        detail = error.read().decode("utf-8", errors="replace") if error.fp else ""
+        raise ProviderHttpError(error.code, provider_http_error(error.code, detail)) from None
     except urllib.error.URLError as error:
         raise RuntimeError(f"Netzwerkfehler: {error.reason}") from None
     if not raw.strip():
@@ -99,14 +102,21 @@ def post_json(url: str, headers: dict[str, str], payload: dict[str, Any]) -> dic
     return json.loads(raw)
 
 
-def provider_http_error(code: int) -> str:
+def provider_http_error(code: int, detail: str = "") -> str:
+    message = ""
+    try:
+        message = str((json.loads(detail).get("error") or {}).get("message") or "").strip()
+    except Exception:
+        message = ""
     if code in (401, 403):
-        return f"API-Key nicht akzeptiert ({code})"
-    if code == 429:
-        return "Gratis-/Ratenlimit erreicht (429)"
-    if 500 <= code <= 599:
-        return f"Provider vorübergehend nicht verfügbar ({code})"
-    return f"Provider-HTTP-Fehler {code}"
+        base = f"API-Key nicht akzeptiert ({code})"
+    elif code == 429:
+        base = "Gratis-/Ratenlimit erreicht (429)"
+    elif 500 <= code <= 599:
+        base = f"Provider vorübergehend nicht verfügbar ({code})"
+    else:
+        base = f"Provider-HTTP-Fehler {code}"
+    return f"{base} • {message[:260]}" if message else base
 
 
 def extract_gemini_text(data: dict[str, Any]) -> str:
@@ -145,29 +155,22 @@ def ask_gemini(api_key: str, prompt: str) -> str:
     return extract_gemini_text(data)
 
 
-def ask_glm(api_key: str, prompt: str) -> str:
-    payload = {
-        "model": GLM_MODEL,
+def glm_payload(model: str, prompt: str) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "model": model,
         "stream": False,
         "thinking": {"type": "enabled"},
-        "reasoning_effort": "max",
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ],
     }
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
-    }
+    if model == GLM_MODEL:
+        payload["reasoning_effort"] = "max"
+    return payload
 
-    try:
-        data = post_json(ZAI_GLM_URL, headers, payload)
-    except ProviderHttpError as error:
-        if error.code not in (401, 403, 404):
-            raise
-        data = post_json(BIGMODEL_GLM_URL, headers, payload)
 
+def extract_glm_text(data: dict[str, Any]) -> str:
     choices = data.get("choices") or []
     message = (choices[0].get("message") or {}) if choices else {}
     text = str(message.get("content") or "").strip()
@@ -176,12 +179,97 @@ def ask_glm(api_key: str, prompt: str) -> str:
     return text[:MAX_PROVIDER_TEXT]
 
 
+def call_glm_model(
+    api_key: str,
+    prompt: str,
+    model: str,
+    *,
+    allow_bigmodel_fallback: bool,
+) -> tuple[str, str]:
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
+    }
+    payload = glm_payload(model, prompt)
+    try:
+        data = post_json(ZAI_GLM_URL, headers, payload)
+        provider = "Z.ai"
+    except ProviderHttpError as error:
+        if not allow_bigmodel_fallback or error.code not in (401, 403, 404):
+            raise
+        data = post_json(BIGMODEL_GLM_URL, headers, payload)
+        provider = "BigModel"
+    return provider, extract_glm_text(data)
+
+
+def is_quota_or_balance_error(error: BaseException) -> bool:
+    if isinstance(error, ProviderHttpError) and error.code == 429:
+        return True
+    message = str(error).lower()
+    return any(
+        marker in message
+        for marker in ("quota", "rate-limit", "balance", "resource", "余额", "不足", "充值")
+    )
+
+
+def ask_glm_with_meta(api_key: str, prompt: str) -> dict[str, Any]:
+    try:
+        provider, text = call_glm_model(
+            api_key,
+            prompt,
+            GLM_MODEL,
+            allow_bigmodel_fallback=True,
+        )
+        return {
+            "text": text,
+            "model": GLM_MODEL,
+            "provider": provider,
+            "fallback": False,
+        }
+    except Exception as primary_error:
+        if not is_quota_or_balance_error(primary_error):
+            raise
+
+    last_error: BaseException | None = None
+    for model in (GLM_FREE_MODEL, GLM_FREE_BACKUP_MODEL):
+        try:
+            provider, text = call_glm_model(
+                api_key,
+                prompt,
+                model,
+                allow_bigmodel_fallback=False,
+            )
+            return {
+                "text": text,
+                "model": model,
+                "provider": provider,
+                "fallback": True,
+            }
+        except Exception as error:
+            last_error = error
+
+    raise last_error or RuntimeError("Kein GLM-Modell konnte die Anfrage beantworten")
+
+
+def ask_glm(api_key: str, prompt: str) -> str:
+    return str(ask_glm_with_meta(api_key, prompt)["text"])
+
+
 def run_provider(name: str, model: str, key: str | None, ask, prompt: str) -> dict[str, Any]:
     if not key:
         return {"status": "not_configured", "model": model, "text": ""}
     try:
+        if name == "GLM":
+            item = ask_glm_with_meta(key, prompt)
+            return {
+                "status": "ok",
+                "model": item["model"],
+                "provider": item["provider"],
+                "fallback": item["fallback"],
+                "text": item["text"],
+            }
         return {"status": "ok", "model": model, "text": ask(key, prompt)}
-    except Exception as error:  # advisory path must never block deterministic analysis
+    except Exception as error:
         return {
             "status": "error",
             "model": model,
@@ -198,9 +286,13 @@ def render_markdown(result: dict[str, Any]) -> str:
         "> Advisory only: Diese Modellantworten aktivieren keine Decoder-Regel und erzeugen keine BLE-Schreibbefehle.",
         "",
     ]
-    for key, title in (("gemini", "Gemini 3.7 Flash"), ("glm", "GLM-5.3")):
+    for key, title in (("gemini", "Gemini 3.7 Flash"), ("glm", "GLM")):
         item = result["providers"][key]
         lines.extend([f"## {title}", "", f"Status: `{item['status']}`", ""])
+        if item.get("model"):
+            lines.extend([f"Modell: `{item['model']}`", ""])
+        if item.get("fallback"):
+            lines.extend(["Kostenloser GLM-Fallback aktiv.", ""])
         if item.get("text"):
             lines.extend([item["text"], ""])
         elif item.get("error"):
