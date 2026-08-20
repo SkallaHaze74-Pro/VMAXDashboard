@@ -4,111 +4,7 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import kotlin.math.round
-
-data class AdaptiveProfileSnapshot(
-    val revision: String = "",
-    val ruleCount: Int = 0,
-    val confirmedRuleCount: Int = 0,
-    val generatedAtMs: Long = 0L,
-    val source: String = "Noch kein KI-Profil",
-    val signals: Set<String> = emptySet(),
-    val cloudRuleCount: Int = 0,
-    val localRuleCount: Int = 0,
-    val confidenceSummary: String = "Noch keine Vertrauensdaten"
-)
-
-data class AdaptiveDecodedTelemetry(
-    val batteryPercent: Int? = null,
-    val speedKmh: Double? = null,
-    val voltageV: Double? = null,
-    val currentA: Double? = null,
-    val powerW: Double? = null,
-    val motorTemperatureC: Double? = null,
-    val batteryTemperatureC: Double? = null,
-    val tripDistanceKm: Double? = null,
-    val odometerKm: Double? = null,
-    val brakeActive: Boolean? = null,
-    val leftIndicator: Boolean? = null,
-    val rightIndicator: Boolean? = null,
-    val lightOn: Boolean? = null,
-    val lockActive: Boolean? = null,
-    val charging: Boolean? = null,
-    val signalConfidence: Map<String, String> = emptyMap(),
-    val signalSources: Map<String, String> = emptyMap(),
-    val signalChannels: Map<String, String> = emptyMap()
-)
-
-private data class AdaptiveRule(
-    val id: String,
-    val signal: String,
-    val channel: String,
-    val offset: Int,
-    val width: Int,
-    val encoding: String,
-    val scale: Double,
-    val bias: Double,
-    val activeValue: Long?,
-    val inactiveValue: Long?,
-    val confidence: Int,
-    val observations: Int,
-    val status: String,
-    val source: String
-)
-
-private data class DecodedCandidate(
-    val signal: String,
-    val value: Any,
-    val confidenceLabel: String,
-    val sourceLabel: String,
-    val channel: String,
-    val priority: Int
-)
-
-internal fun shouldInstallCloudProfile(
-    incomingGeneratedAtMs: Long,
-    currentGeneratedAtMs: Long,
-    usableRuleCount: Int
-): Boolean = usableRuleCount > 0 && incomingGeneratedAtMs >= currentGeneratedAtMs
-
-internal fun isActivatableAdaptiveRule(status: String, confidence: Int): Boolean =
-    status == "confirmed" && confidence >= 92
-
-private val ADAPTIVE_BOOLEAN_SIGNALS = setOf(
-    "brakeActive", "leftIndicator", "rightIndicator", "lightOn", "lockActive", "charging"
-)
-
-internal fun isSemanticallyUsableAdaptiveRule(
-    signal: String,
-    status: String,
-    confidence: Int,
-    observations: Int,
-    offset: Int,
-    width: Int,
-    encoding: String,
-    scale: Double,
-    bias: Double,
-    activeValue: Long?,
-    inactiveValue: Long?
-): Boolean {
-    if (!isActivatableAdaptiveRule(status, confidence) || observations <= 0) return false
-    if (width !in 1..4 || offset !in 0..(4_096 - width)) return false
-    if (!scale.isFinite() || !bias.isFinite()) return false
-    return if (signal in ADAPTIVE_BOOLEAN_SIGNALS) {
-        activeValue != null && inactiveValue != null && activeValue != inactiveValue &&
-            rawValueFitsEncoding(activeValue, encoding) && rawValueFitsEncoding(inactiveValue, encoding)
-    } else {
-        scale != 0.0
-    }
-}
-
-private fun rawValueFitsEncoding(value: Long, encoding: String): Boolean = when (encoding) {
-    "u8" -> value in 0L..0xFFL
-    "u16be", "u16le" -> value in 0L..0xFFFFL
-    "s16be", "s16le" -> value in Short.MIN_VALUE.toLong()..Short.MAX_VALUE.toLong()
-    "u32be", "u32le" -> value in 0L..0xFFFFFFFFL
-    else -> false
-}
+import kotlin.math.max
 
 class AdaptiveDecoderProfileStore private constructor(context: Context) {
     companion object {
@@ -158,21 +54,7 @@ class AdaptiveDecoderProfileStore private constructor(context: Context) {
         val rules = root.optJSONArray("rules") ?: JSONArray()
         require(rules.length() <= 500) { "Decoder-AI-Profil enthält zu viele Regeln" }
         val parsedRules = parseRules(root, "cloud-consensus")
-        val activatableRuleCount = parsedRules.count {
-            isSemanticallyUsableAdaptiveRule(
-                signal = it.signal,
-                status = it.status,
-                confidence = it.confidence,
-                observations = it.observations,
-                offset = it.offset,
-                width = it.width,
-                encoding = it.encoding,
-                scale = it.scale,
-                bias = it.bias,
-                activeValue = it.activeValue,
-                inactiveValue = it.inactiveValue
-            )
-        }
+        val activatableRuleCount = parsedRules.count { isSemanticallyUsableAdaptiveRule(it) }
         val existingGeneratedAt = readRoot(cloudFile)?.optLong("generatedAtMs", 0L) ?: 0L
         val incomingGeneratedAt = root.optLong("generatedAtMs", 0L)
         require(shouldInstallCloudProfile(incomingGeneratedAt, existingGeneratedAt, activatableRuleCount)) {
@@ -199,6 +81,9 @@ class AdaptiveDecoderProfileStore private constructor(context: Context) {
             val inactive: Long,
             val confidence: Int,
             val observations: Int,
+            val sessionCount: Int,
+            val consistentPairCount: Int,
+            val conflictCount: Int,
             val label: String
         )
 
@@ -222,6 +107,9 @@ class AdaptiveDecoderProfileStore private constructor(context: Context) {
                 inactive = inactive,
                 confidence = item.optInt("confidence", 0).coerceIn(0, 99),
                 observations = item.optInt("observations", 1).coerceAtLeast(1),
+                sessionCount = item.optInt("sessionCount", 1).coerceAtLeast(1),
+                consistentPairCount = item.optInt("consistentPairCount", 1).coerceAtLeast(1),
+                conflictCount = item.optInt("conflictCount", 0).coerceAtLeast(0),
                 label = label
             )
         }
@@ -231,16 +119,26 @@ class AdaptiveDecoderProfileStore private constructor(context: Context) {
             val pairWeights = linkedMapOf<Pair<Long, Long>, Int>()
             var total = 0
             var weightedConfidence = 0
+            var totalSessions = 0
+            var totalConflicts = 0
+            var totalConsistent = 0
             items.forEach { item ->
-                val weight = item.observations.coerceAtLeast(1)
+                val weight = max(item.observations, item.sessionCount)
                 val pair = item.active to item.inactive
                 pairWeights[pair] = (pairWeights[pair] ?: 0) + weight
                 total += weight
                 weightedConfidence += item.confidence * weight
+                totalSessions += item.sessionCount
+                totalConflicts += item.conflictCount
+                totalConsistent += item.consistentPairCount
             }
             val winner = pairWeights.maxByOrNull { it.value } ?: return@forEach
             val consistency = winner.value.toDouble() / total.coerceAtLeast(1)
-            val confidence = if (total > 0) weightedConfidence / total else 0
+            val averagedConfidence = if (total > 0) weightedConfidence / total else 0
+            val sessionBoost = minOf(totalSessions, 6)
+            val consistencyBoost = minOf(totalConsistent / items.size.coerceAtLeast(1), 6)
+            val conflictPenalty = minOf(totalConflicts * 3, 15)
+            val confidence = (averagedConfidence + sessionBoost + consistencyBoost - conflictPenalty).coerceIn(0, 99)
             if (winner.value < 2 || confidence < 92 || consistency < 0.80) return@forEach
             rules.put(JSONObject().apply {
                 put("id", "${key.first}:${key.second}:${key.third}:u8")
@@ -251,8 +149,11 @@ class AdaptiveDecoderProfileStore private constructor(context: Context) {
                 put("encoding", "u8")
                 put("activeValue", winner.key.first)
                 put("inactiveValue", winner.key.second)
-                put("confidence", confidence.coerceIn(0, 99))
+                put("confidence", confidence)
                 put("observations", total)
+                put("sessionCount", totalSessions)
+                put("consistentPairCount", totalConsistent)
+                put("conflictCount", totalConflicts)
                 put("status", "confirmed")
                 put("source", "local-learning")
                 put("labels", JSONArray(items.map { it.label }.distinct()))
@@ -276,8 +177,10 @@ class AdaptiveDecoderProfileStore private constructor(context: Context) {
         if (value.isEmpty()) return AdaptiveDecodedTelemetry()
         val matching = activeRules.filter { it.channel == channel.uppercase() }
             .sortedWith(compareByDescending<AdaptiveRule> { it.source == "cloud-consensus" }
+                .thenByDescending { it.sessionCount }
                 .thenByDescending { it.confidence }
-                .thenByDescending { it.observations })
+                .thenByDescending { it.observations }
+                .thenBy { it.conflictCount })
         if (matching.isEmpty()) return AdaptiveDecodedTelemetry()
 
         val candidates = linkedMapOf<String, MutableList<DecodedCandidate>>()
@@ -303,7 +206,7 @@ class AdaptiveDecoderProfileStore private constructor(context: Context) {
                 else -> {
                     val numeric = raw.toDouble() * rule.scale + rule.bias
                     if (!numeric.isFinite() || !plausible(rule.signal, numeric)) return@forEach
-                    val rounded = round(numeric * 1000.0) / 1000.0
+                    val rounded = kotlin.math.round(numeric * 1000.0) / 1000.0
                     val normalized: Any = when (rule.signal) {
                         "batteryPercent" -> rounded.toInt().coerceIn(0, 100)
                         else -> rounded
@@ -352,28 +255,15 @@ class AdaptiveDecoderProfileStore private constructor(context: Context) {
         val localAll = parseRules(localRoot, "local-learning")
         val allRules = cloudAll + localAll
         val confirmed = allRules
-            .filter {
-                isSemanticallyUsableAdaptiveRule(
-                    signal = it.signal,
-                    status = it.status,
-                    confidence = it.confidence,
-                    observations = it.observations,
-                    offset = it.offset,
-                    width = it.width,
-                    encoding = it.encoding,
-                    scale = it.scale,
-                    bias = it.bias,
-                    activeValue = it.activeValue,
-                    inactiveValue = it.inactiveValue
-                ) &&
-                    it.signal in SUPPORTED_SIGNALS
-            }
+            .filter { isSemanticallyUsableAdaptiveRule(it) && it.signal in SUPPORTED_SIGNALS }
             .groupBy { "${it.signal}|${it.channel}|${it.offset}|${it.encoding}" }
             .mapNotNull { (_, values) ->
                 values.maxWithOrNull(
                     compareByDescending<AdaptiveRule> { it.source == "cloud-consensus" }
+                        .thenByDescending { it.sessionCount }
                         .thenByDescending { it.confidence }
                         .thenByDescending { it.observations }
+                        .thenBy { it.conflictCount }
                 )
             }
         activeRules = confirmed
@@ -405,9 +295,6 @@ class AdaptiveDecoderProfileStore private constructor(context: Context) {
         )
     }
 
-    private fun readRoot(file: File): JSONObject? =
-        if (!file.isFile) null else runCatching { JSONObject(file.readText()) }.getOrNull()
-
     private fun parseRules(root: JSONObject?, sourceOverride: String): List<AdaptiveRule> {
         val array = root?.optJSONArray("rules") ?: return emptyList()
         val out = mutableListOf<AdaptiveRule>()
@@ -417,11 +304,9 @@ class AdaptiveDecoderProfileStore private constructor(context: Context) {
             val channel = item.optString("channel").uppercase()
             val encoding = item.optString("encoding")
             val offset = item.optInt("offset", -1)
+            val width = item.optInt("width", widthForEncoding(encoding))
+            if (signal !in SUPPORTED_SIGNALS || channel.isBlank() || offset < 0 || width !in 1..4) continue
             if (encoding !in setOf("u8", "u16be", "u16le", "s16be", "s16le", "u32be", "u32le")) continue
-            val expectedWidth = widthForEncoding(encoding)
-            val width = item.optInt("width", expectedWidth)
-            if (signal !in SUPPORTED_SIGNALS || channel.isBlank() || offset < 0 || width != expectedWidth) continue
-            if (!VmaxDecoderPolicy.isAdaptiveRuleAllowed(signal, channel, offset, encoding)) continue
             out += AdaptiveRule(
                 id = item.optString("id", "$signal:$channel:$offset:$encoding"),
                 signal = signal,
@@ -435,6 +320,9 @@ class AdaptiveDecoderProfileStore private constructor(context: Context) {
                 inactiveValue = item.optLongOrNull("inactiveValue"),
                 confidence = item.optInt("confidence", 0).coerceIn(0, 99),
                 observations = item.optInt("observations", 0).coerceAtLeast(0),
+                sessionCount = item.optInt("sessionCount", 1).coerceAtLeast(1),
+                consistentPairCount = item.optInt("consistentPairCount", 1).coerceAtLeast(1),
+                conflictCount = item.optInt("conflictCount", 0).coerceAtLeast(0),
                 status = item.optString("status", "candidate"),
                 source = sourceOverride
             )
@@ -442,8 +330,57 @@ class AdaptiveDecoderProfileStore private constructor(context: Context) {
         return out
     }
 
+    private fun isSemanticallyUsableAdaptiveRule(rule: AdaptiveRule): Boolean =
+        isActivatableAdaptiveRule(rule.status, rule.confidence) &&
+            isSemanticallyUsableAdaptiveRule(
+                signal = rule.signal,
+                status = rule.status,
+                confidence = rule.confidence,
+                observations = rule.observations,
+                offset = rule.offset,
+                width = rule.width,
+                encoding = rule.encoding,
+                scale = rule.scale,
+                bias = rule.bias,
+                activeValue = rule.activeValue,
+                inactiveValue = rule.inactiveValue
+            ) &&
+            rule.sessionCount >= 1 && rule.consistentPairCount >= 1 && rule.conflictCount >= 0
+
+    private fun priority(rule: AdaptiveRule): Int {
+        val sourcePriority = when (rule.source) {
+            "cloud-consensus" -> 300
+            "local-learning" -> 150
+            else -> 0
+        }
+        return sourcePriority + rule.confidence + minOf(rule.observations, 20) + minOf(rule.sessionCount * 3, 18) + minOf(rule.consistentPairCount, 12) - minOf(rule.conflictCount * 4, 20)
+    }
+
+    private fun confidenceLabel(rule: AdaptiveRule): String = when {
+        rule.confidence >= 97 && rule.sessionCount >= 3 && rule.conflictCount == 0 -> "hoch"
+        rule.confidence >= 94 && rule.sessionCount >= 2 && rule.conflictCount <= 1 -> "gut"
+        rule.confidence >= 92 -> "vorsichtig"
+        else -> "experimentell"
+    }
+
+    private fun sourceLabel(rule: AdaptiveRule): String = when (rule.source) {
+        "cloud-consensus" -> "GitHub-Konsens"
+        "local-learning" -> "Lokales Lernen (${rule.sessionCount} Fahrten)"
+        else -> rule.source
+    }
+
+    private fun confidenceWeight(label: String): Int = when (label) {
+        "hoch" -> 4
+        "gut" -> 3
+        "vorsichtig" -> 2
+        else -> 1
+    }
+
+    private fun readRoot(file: File): JSONObject? =
+        if (!file.isFile) null else runCatching { JSONObject(file.readText()) }.getOrNull()
+
     private fun readRaw(rule: AdaptiveRule, value: ByteArray): Long? {
-        if (rule.offset < 0 || rule.width <= 0 || rule.offset > value.size - rule.width) return null
+        if (rule.offset < 0 || rule.offset + rule.width > value.size) return null
         val bytes = value.copyOfRange(rule.offset, rule.offset + rule.width)
         if (bytes.all { (it.toInt() and 0xFF) == 0xFF }) return null
         fun u8(index: Int): Int = bytes[index].toInt() and 0xFF
@@ -503,35 +440,6 @@ class AdaptiveDecoderProfileStore private constructor(context: Context) {
         "u16be", "u16le", "s16be", "s16le" -> 2
         "u32be", "u32le" -> 4
         else -> 0
-    }
-
-    private fun confidenceLabel(rule: AdaptiveRule): String = when {
-        rule.confidence >= 97 -> "hoch"
-        rule.confidence >= 94 -> "gut"
-        rule.confidence >= 92 -> "vorsichtig"
-        else -> "experimentell"
-    }
-
-    private fun sourceLabel(rule: AdaptiveRule): String = when (rule.source) {
-        "cloud-consensus" -> "GitHub-Konsens"
-        "local-learning" -> "Lokales Lernen"
-        else -> rule.source
-    }
-
-    private fun priority(rule: AdaptiveRule): Int {
-        val sourcePriority = when (rule.source) {
-            "cloud-consensus" -> 200
-            "local-learning" -> 100
-            else -> 0
-        }
-        return sourcePriority + rule.confidence + rule.observations.coerceAtMost(20)
-    }
-
-    private fun confidenceWeight(label: String): Int = when (label) {
-        "hoch" -> 4
-        "gut" -> 3
-        "vorsichtig" -> 2
-        else -> 1
     }
 
     private fun JSONObject.optLongOrNull(name: String): Long? =
