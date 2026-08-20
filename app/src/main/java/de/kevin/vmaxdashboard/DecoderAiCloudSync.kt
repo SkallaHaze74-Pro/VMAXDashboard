@@ -86,6 +86,8 @@ class DecoderAiCloudSync private constructor(context: Context) {
                         "✓ Decoder AI ${snapshot.revision.ifBlank { "aktuell" }} • " +
                             "${snapshot.confirmedRuleCount}/${snapshot.ruleCount} Regeln bestätigt"
                     )
+                    ExternalAiAutoReviewCoordinator.get(appContext)
+                        .requestNow("Decoder-Profil aktualisiert")
                 }
                 404 -> setStatus("Decoder AI wartet auf die erste abgeschlossene GitHub-Auswertung")
                 else -> setStatus("Decoder AI GitHub-Fehler $code")
