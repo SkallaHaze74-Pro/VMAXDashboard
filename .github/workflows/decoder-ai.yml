@@ -127,15 +127,16 @@ jobs:
             --output decoder-ai/decoder_profile.json \
             --report decoder-ai/analysis_report.md
 
-      - name: Gemini und GLM als unabhängige Zweitprüfung
+      - name: GPT, Gemini und GLM als KI-Team-Zweitprüfung
         if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data')
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           set -euo pipefail
-          if [ -z "${GEMINI_API_KEY}${ZHIPU_API_KEY}" ]; then
-            echo 'Gemini/GLM Secrets noch nicht gesetzt – deterministische Decoder-AI läuft ohne externe Zweitprüfung weiter.'
+          if [ -z "${GEMINI_API_KEY}${ZHIPU_API_KEY}${OPENAI_API_KEY}" ]; then
+            echo 'Noch keine externen KI-Secrets gesetzt – deterministische Decoder-AI läuft unverändert weiter.'
             exit 0
           fi
           python "$ANALYZER_ROOT/tools/decoder_ai/provider_review.py" \
