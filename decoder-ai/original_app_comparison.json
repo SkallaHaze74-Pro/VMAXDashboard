@@ -122,8 +122,8 @@
       "mappingCandidates": [],
       "libbleEvidenceKey": "1505.speed_kmh",
       "libbleEvidence": {
-        "samples": 1268,
-        "comparisons_to_app_live": 1268,
+        "samples": 1349,
+        "comparisons_to_app_live": 1349,
         "match_percent": 100.0,
         "mae_to_app_live": 0.0,
         "evidence_type": "same_raw_app_export_layout_consistency",
@@ -219,8 +219,8 @@
       "mappingCandidates": [],
       "libbleEvidenceKey": "1509.voltage_V",
       "libbleEvidence": {
-        "samples": 1285,
-        "comparisons_to_app_live": 1285,
+        "samples": 1365,
+        "comparisons_to_app_live": 1365,
         "match_percent": 100.0,
         "mae_to_app_live": 0.0,
         "evidence_type": "same_raw_app_export_layout_consistency",
@@ -250,8 +250,8 @@
       "mappingCandidates": [],
       "libbleEvidenceKey": "1509.soc_percent",
       "libbleEvidence": {
-        "samples": 1285,
-        "comparisons_to_app_live": 1285,
+        "samples": 1365,
+        "comparisons_to_app_live": 1365,
         "match_percent": 100.0,
         "mae_to_app_live": 0.0,
         "evidence_type": "same_raw_app_export_layout_consistency",
@@ -371,8 +371,8 @@
       "mappingCandidates": [],
       "libbleEvidenceKey": "1509.current_A",
       "libbleEvidence": {
-        "samples": 1285,
-        "comparisons_to_app_live": 1285,
+        "samples": 1365,
+        "comparisons_to_app_live": 1365,
         "match_percent": 100.0,
         "mae_to_app_live": 0.0,
         "evidence_type": "same_raw_app_export_layout_consistency",
