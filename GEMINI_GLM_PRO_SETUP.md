@@ -3,7 +3,7 @@
 VMAXDashboard unterstützt optional zwei externe KI-Prüfer:
 
 - **Gemini 3.7 Flash** – Standard für schnelle und tiefe Decoder-/Code-Prüfungen.
-- **GLM-5.3** – unabhängige Zweitmeinung und Fallback.
+- **GLM-5.3** – unabhängige Zweitmeinung; bei fehlendem Guthaben fällt die App automatisch auf kostenlose GLM-Flash-Modelle zurück.
 
 Die bestehende deterministische Decoder-AI bleibt maßgeblich. Externe Modellantworten sind **nur advisory** und aktivieren keine Decoder-Regel und senden keine BLE-Schreibbefehle.
 
@@ -13,23 +13,34 @@ Gemini läuft über die **Interactions API** auf dem stabilen `v1`-Endpunkt:
 
 `https://generativelanguage.googleapis.com/v1/interactions`
 
-VMAXDashboard verwendet `gemini-3.7-flash`, eine Systemanweisung, `thinking_level=high` und liest die neue `steps`-Antwortstruktur aus. Für Decoder-Prüfungen wird derzeit `store=false` gesetzt, damit keine serverseitige Gesprächshistorie benötigt wird. Die Interactions-Basis erlaubt später trotzdem zustandsbehaftete Gespräche, Tools, strukturierte Ausgaben und weitere Agent-Funktionen.
+VMAXDashboard verwendet `gemini-3.7-flash`, eine Systemanweisung, `thinking_level=high` und liest die neue `steps`-Antwortstruktur aus. Für Decoder-Prüfungen wird derzeit `store=false` gesetzt, damit keine serverseitige Gesprächshistorie benötigt wird.
 
 Für neue Gemini-Schlüssel den von Google AI Studio erzeugten API-Key verwenden. Die App sendet ihn ausschließlich im `x-goog-api-key`-Header und speichert ihn verschlüsselt im Android Keystore.
 
-## GLM-5.3: Z.ai + BigModel automatisch
+## GLM: Z.ai + BigModel automatisch
 
-VMAXDashboard unterstützt jetzt beide offiziellen Plattformen:
+VMAXDashboard unterstützt beide Plattformen:
 
 1. **Z.ai / international** – `https://api.z.ai/api/paas/v4/chat/completions`
 2. **BigModel / China** – `https://open.bigmodel.cn/api/paas/v4/chat/completions`
 
-Die App versucht zuerst Z.ai. Wird der Schlüssel dort wegen Plattform-/Auth-Zuordnung nicht akzeptiert, wird automatisch BigModel probiert. Damit kann derselbe App-Build mit einem Z.ai- oder BigModel-Key verwendet werden.
+Die App versucht für GLM-5.3 zuerst Z.ai. Wird der Schlüssel dort wegen Plattform-/Auth-Zuordnung nicht akzeptiert, wird automatisch BigModel probiert.
 
 Für GLM-5.3 wird Deep Thinking explizit aktiviert:
 
 - `thinking.type = enabled`
 - `reasoning_effort = max`
+
+### Kostenloser GLM-Fallback
+
+Wenn GLM-5.3 wegen `429`, fehlendem Guthaben oder fehlendem Ressourcenpaket nicht nutzbar ist, versucht VMAXDashboard automatisch über Z.ai:
+
+1. `glm-4.7-flash` – kostenlos
+2. `glm-4.5-flash` – kostenloser zweiter Fallback
+
+Für diese beiden Flash-Modelle ist in Z.ai **keine zusätzliche Aktivierung und kein separates Ressourcenpaket nötig**. Ein vorhandener Z.ai-API-Key genügt. Es können weiterhin normale Rate-Limits des kostenlosen Angebots gelten.
+
+Die App zeigt in der letzten automatischen Analyse das tatsächlich verwendete Modell an, damit erkennbar ist, ob GLM-5.3 oder ein kostenloser Fallback geantwortet hat.
 
 ### Wichtig zum GLM-Key
 
@@ -49,14 +60,13 @@ Nicht verwenden:
 
 Die App prüft beim Speichern, ob beide Teile mit einem Punkt vorhanden sind.
 
-## Modi in der Android-App
+## Automatische Kette in der Android-App
 
-Im Bildschirm **GitHub & Decoder AI** stehen vier Modi bereit:
+Im Alltag arbeitet die App möglichst kostenfrei:
 
-1. **Gemini 3.7 Flash** – nur Gemini.
-2. **GLM-5.3** – nur GLM über Z.ai/BigModel Auto-Erkennung.
-3. **Auto • Gemini → GLM** – zuerst Gemini, bei Fehler automatisch GLM. Empfohlen für den Alltag und zum Sparen von Kontingent/Kosten.
-4. **Pro Duo • Gemini + GLM** – beide Modelle prüfen unabhängig; anschließend wird eine gemeinsame Endanalyse erzeugt. Für schwierige Decoder-, Messfahrt- oder Codefragen.
+`Gemini 3.7 Flash → Gemini Quota-Fallback → GLM-5.3 → GLM-4.7-Flash (gratis) → GLM-4.5-Flash (gratis)`
+
+Bei einer neuen Messfahrt oder einem geänderten Decoder-Profil läuft diese Zweitprüfung automatisch. Wiederholte Hintergrundprüfungen werden über einen Evidenz-Fingerprint begrenzt, damit keine unnötigen API-Aufrufe entstehen.
 
 ## API-Keys auf dem Android-Gerät einrichten
 
@@ -64,8 +74,7 @@ Im Bildschirm **GitHub & Decoder AI** stehen vier Modi bereit:
 2. **GitHub & Decoder AI** öffnen.
 3. Gemini-Key in **Gemini API-Key** eintragen und **GEMINI SPEICHERN** drücken.
 4. Den vollständig kopierten Z.ai-/BigModel-Key (`ID.secret`) in **GLM-5.3 API-Key** eintragen und **GLM SPEICHERN** drücken.
-5. Für den normalen Betrieb **Auto • Gemini → GLM** verwenden.
-6. Für eine besonders gründliche Gegenprüfung **Pro Duo • Gemini + GLM** verwenden.
+5. Die **Automatische KI-Zweitprüfung** eingeschaltet lassen.
 
 Die Keys werden mit **Android Keystore + AES/GCM** verschlüsselt auf dem Gerät gespeichert. Sie stehen nicht im Quellcode und werden nicht in das GitHub-Repository geschrieben.
 
@@ -82,7 +91,7 @@ folgende Secrets anlegen:
 - `GEMINI_API_KEY`
 - `ZHIPU_API_KEY`
 
-`ZHIPU_API_KEY` kann jetzt ein Z.ai- oder BigModel-Key sein; auch der GitHub-Prüfer versucht automatisch Z.ai und bei einer Plattform-/Auth-Abweichung BigModel.
+`ZHIPU_API_KEY` kann ein Z.ai- oder BigModel-Key sein. Der GitHub-Prüfer nutzt dieselbe Z.ai/BigModel- und kostenlose GLM-Fallback-Logik.
 
 Sind keine der beiden Secrets gesetzt, läuft die vorhandene deterministische Decoder-AI unverändert weiter. Ist nur ein Secret gesetzt, wird nur dieser Provider verwendet.
 
@@ -101,6 +110,6 @@ Die externe KI ist technisch vom `BluetoothGatt` getrennt. Sie kann keine Scoote
 
 ## Empfohlener Betrieb
 
-- **Auto** für normale Fragen und möglichst geringe Nutzung.
-- **Pro Duo** nur bei widersprüchlichen Decoder-Kandidaten, schwierigen Messfahrten oder wichtigen Code-Reviews.
+- Automatik eingeschaltet lassen.
+- Z.ai-Key einmal speichern; für die kostenlosen Flash-Fallbacks ist keine weitere Z.ai-Aktivierung nötig.
 - Neue Decoder-Zuordnungen erst übernehmen, wenn lokale Messdaten und die bestehende Konsenslogik sie ausreichend bestätigen.
