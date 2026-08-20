@@ -38,8 +38,9 @@ class ExternalAiClient(
         const val GEMINI_MODEL = "gemini-3.7-flash"
         const val GLM_MODEL = "glm-5.3"
 
+        // Interactions API is the GA/recommended Gemini API for new projects.
         private const val GEMINI_URL =
-            "https://generativelanguage.googleapis.com/v1beta/models/$GEMINI_MODEL:generateContent"
+            "https://generativelanguage.googleapis.com/v1/interactions"
         private const val GLM_URL =
             "https://open.bigmodel.cn/api/paas/v4/chat/completions"
         private const val MAX_PROMPT_CHARS = 30_000
@@ -193,29 +194,16 @@ class ExternalAiClient(
     private fun askGemini(payload: String, key: String? = secrets.geminiKeyOrNull()): String {
         val apiKey = key ?: error("Gemini-Key fehlt")
         val body = JSONObject()
+            .put("model", GEMINI_MODEL)
+            .put("system_instruction", SYSTEM_PROMPT)
+            .put("input", payload)
+            // The app does not need server-side history yet; keep decoder data stateless.
+            .put("store", false)
             .put(
-                "system_instruction",
-                JSONObject().put(
-                    "parts",
-                    JSONArray().put(JSONObject().put("text", SYSTEM_PROMPT))
-                )
-            )
-            .put(
-                "contents",
-                JSONArray().put(
-                    JSONObject()
-                        .put("role", "user")
-                        .put("parts", JSONArray().put(JSONObject().put("text", payload)))
-                )
-            )
-            .put(
-                "generationConfig",
+                "generation_config",
                 JSONObject()
-                    .put("maxOutputTokens", 4096)
-                    .put(
-                        "thinkingConfig",
-                        JSONObject().put("thinkingLevel", "high")
-                    )
+                    .put("max_output_tokens", 4096)
+                    .put("thinking_level", "high")
             )
 
         val data = postJson(
@@ -224,18 +212,30 @@ class ExternalAiClient(
             body = body,
             provider = "Gemini"
         )
-        val candidates = data.optJSONArray("candidates")
-            ?: error("Gemini hat keine Kandidaten geliefert")
-        val content = candidates.optJSONObject(0)?.optJSONObject("content")
-            ?: error("Gemini-Antwort ist leer")
-        val parts = content.optJSONArray("parts") ?: error("Gemini-Antwort enthält keinen Text")
+        return extractGeminiInteractionText(data)
+    }
+
+    private fun extractGeminiInteractionText(data: JSONObject): String {
+        when (val status = data.optString("status")) {
+            "failed", "cancelled", "budget_exceeded" ->
+                error("Gemini-Interaktion beendet mit Status $status")
+        }
+
+        val steps = data.optJSONArray("steps")
+            ?: error("Gemini-Interaktion enthält keine Ausgabeschritte")
         val text = buildString {
-            for (index in 0 until parts.length()) {
-                val part = parts.optJSONObject(index) ?: continue
-                val value = part.optString("text")
-                if (value.isNotBlank()) {
-                    if (isNotEmpty()) appendLine()
-                    append(value)
+            for (stepIndex in 0 until steps.length()) {
+                val step = steps.optJSONObject(stepIndex) ?: continue
+                if (step.optString("type") != "model_output") continue
+                val content = step.optJSONArray("content") ?: continue
+                for (contentIndex in 0 until content.length()) {
+                    val block = content.optJSONObject(contentIndex) ?: continue
+                    if (block.optString("type") != "text") continue
+                    val value = block.optString("text")
+                    if (value.isNotBlank()) {
+                        if (isNotEmpty()) appendLine()
+                        append(value)
+                    }
                 }
             }
         }.trim()

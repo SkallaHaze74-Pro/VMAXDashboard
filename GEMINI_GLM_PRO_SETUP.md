@@ -7,6 +7,16 @@ VMAXDashboard unterstützt optional zwei externe KI-Prüfer:
 
 Die bestehende deterministische Decoder-AI bleibt maßgeblich. Externe Modellantworten sind **nur advisory** und aktivieren keine Decoder-Regel und senden keine BLE-Schreibbefehle.
 
+## Gemini-Anbindung
+
+Gemini läuft über die **Interactions API** auf dem stabilen `v1`-Endpunkt:
+
+`https://generativelanguage.googleapis.com/v1/interactions`
+
+VMAXDashboard verwendet `gemini-3.7-flash`, eine Systemanweisung, `thinking_level=high` und liest die neue `steps`-Antwortstruktur aus. Für Decoder-Prüfungen wird derzeit `store=false` gesetzt, damit keine serverseitige Gesprächshistorie benötigt wird. Die Interactions-Basis erlaubt später trotzdem zustandsbehaftete Gespräche, Tools, strukturierte Ausgaben und weitere Agent-Funktionen.
+
+Für neue Gemini-Schlüssel den von Google AI Studio standardmäßig erzeugten **Authorization API Key** verwenden. Die App sendet ihn ausschließlich im `x-goog-api-key`-Header und speichert ihn verschlüsselt im Android Keystore.
+
 ## Modi in der Android-App
 
 Im Bildschirm **GitHub & Decoder AI** stehen vier Modi bereit:
@@ -41,6 +51,8 @@ folgende Secrets anlegen:
 - `ZHIPU_API_KEY`
 
 Sind keine der beiden Secrets gesetzt, läuft die vorhandene deterministische Decoder-AI unverändert weiter. Ist nur ein Secret gesetzt, wird nur dieser Provider verwendet.
+
+Auch der GitHub-Actions-Prüfer verwendet für Gemini die stabile **Interactions API v1** und die neue `steps`-Antwortstruktur.
 
 Die externe Prüfung erzeugt optional:
 

@@ -34,6 +34,27 @@ class ProviderReviewTest(unittest.TestCase):
             self.assertTrue(text.startswith("x" * 50))
             self.assertIn("gekürzt", text)
 
+    def test_extract_gemini_text_reads_interactions_steps(self):
+        data = {
+            "status": "completed",
+            "steps": [
+                {"type": "google_search_call", "arguments": {"queries": ["ignored"]}},
+                {
+                    "type": "model_output",
+                    "content": [
+                        {"type": "text", "text": "Teil eins"},
+                        {"type": "text", "text": "Teil zwei"},
+                    ],
+                },
+            ],
+        }
+        text = provider_review.extract_gemini_text(data)
+        self.assertEqual("Teil eins\nTeil zwei", text)
+
+    def test_extract_gemini_text_rejects_failed_interaction(self):
+        with self.assertRaisesRegex(RuntimeError, "Status failed"):
+            provider_review.extract_gemini_text({"status": "failed", "steps": []})
+
     def test_missing_provider_key_is_non_fatal(self):
         result = provider_review.run_provider(
             "Gemini",
