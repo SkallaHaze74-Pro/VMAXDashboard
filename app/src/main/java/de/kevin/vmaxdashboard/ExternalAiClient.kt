@@ -48,7 +48,9 @@ class ExternalAiClient(
 
         private const val GEMINI_URL =
             "https://generativelanguage.googleapis.com/v1/interactions"
-        private const val GLM_URL =
+        private const val ZAI_GLM_URL =
+            "https://api.z.ai/api/paas/v4/chat/completions"
+        private const val BIGMODEL_GLM_URL =
             "https://open.bigmodel.cn/api/paas/v4/chat/completions"
         private const val MAX_PROMPT_CHARS = 30_000
         private const val MAX_CONTEXT_CHARS = 18_000
@@ -102,7 +104,7 @@ class ExternalAiClient(
 
             ExternalAiMode.GLM -> ExternalAiAnswer(
                 mode = mode,
-                provider = "Zhipu AI",
+                provider = "Z.ai / BigModel",
                 model = GLM_MODEL,
                 text = askGlm(payload)
             )
@@ -154,7 +156,7 @@ class ExternalAiClient(
 
         return ExternalAiAnswer(
             mode = ExternalAiMode.AUTO,
-            provider = "Zhipu AI",
+            provider = "Z.ai / BigModel",
             model = GLM_MODEL,
             text = askGlm(payload, glmKey ?: error("GLM-Key fehlt")),
             fallbackUsed = geminiKey != null
@@ -179,7 +181,7 @@ class ExternalAiClient(
         if (gemini.isFailure) {
             return ExternalAiAnswer(
                 mode = ExternalAiMode.PRO_DUO,
-                provider = "Zhipu AI • Duo-Fallback",
+                provider = "Z.ai / BigModel • Duo-Fallback",
                 model = GLM_MODEL,
                 text = "Gemini-Zweitprüfung war nicht verfügbar.\n\n${glm.getOrThrow()}",
                 fallbackUsed = true
@@ -282,6 +284,8 @@ class ExternalAiClient(
         val body = JSONObject()
             .put("model", GLM_MODEL)
             .put("stream", false)
+            .put("thinking", JSONObject().put("type", "enabled"))
+            .put("reasoning_effort", "max")
             .put(
                 "messages",
                 JSONArray()
@@ -289,12 +293,7 @@ class ExternalAiClient(
                     .put(JSONObject().put("role", "user").put("content", payload))
             )
 
-        val data = postJsonWithRetry(
-            url = GLM_URL,
-            headers = mapOf("Authorization" to "Bearer $apiKey"),
-            body = body,
-            provider = "GLM"
-        )
+        val data = postGlmJsonWithEndpointFallback(apiKey, body)
         val text = data.optJSONArray("choices")
             ?.optJSONObject(0)
             ?.optJSONObject("message")
@@ -303,6 +302,33 @@ class ExternalAiClient(
             .trim()
         require(text.isNotBlank()) { "GLM hat keinen Antworttext geliefert" }
         return text
+    }
+
+    private fun postGlmJsonWithEndpointFallback(apiKey: String, body: JSONObject): JSONObject {
+        val headers = mapOf(
+            "Authorization" to "Bearer $apiKey",
+            "Accept-Language" to "de-DE,de;q=0.9,en;q=0.8"
+        )
+        val zai = runCatching {
+            postJsonWithRetry(
+                url = ZAI_GLM_URL,
+                headers = headers,
+                body = body,
+                provider = "GLM/Z.ai"
+            )
+        }
+        if (zai.isSuccess) return zai.getOrThrow()
+
+        val firstError = zai.exceptionOrNull()
+        val shouldTryBigModel = (firstError as? ProviderHttpException)?.code in setOf(401, 403, 404)
+        if (!shouldTryBigModel) throw firstError ?: IOException("GLM/Z.ai-Anfrage fehlgeschlagen")
+
+        return postJsonWithRetry(
+            url = BIGMODEL_GLM_URL,
+            headers = headers,
+            body = body,
+            provider = "GLM/BigModel"
+        )
     }
 
     private fun postJsonWithRetry(

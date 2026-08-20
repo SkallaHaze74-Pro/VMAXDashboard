@@ -38,7 +38,7 @@ class ExternalAiSecretsStore(context: Context) {
 
     fun saveGeminiKey(value: String) = saveEncrypted(GEMINI, normalize(value, "Gemini"))
 
-    fun saveGlmKey(value: String) = saveEncrypted(GLM, normalize(value, "GLM"))
+    fun saveGlmKey(value: String) = saveEncrypted(GLM, normalizeGlm(value))
 
     fun clearGeminiKey() = clear(GEMINI)
 
@@ -52,6 +52,15 @@ class ExternalAiSecretsStore(context: Context) {
         val normalized = value.trim()
         require(normalized.length >= 12) { "$provider API-Key ist zu kurz" }
         require(!normalized.any { it.isWhitespace() }) { "$provider API-Key enthält Leerzeichen" }
+        return normalized
+    }
+
+    private fun normalizeGlm(value: String): String {
+        val normalized = normalize(value, "GLM")
+        val parts = normalized.split('.', limit = 2)
+        require(parts.size == 2 && parts[0].isNotBlank() && parts[1].isNotBlank()) {
+            "GLM API-Key muss vollständig als API_KEY_ID.secret eingefügt werden"
+        }
         return normalized
     }
 
