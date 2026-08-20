@@ -55,6 +55,45 @@ class ProviderReviewTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Status failed"):
             provider_review.extract_gemini_text({"status": "failed", "steps": []})
 
+    def test_glm_prefers_zai_endpoint(self):
+        calls = []
+        original = provider_review.post_json
+
+        def fake_post(url, headers, payload):
+            calls.append(url)
+            return {"choices": [{"message": {"content": "Z.ai ok"}}]}
+
+        provider_review.post_json = fake_post
+        try:
+            text = provider_review.ask_glm("id.secret", "prompt")
+        finally:
+            provider_review.post_json = original
+
+        self.assertEqual("Z.ai ok", text)
+        self.assertEqual([provider_review.ZAI_GLM_URL], calls)
+
+    def test_glm_falls_back_to_bigmodel_on_auth_mismatch(self):
+        calls = []
+        original = provider_review.post_json
+
+        def fake_post(url, headers, payload):
+            calls.append(url)
+            if url == provider_review.ZAI_GLM_URL:
+                raise provider_review.ProviderHttpError(401, "wrong platform")
+            return {"choices": [{"message": {"content": "BigModel ok"}}]}
+
+        provider_review.post_json = fake_post
+        try:
+            text = provider_review.ask_glm("id.secret", "prompt")
+        finally:
+            provider_review.post_json = original
+
+        self.assertEqual("BigModel ok", text)
+        self.assertEqual(
+            [provider_review.ZAI_GLM_URL, provider_review.BIGMODEL_GLM_URL],
+            calls,
+        )
+
     def test_missing_provider_key_is_non_fatal(self):
         result = provider_review.run_provider(
             "Gemini",
