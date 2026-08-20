@@ -60,37 +60,100 @@ class ProviderReviewTest(unittest.TestCase):
         original = provider_review.post_json
 
         def fake_post(url, headers, payload):
-            calls.append(url)
+            calls.append((url, payload["model"]))
             return {"choices": [{"message": {"content": "Z.ai ok"}}]}
 
         provider_review.post_json = fake_post
         try:
-            text = provider_review.ask_glm("id.secret", "prompt")
+            result = provider_review.ask_glm_with_meta("id.secret", "prompt")
         finally:
             provider_review.post_json = original
 
-        self.assertEqual("Z.ai ok", text)
-        self.assertEqual([provider_review.ZAI_GLM_URL], calls)
+        self.assertEqual("Z.ai ok", result["text"])
+        self.assertEqual(provider_review.GLM_MODEL, result["model"])
+        self.assertFalse(result["fallback"])
+        self.assertEqual([(provider_review.ZAI_GLM_URL, provider_review.GLM_MODEL)], calls)
 
     def test_glm_falls_back_to_bigmodel_on_auth_mismatch(self):
         calls = []
         original = provider_review.post_json
 
         def fake_post(url, headers, payload):
-            calls.append(url)
+            calls.append((url, payload["model"]))
             if url == provider_review.ZAI_GLM_URL:
                 raise provider_review.ProviderHttpError(401, "wrong platform")
             return {"choices": [{"message": {"content": "BigModel ok"}}]}
 
         provider_review.post_json = fake_post
         try:
-            text = provider_review.ask_glm("id.secret", "prompt")
+            result = provider_review.ask_glm_with_meta("id.secret", "prompt")
         finally:
             provider_review.post_json = original
 
-        self.assertEqual("BigModel ok", text)
+        self.assertEqual("BigModel ok", result["text"])
+        self.assertEqual("BigModel", result["provider"])
         self.assertEqual(
-            [provider_review.ZAI_GLM_URL, provider_review.BIGMODEL_GLM_URL],
+            [
+                (provider_review.ZAI_GLM_URL, provider_review.GLM_MODEL),
+                (provider_review.BIGMODEL_GLM_URL, provider_review.GLM_MODEL),
+            ],
+            calls,
+        )
+
+    def test_glm_uses_free_47_after_primary_quota(self):
+        calls = []
+        original = provider_review.post_json
+
+        def fake_post(url, headers, payload):
+            model = payload["model"]
+            calls.append((url, model))
+            if model == provider_review.GLM_MODEL:
+                raise provider_review.ProviderHttpError(429, "余额不足，请充值")
+            if model == provider_review.GLM_FREE_MODEL:
+                return {"choices": [{"message": {"content": "free 4.7"}}]}
+            raise AssertionError(model)
+
+        provider_review.post_json = fake_post
+        try:
+            result = provider_review.ask_glm_with_meta("id.secret", "prompt")
+        finally:
+            provider_review.post_json = original
+
+        self.assertEqual(provider_review.GLM_FREE_MODEL, result["model"])
+        self.assertEqual("free 4.7", result["text"])
+        self.assertTrue(result["fallback"])
+        self.assertEqual(
+            [
+                (provider_review.ZAI_GLM_URL, provider_review.GLM_MODEL),
+                (provider_review.ZAI_GLM_URL, provider_review.GLM_FREE_MODEL),
+            ],
+            calls,
+        )
+
+    def test_glm_uses_free_45_if_free_47_is_unavailable(self):
+        calls = []
+        original = provider_review.post_json
+
+        def fake_post(url, headers, payload):
+            model = payload["model"]
+            calls.append(model)
+            if model in (provider_review.GLM_MODEL, provider_review.GLM_FREE_MODEL):
+                raise provider_review.ProviderHttpError(429, "quota")
+            if model == provider_review.GLM_FREE_BACKUP_MODEL:
+                return {"choices": [{"message": {"content": "free 4.5"}}]}
+            raise AssertionError(model)
+
+        provider_review.post_json = fake_post
+        try:
+            result = provider_review.ask_glm_with_meta("id.secret", "prompt")
+        finally:
+            provider_review.post_json = original
+
+        self.assertEqual(provider_review.GLM_FREE_BACKUP_MODEL, result["model"])
+        self.assertEqual("free 4.5", result["text"])
+        self.assertTrue(result["fallback"])
+        self.assertEqual(
+            [provider_review.GLM_MODEL, provider_review.GLM_FREE_MODEL, provider_review.GLM_FREE_BACKUP_MODEL],
             calls,
         )
 
@@ -106,30 +169,43 @@ class ProviderReviewTest(unittest.TestCase):
         self.assertEqual("", result["text"])
 
     def test_provider_failure_is_advisory(self):
+        original = provider_review.ask_glm_with_meta
+
         def fail(*_):
             raise RuntimeError("quota")
 
-        result = provider_review.run_provider(
-            "GLM",
-            provider_review.GLM_MODEL,
-            "test-key-not-real",
-            fail,
-            "prompt",
-        )
+        provider_review.ask_glm_with_meta = fail
+        try:
+            result = provider_review.run_provider(
+                "GLM",
+                provider_review.GLM_MODEL,
+                "test-key-not-real",
+                provider_review.ask_glm,
+                "prompt",
+            )
+        finally:
+            provider_review.ask_glm_with_meta = original
+
         self.assertEqual("error", result["status"])
         self.assertIn("quota", result["error"])
 
-    def test_markdown_marks_external_models_advisory_only(self):
+    def test_markdown_marks_free_glm_fallback(self):
         result = {
             "providers": {
                 "gemini": {"status": "ok", "text": "G", "model": "gemini"},
-                "glm": {"status": "ok", "text": "L", "model": "glm"},
+                "glm": {
+                    "status": "ok",
+                    "text": "L",
+                    "model": provider_review.GLM_FREE_MODEL,
+                    "fallback": True,
+                    "provider": "Z.ai",
+                },
             }
         }
         report = provider_review.render_markdown(result)
         self.assertIn("Advisory only", report)
-        self.assertIn("Gemini 3.7 Flash", report)
-        self.assertIn("GLM-5.3", report)
+        self.assertIn(provider_review.GLM_FREE_MODEL, report)
+        self.assertIn("Kostenloser GLM-Fallback aktiv", report)
 
 
 if __name__ == "__main__":
