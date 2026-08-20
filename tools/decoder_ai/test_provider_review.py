@@ -55,6 +55,32 @@ class ProviderReviewTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Status failed"):
             provider_review.extract_gemini_text({"status": "failed", "steps": []})
 
+    def test_extract_openai_text_reads_response_output(self):
+        data = {
+            "output": [
+                {"type": "reasoning", "summary": []},
+                {
+                    "type": "message",
+                    "content": [
+                        {"type": "output_text", "text": "Finale Teamprüfung"},
+                    ],
+                },
+            ]
+        }
+        self.assertEqual("Finale Teamprüfung", provider_review.extract_openai_text(data))
+
+    def test_team_prompt_contains_successful_drafts_only(self):
+        prompt = provider_review.build_team_prompt(
+            "original",
+            {
+                "gemini": {"status": "ok", "text": "G"},
+                "glm": {"status": "error", "text": "", "error": "quota"},
+            },
+        )
+        self.assertIn("original", prompt)
+        self.assertIn("ENTWURF Gemini", prompt)
+        self.assertNotIn("ENTWURF GLM", prompt)
+
     def test_missing_provider_key_is_non_fatal(self):
         result = provider_review.run_provider(
             "Gemini",
@@ -85,12 +111,14 @@ class ProviderReviewTest(unittest.TestCase):
             "providers": {
                 "gemini": {"status": "ok", "text": "G", "model": "gemini"},
                 "glm": {"status": "ok", "text": "L", "model": "glm"},
+                "openai": {"status": "ok", "text": "O", "model": "openai"},
             }
         }
         report = provider_review.render_markdown(result)
         self.assertIn("Advisory only", report)
         self.assertIn("Gemini 3.7 Flash", report)
         self.assertIn("GLM-5.3", report)
+        self.assertIn("OpenAI GPT-5.6 Luna", report)
 
 
 if __name__ == "__main__":
