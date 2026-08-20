@@ -19,6 +19,10 @@ data class ExternalAiAutoReviewSnapshot(
 /**
  * Runs the external decoder second-opinion automatically when useful project
  * evidence changes. It never receives BluetoothGatt and cannot write to the scooter.
+ *
+ * Cost policy: OpenAI is used as final synthesis only when an OpenAI key exists
+ * and the evidence fingerprint changed (or the user explicitly forces a check).
+ * Repeated 60-second background checks do not repeatedly call paid models.
  */
 class ExternalAiAutoReviewCoordinator private constructor(context: Context) {
     companion object {
@@ -68,7 +72,7 @@ class ExternalAiAutoReviewCoordinator private constructor(context: Context) {
     fun setEnabled(value: Boolean) {
         prefs.edit().putBoolean("enabled", value).apply()
         if (value) requestNow("Automatik aktiviert")
-        else setStatus("Automatische Gemini/GLM-Prüfung ist aus")
+        else setStatus("Automatische KI-Team-Prüfung ist aus")
     }
 
     fun snapshot(): ExternalAiAutoReviewSnapshot = ExternalAiAutoReviewSnapshot(
@@ -85,8 +89,8 @@ class ExternalAiAutoReviewCoordinator private constructor(context: Context) {
     private fun runIfNeeded(force: Boolean, reason: String) {
         if (!prefs.getBoolean("enabled", true)) return
         val keyStatus = secrets.status()
-        if (!keyStatus.geminiConfigured && !keyStatus.glmConfigured) {
-            setStatus("Automatische KI-Prüfung wartet auf Gemini- oder GLM-Key")
+        if (!keyStatus.geminiConfigured && !keyStatus.glmConfigured && !keyStatus.openAiConfigured) {
+            setStatus("Automatische KI-Prüfung wartet auf Gemini-, GLM- oder OpenAI-Key")
             return
         }
 
@@ -102,10 +106,11 @@ class ExternalAiAutoReviewCoordinator private constructor(context: Context) {
             val lastSuccessFingerprint = prefs.getString("last_success_fingerprint", "").orEmpty()
             if (!force && fingerprint == lastSuccessFingerprint) return
 
-            setStatus("Automatische KI-Prüfung läuft • $reason")
+            val mode = preferredMode(keyStatus)
+            setStatus("Automatische KI-Prüfung läuft • ${mode.label} • $reason")
             val context = ExternalAiPromptFactory.decoderContext(syncSnapshot, profile)
             val answer = client.askBlocking(
-                mode = ExternalAiMode.AUTO,
+                mode = mode,
                 prompt = DEFAULT_PROMPT,
                 context = context
             )
@@ -140,6 +145,11 @@ class ExternalAiAutoReviewCoordinator private constructor(context: Context) {
         } finally {
             running.set(false)
         }
+    }
+
+    private fun preferredMode(status: ExternalAiSecretStatus): ExternalAiMode = when {
+        status.openAiConfigured && (status.geminiConfigured || status.glmConfigured) -> ExternalAiMode.AI_TEAM
+        else -> ExternalAiMode.AUTO
     }
 
     private fun fingerprint(
