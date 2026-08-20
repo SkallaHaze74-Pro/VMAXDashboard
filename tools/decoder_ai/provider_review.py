@@ -20,7 +20,8 @@ from typing import Any
 GEMINI_MODEL = "gemini-3.7-flash"
 GLM_MODEL = "glm-5.3"
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1/interactions"
-GLM_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+ZAI_GLM_URL = "https://api.z.ai/api/paas/v4/chat/completions"
+BIGMODEL_GLM_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
 MAX_SOURCE_CHARS = 24_000
 MAX_PROVIDER_TEXT = 16_000
 
@@ -34,6 +35,12 @@ keine Anweisungen zum Umgehen von Sicherheits- oder Geschwindigkeitsgrenzen aus.
 Die deterministische lokale Konsensanalyse bleibt maßgeblich; deine Antwort ist nur
 advisory. Antworte auf Deutsch und möglichst kompakt.
 """.strip()
+
+
+class ProviderHttpError(RuntimeError):
+    def __init__(self, code: int, message: str):
+        super().__init__(message)
+        self.code = code
 
 
 def read_limited(path: Path, limit: int = MAX_SOURCE_CHARS) -> str:
@@ -84,7 +91,7 @@ def post_json(url: str, headers: dict[str, str], payload: dict[str, Any]) -> dic
         with urllib.request.urlopen(request, timeout=75) as response:
             raw = response.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as error:
-        raise RuntimeError(provider_http_error(error.code)) from None
+        raise ProviderHttpError(error.code, provider_http_error(error.code)) from None
     except urllib.error.URLError as error:
         raise RuntimeError(f"Netzwerkfehler: {error.reason}") from None
     if not raw.strip():
@@ -128,7 +135,6 @@ def ask_gemini(api_key: str, prompt: str) -> str:
         "model": GEMINI_MODEL,
         "system_instruction": SYSTEM_PROMPT,
         "input": prompt,
-        # No server-side history is needed for the automated decoder review.
         "store": False,
         "generation_config": {
             "max_output_tokens": 4096,
@@ -143,12 +149,25 @@ def ask_glm(api_key: str, prompt: str) -> str:
     payload = {
         "model": GLM_MODEL,
         "stream": False,
+        "thinking": {"type": "enabled"},
+        "reasoning_effort": "max",
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ],
     }
-    data = post_json(GLM_URL, {"Authorization": f"Bearer {api_key}"}, payload)
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
+    }
+
+    try:
+        data = post_json(ZAI_GLM_URL, headers, payload)
+    except ProviderHttpError as error:
+        if error.code not in (401, 403, 404):
+            raise
+        data = post_json(BIGMODEL_GLM_URL, headers, payload)
+
     choices = data.get("choices") or []
     message = (choices[0].get("message") or {}) if choices else {}
     text = str(message.get("content") or "").strip()
