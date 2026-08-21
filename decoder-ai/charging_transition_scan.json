@@ -1,0 +1,335 @@
+{
+  "schema": "vmax-charging-transition-scan-v1",
+  "rideCount": 13,
+  "transitionCount": 3,
+  "explicitChargeGapCount": 0,
+  "batteryRiseGapCount": 3,
+  "transitions": [
+    {
+      "ride": "Messfahrt_2026-08-16_22-12-43",
+      "beforeTimestampMs": 1786911165250,
+      "afterTimestampMs": 1786911173149,
+      "gapDurationMs": 7899,
+      "connectionEpochBefore": 0,
+      "connectionEpochAfter": 1,
+      "connectionEpochChanged": true,
+      "status": "BATTERY_RISE_DURING_BLE_GAP",
+      "reasons": [
+        "SOC stieg um 1 Prozentpunkt(e)"
+      ],
+      "markers": [
+        "START",
+        "BLE getrennt • RAW 8 gesichert",
+        "BLE-Link wieder verbunden • Messfahrtdaten erhalten",
+        "Telemetrie wieder aktiv"
+      ],
+      "before": {
+        "socPercent": 74,
+        "voltageV": 50.3,
+        "currentA": 0.0,
+        "batteryTempC": null,
+        "raw1509": "00-00-FF-FF-4A-C4-7C-00-00-00-00",
+        "raw1502": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+        "raw150C": null
+      },
+      "after": {
+        "socPercent": 75,
+        "voltageV": 50.3,
+        "currentA": 0.0,
+        "batteryTempC": null,
+        "raw1509": "00-00-FF-FF-4B-C4-7C-00-00-00-00",
+        "raw1502": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+        "raw150C": null
+      },
+      "delta": {
+        "socPercent": 1,
+        "voltageV": 0.0,
+        "batteryTempC": null
+      },
+      "note": "Der Zustand während der BLE-Lücke wurde nicht direkt beobachtet. Marker und Vorher/Nachher-Werte sind Evidenz, kein direkter Ladesensor."
+    },
+    {
+      "ride": "Messfahrt_2026-08-17_17-05-47",
+      "beforeTimestampMs": 1786979149271,
+      "afterTimestampMs": 1786979156359,
+      "gapDurationMs": 7088,
+      "connectionEpochBefore": 0,
+      "connectionEpochAfter": 1,
+      "connectionEpochChanged": true,
+      "status": "BATTERY_RISE_DURING_BLE_GAP",
+      "reasons": [
+        "SOC stieg um 1 Prozentpunkt(e)"
+      ],
+      "markers": [
+        "START",
+        "BLE getrennt • RAW 8 gesichert",
+        "BLE-Link wieder verbunden • Messfahrtdaten erhalten",
+        "Telemetrie wieder aktiv"
+      ],
+      "before": {
+        "socPercent": 69,
+        "voltageV": 50.1,
+        "currentA": 0.0,
+        "batteryTempC": null,
+        "raw1509": "00-00-FF-FF-45-C3-B4-00-00-00-00",
+        "raw1502": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+        "raw150C": null
+      },
+      "after": {
+        "socPercent": 70,
+        "voltageV": 50.1,
+        "currentA": 0.0,
+        "batteryTempC": null,
+        "raw1509": "00-00-FF-FF-46-C3-B4-00-00-00-00",
+        "raw1502": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+        "raw150C": null
+      },
+      "delta": {
+        "socPercent": 1,
+        "voltageV": 0.0,
+        "batteryTempC": null
+      },
+      "note": "Der Zustand während der BLE-Lücke wurde nicht direkt beobachtet. Marker und Vorher/Nachher-Werte sind Evidenz, kein direkter Ladesensor."
+    },
+    {
+      "ride": "Messfahrt_2026-08-17_20-24-15",
+      "beforeTimestampMs": 1786991057647,
+      "afterTimestampMs": 1786991065152,
+      "gapDurationMs": 7505,
+      "connectionEpochBefore": 0,
+      "connectionEpochAfter": 1,
+      "connectionEpochChanged": true,
+      "status": "BATTERY_RISE_DURING_BLE_GAP",
+      "reasons": [
+        "SOC stieg um 1 Prozentpunkt(e)"
+      ],
+      "markers": [
+        "START",
+        "BLE getrennt • RAW 8 gesichert",
+        "BLE-Link wieder verbunden • Messfahrtdaten erhalten",
+        "Telemetrie wieder aktiv"
+      ],
+      "before": {
+        "socPercent": 69,
+        "voltageV": 49.8,
+        "currentA": 0.0,
+        "batteryTempC": null,
+        "raw1509": "00-00-FF-FF-45-C2-88-00-00-00-00",
+        "raw1502": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+        "raw150C": null
+      },
+      "after": {
+        "socPercent": 70,
+        "voltageV": 49.8,
+        "currentA": 0.0,
+        "batteryTempC": null,
+        "raw1509": "00-00-FF-FF-46-C2-88-00-00-00-00",
+        "raw1502": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+        "raw150C": null
+      },
+      "delta": {
+        "socPercent": 1,
+        "voltageV": 0.0,
+        "batteryTempC": null
+      },
+      "note": "Der Zustand während der BLE-Lücke wurde nicht direkt beobachtet. Marker und Vorher/Nachher-Werte sind Evidenz, kein direkter Ladesensor."
+    }
+  ],
+  "rideSummaries": [
+    {
+      "ride": "Messfahrt_2026-08-13_19-17-14",
+      "battery1509Samples": 397,
+      "transitions": []
+    },
+    {
+      "ride": "Messfahrt_2026-08-13_20-26-18",
+      "battery1509Samples": 4,
+      "transitions": []
+    },
+    {
+      "ride": "Messfahrt_2026-08-15_21-09-05",
+      "battery1509Samples": 64,
+      "transitions": []
+    },
+    {
+      "ride": "Messfahrt_2026-08-15_21-12-46",
+      "battery1509Samples": 9,
+      "transitions": []
+    },
+    {
+      "ride": "Messfahrt_2026-08-16_00-09-26",
+      "battery1509Samples": 31,
+      "transitions": []
+    },
+    {
+      "ride": "Messfahrt_2026-08-16_18-46-03",
+      "battery1509Samples": 109,
+      "transitions": []
+    },
+    {
+      "ride": "Messfahrt_2026-08-16_22-12-43",
+      "battery1509Samples": 134,
+      "transitions": [
+        {
+          "beforeTimestampMs": 1786911165250,
+          "afterTimestampMs": 1786911173149,
+          "gapDurationMs": 7899,
+          "connectionEpochBefore": 0,
+          "connectionEpochAfter": 1,
+          "connectionEpochChanged": true,
+          "status": "BATTERY_RISE_DURING_BLE_GAP",
+          "reasons": [
+            "SOC stieg um 1 Prozentpunkt(e)"
+          ],
+          "markers": [
+            "START",
+            "BLE getrennt • RAW 8 gesichert",
+            "BLE-Link wieder verbunden • Messfahrtdaten erhalten",
+            "Telemetrie wieder aktiv"
+          ],
+          "before": {
+            "socPercent": 74,
+            "voltageV": 50.3,
+            "currentA": 0.0,
+            "batteryTempC": null,
+            "raw1509": "00-00-FF-FF-4A-C4-7C-00-00-00-00",
+            "raw1502": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+            "raw150C": null
+          },
+          "after": {
+            "socPercent": 75,
+            "voltageV": 50.3,
+            "currentA": 0.0,
+            "batteryTempC": null,
+            "raw1509": "00-00-FF-FF-4B-C4-7C-00-00-00-00",
+            "raw1502": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+            "raw150C": null
+          },
+          "delta": {
+            "socPercent": 1,
+            "voltageV": 0.0,
+            "batteryTempC": null
+          },
+          "note": "Der Zustand während der BLE-Lücke wurde nicht direkt beobachtet. Marker und Vorher/Nachher-Werte sind Evidenz, kein direkter Ladesensor."
+        }
+      ]
+    },
+    {
+      "ride": "Messfahrt_2026-08-17_17-05-47",
+      "battery1509Samples": 118,
+      "transitions": [
+        {
+          "beforeTimestampMs": 1786979149271,
+          "afterTimestampMs": 1786979156359,
+          "gapDurationMs": 7088,
+          "connectionEpochBefore": 0,
+          "connectionEpochAfter": 1,
+          "connectionEpochChanged": true,
+          "status": "BATTERY_RISE_DURING_BLE_GAP",
+          "reasons": [
+            "SOC stieg um 1 Prozentpunkt(e)"
+          ],
+          "markers": [
+            "START",
+            "BLE getrennt • RAW 8 gesichert",
+            "BLE-Link wieder verbunden • Messfahrtdaten erhalten",
+            "Telemetrie wieder aktiv"
+          ],
+          "before": {
+            "socPercent": 69,
+            "voltageV": 50.1,
+            "currentA": 0.0,
+            "batteryTempC": null,
+            "raw1509": "00-00-FF-FF-45-C3-B4-00-00-00-00",
+            "raw1502": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+            "raw150C": null
+          },
+          "after": {
+            "socPercent": 70,
+            "voltageV": 50.1,
+            "currentA": 0.0,
+            "batteryTempC": null,
+            "raw1509": "00-00-FF-FF-46-C3-B4-00-00-00-00",
+            "raw1502": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+            "raw150C": null
+          },
+          "delta": {
+            "socPercent": 1,
+            "voltageV": 0.0,
+            "batteryTempC": null
+          },
+          "note": "Der Zustand während der BLE-Lücke wurde nicht direkt beobachtet. Marker und Vorher/Nachher-Werte sind Evidenz, kein direkter Ladesensor."
+        }
+      ]
+    },
+    {
+      "ride": "Messfahrt_2026-08-17_20-24-15",
+      "battery1509Samples": 236,
+      "transitions": [
+        {
+          "beforeTimestampMs": 1786991057647,
+          "afterTimestampMs": 1786991065152,
+          "gapDurationMs": 7505,
+          "connectionEpochBefore": 0,
+          "connectionEpochAfter": 1,
+          "connectionEpochChanged": true,
+          "status": "BATTERY_RISE_DURING_BLE_GAP",
+          "reasons": [
+            "SOC stieg um 1 Prozentpunkt(e)"
+          ],
+          "markers": [
+            "START",
+            "BLE getrennt • RAW 8 gesichert",
+            "BLE-Link wieder verbunden • Messfahrtdaten erhalten",
+            "Telemetrie wieder aktiv"
+          ],
+          "before": {
+            "socPercent": 69,
+            "voltageV": 49.8,
+            "currentA": 0.0,
+            "batteryTempC": null,
+            "raw1509": "00-00-FF-FF-45-C2-88-00-00-00-00",
+            "raw1502": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+            "raw150C": null
+          },
+          "after": {
+            "socPercent": 70,
+            "voltageV": 49.8,
+            "currentA": 0.0,
+            "batteryTempC": null,
+            "raw1509": "00-00-FF-FF-46-C2-88-00-00-00-00",
+            "raw1502": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+            "raw150C": null
+          },
+          "delta": {
+            "socPercent": 1,
+            "voltageV": 0.0,
+            "batteryTempC": null
+          },
+          "note": "Der Zustand während der BLE-Lücke wurde nicht direkt beobachtet. Marker und Vorher/Nachher-Werte sind Evidenz, kein direkter Ladesensor."
+        }
+      ]
+    },
+    {
+      "ride": "Messfahrt_2026-08-18_18-19-38",
+      "battery1509Samples": 82,
+      "transitions": []
+    },
+    {
+      "ride": "Messfahrt_2026-08-20_12-26-55",
+      "battery1509Samples": 101,
+      "transitions": []
+    },
+    {
+      "ride": "Messfahrt_2026-08-20_14-45-15",
+      "battery1509Samples": 80,
+      "transitions": []
+    },
+    {
+      "ride": "Messfahrt_2026-08-20_18-42-34",
+      "battery1509Samples": 79,
+      "transitions": []
+    }
+  ],
+  "evidenceRule": "BLE-Lücken werden nur als Vorher/Nachher-Übergang ausgewertet. Eine Lücke allein beweist keinen Ladevorgang."
+}
