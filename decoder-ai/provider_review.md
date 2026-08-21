@@ -1,6 +1,6 @@
-# Gemini + GLM Decoder-Zweitprüfung
+# Gemini + GLM Decoder-Zweitprüfung mit optionaler GPT-Synthese
 
-> Advisory only • STRICT READ-ONLY: Diese Modelle sind ausschließlich Prüfer. Sie aktivieren keine Decoder-Regel, ändern keinen Code und erzeugen keine BLE-Schreibbefehle.
+> Advisory only • STRICT READ-ONLY: Gemini und GLM sind unabhängige Prüfer. GPT ordnet ihre Entwürfe optional nur als Synthese und zählt nicht als dritter Evidenzbeleg.
 > Eigene oder fremde KI-Antworten zählen niemals als unabhängige Bestätigung; maßgeblich bleiben Mess-Evidenz, deterministische Konsenslogik und Evidence Guard.
 
 ## Gemini 3.7 Flash
@@ -9,28 +9,28 @@ Status: `ok`
 
 Modell: `gemini-3.5-flash-lite`
 
-Kostenloser GLM-Fallback aktiv.
+Fallbackmodell aktiv: `gemini-3.5-flash-lite`.
 
 - Belastbare Evidenz:
-  - 5 Regeln (`batteryPercent`, `currentA`, `odometerKm`, `speedKmh`, `voltageV`) sind mit Konfidenz 99% als `confirmed` markiert, basieren laut Profil jedoch auf `original-sdk-layout+app-extraction-check` (gleiche RAW-Extraktion, keine unabhängige physikalische Validierung).
-  - Regel `powerW` (1509/9) ist als `candidate` (93%) eingestuft; der Evidence Guard bestätigt ausdrücklich: "same-raw export consistency is not independent semantic proof" (`independentExternalConfirmation: false`).
-  - Laut libble-Vergleich und App-Vergleich sind die übereinstimmenden Extraktionen rein konsistent mit dem SDK-Layout (`APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT`), nicht unabhängig gemessen.
-  - Datenqualität je Export zeigt unvollständige Zähler (`?`) für READ-/Hybrid-Werte in mehreren Messfahrten (z. B. `Messfahrt_2026-08-13_19-17-14`).
+  - Das Profil `d234ab3a232cc544` enthält 5 bestätigte Regeln und 1 Kandidaten (`powerW` auf Kanal 1509, Offset 9), gestützt auf 14 ausgewertete Fahrten.
+  - Der libble- und App-Vergleich zeigt, dass `APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT` vorliegt, was laut Evidence Guard jedoch keinen unabhängigen semantischen Sensornachweis darstellt.
+  - Laut BT638 GATT Deep-READ-Abgleich existieren 112 erfolgreiche Callbacks über 6 logische Scans, wobei bestimmte Kanäle wie 1502, 1505, 1506 und 1509 variable Bytes aufweisen.
 
 - Konflikte / mögliche Bugs:
-  - Selbstreferenz / Zirkelschluss: Die Kennzeichnung als `confirmed` erfolgt trotz des Hinweises, dass App-Extraktionen gegen denselben RAW-Stream keine externe Ground Truth darstellen.
-  - Fehlende Zählerdaten: In der Tabelle "Datenqualität je Export" sind READ- und Hybrid-Werte für frühere Messfahrten mit `?` markiert, was auf unvollständige Zusammenfassungen hinweist.
-  - Unbekannte Felder wie 150C oder 150D sind nicht abschließend validiert; 150D wird nach der ersten Fahrt ignoriert.
+  - Der Leistungskandidat `powerW` (1509/9) basiert auf einem Cross-Field-Check (`abs(voltage_v * current_a)`), wird aber vom Evidence Guard korrekt als "nicht unabhängig" eingestuft (`independentExternalConfirmation: false`).
+  - Mehrere Datenqualitätszeilen im libble-Vergleich zeigen 0 akzeptierte Exportzeilen oder ungeklärte READ-/Hybrid-Zähler (`?`), was auf veraltete oder unvollständige Log-Samples hindeutet.
+  - Rollen für `motorPower` und `treadlePower` sind in der App-Zuordnung noch offen ("A/B-Rolle noch offen").
 
 - Hypothesen (nicht bestätigt):
-  - 1509/9 (`powerW`) entspricht dem tatsächlichen elektrischen Leistungswert, obwohl bisher nur ein Cross-Field-Vergleich gegen `voltage_v * current_a` vorliegt (Korrelation 0.984642, MAE 4.13 W).
-  - Weitere App-Listener (wie `batteryCapacityMwh`, `stateOfHealthPercent`) lassen sich direkt auf ungemappte BLE-Kanäle abbilden.
+  - Kanal 1509 Offset 9 (`powerW`) könnte die tatsächliche elektrische Leistung des Controllers repräsentieren, da die Korrelation mit dem berechneten Strom-Spannungs-Produkt bei 0.9855 liegt; dies ist jedoch ohne physische Externevidenz nur ein internes Konsistenzartefakt.
+  - Kanal 150C könnte trotz "Sentinel-only"-Markierung in bestimmten Betriebszuständen als `BatteryCellUpdate` dienen.
 
 - Nächste sichere READ-ONLY-Tests (max. 5):
-  1. Prüfen, ob die Zählerwerte in `Zusammenfassung.txt` für die älteren Messfahrten rekonstruiert oder als `unbekannt/offen` dokumentiert werden können.
-  2. Überprüfen der Rohdaten von Messfahrt 1505 und 1509 im Stillstand auf statische Offset-Abweichungen bei Strom und Spannung.
-  3. Validieren der Byte-Offsets für ungemappte Parameter (`150C`, `150D`) ausschließlich über rein lesende Log-Vergleiche im Stillstand.
-  4. Dokumentieren fehlender `Zusammenfassung.txt`-Einträge als explizite Datenlücke statt Null-Imputation.
+  1. Durchführung eines passiven BLE-Mitschnitts im Stillstand zur Validierung der statischen Charakteristik von Kanal 1502.
+  2. Auswertung von unvollständigen RAW-Exporten (`Messfahrt_2026-08-13_19-17-14` etc.) auf Parser-Fehler oder veraltete Firmware-Strukturen.
+  3. Protokollierung von Kanal 1508 (`lightOn` / assistanceLevel) während manueller Lichtschalterbetätigung im Stand (ohne Ladezustand).
+  4. Überprüfung der Byte-Variabilität von Kanal 150A und 150B bei minimaler Controller-Last im aufgebockten Zustand (sicherer Stillstand).
+  5. Abgleich der Odometer-Werte (Kanal 1506) über mehrere aufeinanderfolgende, kurze READ-Abfragen nach einem Reconnect.
 
 - Automatische Änderungen: KEINE
 
@@ -42,4 +42,10 @@ Status: `error`
 
 Modell: `glm-5.3`
 
-Fehler: The read operation timed out
+Fehler: Gratis-/Ratenlimit erreicht (429) • 您的账户已达到速率限制，请您控制请求频率
+
+## OpenAI GPT-5.6 Luna • Synthese, kein Evidenzvotum
+
+Status: `not_configured`
+
+Nicht konfiguriert.

@@ -1,12 +1,1806 @@
 {
-  "schema": "vmax-bt638-gatt-read-aggregate-v1",
+  "schema": "vmax-bt638-gatt-read-aggregate-v2",
   "readOnly": true,
-  "diagnosticBundles": 0,
-  "records": 0,
-  "characteristics": 0,
-  "successfulCharacteristics": 0,
-  "payloadCharacteristics": 0,
-  "dynamicCharacteristics": 0,
-  "fields": [],
-  "evidencePolicy": "A READ response proves only that this BT638/GATT characteristic answered with the recorded bytes. It does not by itself prove byte semantics, BMS origin, authentication state or a write capability."
+  "diagnosticBundles": 6,
+  "sourceBundleCopies": 6,
+  "duplicateBundleCopies": 0,
+  "records": 177,
+  "readAttempts": 112,
+  "readCallbacks": 112,
+  "readSuccesses": 112,
+  "payloadCallbacks": 112,
+  "validPayloadCallbacks": 112,
+  "observations": 65,
+  "characteristics": 28,
+  "successfulCharacteristics": 28,
+  "payloadCharacteristics": 28,
+  "dynamicCharacteristics": 19,
+  "fields": [
+    {
+      "service": "0203",
+      "characteristic": "0203",
+      "serviceUuid": "00010203-0405-0607-0809-0a0b0c0d1912",
+      "characteristicUuid": "00010203-0405-0607-0809-0a0b0c0d2b12",
+      "serviceUuidForms": [
+        "00010203-0405-0607-0809-0a0b0c0d1912"
+      ],
+      "characteristicUuidForms": [
+        "00010203-0405-0607-0809-0a0b0c0d2b12"
+      ],
+      "knownTarget": null,
+      "attempts": 4,
+      "callbacks": 4,
+      "successes": 4,
+      "validCallbacks": 4,
+      "failures": 0,
+      "nonCallbackEvents": 0,
+      "statusCounts": {
+        "0": 4
+      },
+      "outcomeCounts": {
+        "CALLBACK_SUCCESS": 4
+      },
+      "payloadCount": 4,
+      "validPayloadCount": 4,
+      "invalidPayloadCount": 0,
+      "uniquePayloadCount": 2,
+      "lengthCounts": {
+        "1": 4
+      },
+      "validLengthCounts": {
+        "1": 4
+      },
+      "dynamicAcrossScans": true,
+      "variableByteIndexes": [],
+      "sentinelLikeOnly": true,
+      "samplePayloads": [
+        "00"
+      ],
+      "samplePayloadHashes": [
+        "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d"
+      ],
+      "invalidPayloadHashes": [],
+      "sensitivePayloadRedacted": false,
+      "evidenceLabels": [
+        "Unbekannt"
+      ],
+      "meanings": [
+        "Nicht in der importierten Wissensbasis zugeordnet."
+      ],
+      "properties": [
+        "READ|WRITE_NR"
+      ],
+      "propertiesRaw": [
+        "6"
+      ],
+      "connectionEpochs": [
+        "2"
+      ],
+      "measurementConnectionEpochs": [],
+      "independentSemanticConfirmation": false
+    },
+    {
+      "service": "1500",
+      "characteristic": "1501",
+      "serviceUuid": "da1a1500-d532-4285-be94-b07a3e11a098",
+      "characteristicUuid": "da1a1501-d532-4285-be94-b07a3e11a098",
+      "serviceUuidForms": [
+        "da1a1500-d532-4285-be94-b07a3e11a098"
+      ],
+      "characteristicUuidForms": [
+        "da1a1501-d532-4285-be94-b07a3e11a098"
+      ],
+      "knownTarget": null,
+      "attempts": 4,
+      "callbacks": 4,
+      "successes": 4,
+      "validCallbacks": 4,
+      "failures": 0,
+      "nonCallbackEvents": 0,
+      "statusCounts": {
+        "0": 4
+      },
+      "outcomeCounts": {
+        "CALLBACK_SUCCESS": 4
+      },
+      "payloadCount": 4,
+      "validPayloadCount": 4,
+      "invalidPayloadCount": 0,
+      "uniquePayloadCount": 1,
+      "lengthCounts": {
+        "18": 4
+      },
+      "validLengthCounts": {
+        "18": 4
+      },
+      "dynamicAcrossScans": false,
+      "variableByteIndexes": [],
+      "sentinelLikeOnly": false,
+      "samplePayloads": [],
+      "samplePayloadHashes": [
+        "811b3c6b80f7789610c47b8d423107b5d9bda00c98bb8f4437af9796c1af1a99"
+      ],
+      "invalidPayloadHashes": [],
+      "sensitivePayloadRedacted": true,
+      "evidenceLabels": [
+        "BT638 beobachtet"
+      ],
+      "meanings": [
+        "REDACTED_IDENTITY_OR_FREE_FORM"
+      ],
+      "properties": [
+        "READ"
+      ],
+      "propertiesRaw": [
+        "2"
+      ],
+      "connectionEpochs": [
+        "2"
+      ],
+      "measurementConnectionEpochs": [],
+      "independentSemanticConfirmation": false
+    },
+    {
+      "service": "1500",
+      "characteristic": "1502",
+      "serviceUuid": "da1a1500-d532-4285-be94-b07a3e11a098",
+      "characteristicUuid": "da1a1502-d532-4285-be94-b07a3e11a098",
+      "serviceUuidForms": [
+        "da1a1500-d532-4285-be94-b07a3e11a098"
+      ],
+      "characteristicUuidForms": [
+        "da1a1502-d532-4285-be94-b07a3e11a098"
+      ],
+      "knownTarget": "Battery/static candidate",
+      "attempts": 4,
+      "callbacks": 4,
+      "successes": 4,
+      "validCallbacks": 4,
+      "failures": 0,
+      "nonCallbackEvents": 0,
+      "statusCounts": {
+        "0": 4
+      },
+      "outcomeCounts": {
+        "CALLBACK_SUCCESS": 4
+      },
+      "payloadCount": 4,
+      "validPayloadCount": 4,
+      "invalidPayloadCount": 0,
+      "uniquePayloadCount": 2,
+      "lengthCounts": {
+        "16": 4
+      },
+      "validLengthCounts": {
+        "16": 4
+      },
+      "dynamicAcrossScans": true,
+      "variableByteIndexes": [],
+      "sentinelLikeOnly": false,
+      "samplePayloads": [
+        "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00"
+      ],
+      "samplePayloadHashes": [
+        "88519dec33b43de6137585d9b99a59635f328f96846dcd2fad3b103f7ab17780"
+      ],
+      "invalidPayloadHashes": [],
+      "sensitivePayloadRedacted": false,
+      "evidenceLabels": [
+        "BT638 beobachtet"
+      ],
+      "meanings": [
+        "Statischer Akku-/Controllerblock mit offener Detailbelegung."
+      ],
+      "properties": [
+        "READ|NOTIFY"
+      ],
+      "propertiesRaw": [
+        "18"
+      ],
+      "connectionEpochs": [
+        "2"
+      ],
+      "measurementConnectionEpochs": [],
+      "independentSemanticConfirmation": false
+    },
+    {
+      "service": "1500",
+      "characteristic": "1503",
+      "serviceUuid": "da1a1500-d532-4285-be94-b07a3e11a098",
+      "characteristicUuid": "da1a1503-d532-4285-be94-b07a3e11a098",
+      "serviceUuidForms": [
+        "da1a1500-d532-4285-be94-b07a3e11a098"
+      ],
+      "characteristicUuidForms": [
+        "da1a1503-d532-4285-be94-b07a3e11a098"
+      ],
+      "knownTarget": null,
+      "attempts": 4,
+      "callbacks": 4,
+      "successes": 4,
+      "validCallbacks": 4,
+      "failures": 0,
+      "nonCallbackEvents": 0,
+      "statusCounts": {
+        "0": 4
+      },
+      "outcomeCounts": {
+        "CALLBACK_SUCCESS": 4
+      },
+      "payloadCount": 4,
+      "validPayloadCount": 4,
+      "invalidPayloadCount": 0,
+      "uniquePayloadCount": 2,
+      "lengthCounts": {
+        "2": 4
+      },
+      "validLengthCounts": {
+        "2": 4
+      },
+      "dynamicAcrossScans": true,
+      "variableByteIndexes": [],
+      "sentinelLikeOnly": true,
+      "samplePayloads": [
+        "00-00"
+      ],
+      "samplePayloadHashes": [
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+      ],
+      "invalidPayloadHashes": [],
+      "sensitivePayloadRedacted": false,
+      "evidenceLabels": [
+        "BT638 beobachtet"
+      ],
+      "meanings": [
+        "Statischer Motor-/Controllerblock mit offener BT638-Zuordnung."
+      ],
+      "properties": [
+        "READ"
+      ],
+      "propertiesRaw": [
+        "2"
+      ],
+      "connectionEpochs": [
+        "2"
+      ],
+      "measurementConnectionEpochs": [],
+      "independentSemanticConfirmation": false
+    },
+    {
+      "service": "1500",
+      "characteristic": "1504",
+      "serviceUuid": "da1a1500-d532-4285-be94-b07a3e11a098",
+      "characteristicUuid": "da1a1504-d532-4285-be94-b07a3e11a098",
+      "serviceUuidForms": [
+        "da1a1500-d532-4285-be94-b07a3e11a098"
+      ],
+      "characteristicUuidForms": [
+        "da1a1504-d532-4285-be94-b07a3e11a098"
+      ],
+      "knownTarget": null,
+      "attempts": 4,
+      "callbacks": 4,
+      "successes": 4,
+      "validCallbacks": 4,
+      "failures": 0,
+      "nonCallbackEvents": 0,
+      "statusCounts": {
+        "0": 4
+      },
+      "outcomeCounts": {
+        "CALLBACK_SUCCESS": 4
+      },
+      "payloadCount": 4,
+      "validPayloadCount": 4,
+      "invalidPayloadCount": 0,
+      "uniquePayloadCount": 1,
+      "lengthCounts": {
+        "19": 4
+      },
+      "validLengthCounts": {
+        "19": 4
+      },
+      "dynamicAcrossScans": false,
+      "variableByteIndexes": [],
+      "sentinelLikeOnly": false,
+      "samplePayloads": [],
+      "samplePayloadHashes": [
+        "4e07d6e11ce50a4fe1ae8e5a809265a5f7ec456e886854ff5619eaccd09e46ac"
+      ],
+      "invalidPayloadHashes": [],
+      "sensitivePayloadRedacted": true,
+      "evidenceLabels": [
+        "BT638 beobachtet"
+      ],
+      "meanings": [
+        "REDACTED_IDENTITY_OR_FREE_FORM"
+      ],
+      "properties": [
+        "READ"
+      ],
+      "propertiesRaw": [
+        "2"
+      ],
+      "connectionEpochs": [
+        "2"
+      ],
+      "measurementConnectionEpochs": [],
+      "independentSemanticConfirmation": false
+    },
+    {
+      "service": "1500",
+      "characteristic": "1505",
+      "serviceUuid": "da1a1500-d532-4285-be94-b07a3e11a098",
+      "characteristicUuid": "da1a1505-d532-4285-be94-b07a3e11a098",
+      "serviceUuidForms": [
+        "da1a1500-d532-4285-be94-b07a3e11a098"
+      ],
+      "characteristicUuidForms": [
+        "da1a1505-d532-4285-be94-b07a3e11a098"
+      ],
+      "knownTarget": null,
+      "attempts": 4,
+      "callbacks": 4,
+      "successes": 4,
+      "validCallbacks": 4,
+      "failures": 0,
+      "nonCallbackEvents": 0,
+      "statusCounts": {
+        "0": 4
+      },
+      "outcomeCounts": {
+        "CALLBACK_SUCCESS": 4
+      },
+      "payloadCount": 4,
+      "validPayloadCount": 4,
+      "invalidPayloadCount": 0,
+      "uniquePayloadCount": 6,
+      "lengthCounts": {
+        "18": 4
+      },
+      "validLengthCounts": {
+        "18": 4
+      },
+      "dynamicAcrossScans": true,
+      "variableByteIndexes": [
+        7
+      ],
+      "sentinelLikeOnly": false,
+      "samplePayloads": [
+        "00-00-00-00-FF-FF-00-00-FF-FF-FF-FF-FF-00-00-00-00-00",
+        "00-00-00-00-FF-FF-00-16-FF-FF-FF-FF-FF-00-00-00-00-00",
+        "00-00-00-00-FF-FF-00-1B-FF-FF-FF-FF-FF-00-00-00-00-00"
+      ],
+      "samplePayloadHashes": [
+        "4bf47b93afd69279725916015eaeebb6586ef183039c9e71cdd8bd1a92ea045b",
+        "9a324bf4c41442d1dda677a86f787c468b1f7a07007204ae2f31d4c50c471695",
+        "aa69f856a29d1c99ba1a07b87fd7c8e0a66bed2fc484e24fab186088c2e822fa"
+      ],
+      "invalidPayloadHashes": [],
+      "sensitivePayloadRedacted": false,
+      "evidenceLabels": [
+        "BT638 bestätigt"
+      ],
+      "meanings": [
+        "Live-Fahrdatenkanal mit bestätigter Geschwindigkeitssemantik."
+      ],
+      "properties": [
+        "READ|NOTIFY"
+      ],
+      "propertiesRaw": [
+        "18"
+      ],
+      "connectionEpochs": [
+        "2"
+      ],
+      "measurementConnectionEpochs": [],
+      "independentSemanticConfirmation": false
+    },
+    {
+      "service": "1500",
+      "characteristic": "1506",
+      "serviceUuid": "da1a1500-d532-4285-be94-b07a3e11a098",
+      "characteristicUuid": "da1a1506-d532-4285-be94-b07a3e11a098",
+      "serviceUuidForms": [
+        "da1a1500-d532-4285-be94-b07a3e11a098"
+      ],
+      "characteristicUuidForms": [
+        "da1a1506-d532-4285-be94-b07a3e11a098"
+      ],
+      "knownTarget": null,
+      "attempts": 4,
+      "callbacks": 4,
+      "successes": 4,
+      "validCallbacks": 4,
+      "failures": 0,
+      "nonCallbackEvents": 0,
+      "statusCounts": {
+        "0": 4
+      },
+      "outcomeCounts": {
+        "CALLBACK_SUCCESS": 4
+      },
+      "payloadCount": 4,
+      "validPayloadCount": 4,
+      "invalidPayloadCount": 0,
+      "uniquePayloadCount": 8,
+      "lengthCounts": {
+        "16": 4
+      },
+      "validLengthCounts": {
+        "16": 4
+      },
+      "dynamicAcrossScans": true,
+      "variableByteIndexes": [
+        3,
+        7,
+        11
+      ],
+      "sentinelLikeOnly": false,
+      "samplePayloads": [
+        "00-00-1B-F5-00-02-2E-20-00-00-02-CB-00-00-00-00",
+        "00-00-1B-F5-00-02-2E-35-00-00-02-CB-00-00-00-00",
+        "00-00-1B-F5-00-02-2E-38-00-00-02-CB-00-00-00-00",
+        "00-00-1B-F8-00-02-2E-94-00-00-02-CC-00-00-00-00"
+      ],
+      "samplePayloadHashes": [
+        "36265097484a5abf04185cfd4a3443a5204a6400aba626e50d81f4784bae9d94",
+        "6ae0b82977f3565d2412abeb55581c05f01506b3781374f9cca457401ab66ad6",
+        "86bcbbb375234393b4fecb9db330ffaf87b2d97fcec63e97250da6b9a5730e4d",
+        "88beab63bf3c203d0db97ff332c642cbbf3aa8cd895c3482cfa7d3e60b38f39e"
+      ],
+      "invalidPayloadHashes": [],
+      "sensitivePayloadRedacted": false,
+      "evidenceLabels": [
+        "BT638 bestätigt"
+      ],
+      "meanings": [
+        "Statistik- und Kilometerkanal mit bestätigtem Odometer-Feld."
+      ],
+      "properties": [
+        "READ|NOTIFY"
+      ],
+      "propertiesRaw": [
+        "18"
+      ],
+      "connectionEpochs": [
+        "2"
+      ],
+      "measurementConnectionEpochs": [],
+      "independentSemanticConfirmation": false
+    },
+    {
+      "service": "1500",
+      "characteristic": "1507",
+      "serviceUuid": "da1a1500-d532-4285-be94-b07a3e11a098",
+      "characteristicUuid": "da1a1507-d532-4285-be94-b07a3e11a098",
+      "serviceUuidForms": [
+        "da1a1500-d532-4285-be94-b07a3e11a098"
+      ],
+      "characteristicUuidForms": [
+        "da1a1507-d532-4285-be94-b07a3e11a098"
+      ],
+      "knownTarget": null,
+      "attempts": 4,
+      "callbacks": 4,
+      "successes": 4,
+      "validCallbacks": 4,
+      "failures": 0,
+      "nonCallbackEvents": 0,
+      "statusCounts": {
+        "0": 4
+      },
+      "outcomeCounts": {
+        "CALLBACK_SUCCESS": 4
+      },
+      "payloadCount": 4,
+      "validPayloadCount": 4,
+      "invalidPayloadCount": 0,
+      "uniquePayloadCount": 6,
+      "lengthCounts": {
+        "8": 4
+      },
+      "validLengthCounts": {
+        "8": 4
+      },
+      "dynamicAcrossScans": true,
+      "variableByteIndexes": [
+        5,
+        7
+      ],
+      "sentinelLikeOnly": false,
+      "samplePayloads": [
+        "FF-FF-FF-FF-00-00-00-00",
+        "FF-FF-FF-FF-00-25-00-00",
+        "FF-FF-FF-FF-00-DA-00-64"
+      ],
+      "samplePayloadHashes": [
+        "2207a48d2be7c083b33f7d61e05f5f6a030b3eea85d87e12003b848da9910640",
+        "72a4fa3544e43a836ffcb268ce06ccdbc55d44d5e6b1b1c19216a53ea98301fd",
+        "865373a3c981f961347654c8615473cbcb71650e451dfe85b2af30dc4759440a"
+      ],
+      "invalidPayloadHashes": [],
+      "sensitivePayloadRedacted": false,
+      "evidenceLabels": [
+        "BT638 beobachtet"
+      ],
+      "meanings": [
+        "Statistikblock im BT638 beobachtet, Bedeutung im Detail noch offen."
+      ],
+      "properties": [
+        "READ"
+      ],
+      "propertiesRaw": [
+        "2"
+      ],
+      "connectionEpochs": [
+        "2"
+      ],
+      "measurementConnectionEpochs": [],
+      "independentSemanticConfirmation": false
+    },
+    {
+      "service": "1500",
+      "characteristic": "1508",
+      "serviceUuid": "da1a1500-d532-4285-be94-b07a3e11a098",
+      "characteristicUuid": "da1a1508-d532-4285-be94-b07a3e11a098",
+      "serviceUuidForms": [
+        "da1a1500-d532-4285-be94-b07a3e11a098"
+      ],
+      "characteristicUuidForms": [
+        "da1a1508-d532-4285-be94-b07a3e11a098"
+      ],
+      "knownTarget": null,
+      "attempts": 4,
+      "callbacks": 4,
+      "successes": 4,
+      "validCallbacks": 4,
+      "failures": 0,
+      "nonCallbackEvents": 0,
+      "statusCounts": {
+        "0": 4
+      },
+      "outcomeCounts": {
+        "CALLBACK_SUCCESS": 4
+      },
+      "payloadCount": 4,
+      "validPayloadCount": 4,
+      "invalidPayloadCount": 0,
+      "uniquePayloadCount": 4,
+      "lengthCounts": {
+        "16": 4
+      },
+      "validLengthCounts": {
+        "16": 4
+      },
+      "dynamicAcrossScans": true,
+      "variableByteIndexes": [
+        0,
+        3
+      ],
+      "sentinelLikeOnly": false,
+      "samplePayloads": [
+        "00-00-00-02-FF-FF-FF-FF-FF-FF-FF-00-00-00-00-00",
+        "01-00-00-01-FF-FF-FF-FF-FF-FF-FF-00-00-00-00-00"
+      ],
+      "samplePayloadHashes": [
+        "6f6495c32edc260029e9a494c562f718755d61bce5dacbe9a98218969e77b285",
+        "f06b9ae973cc09b50f0f48440c6e96db1c470f58af483b680eaa586561bcf258"
+      ],
+      "invalidPayloadHashes": [],
+      "sensitivePayloadRedacted": false,
+      "evidenceLabels": [
+        "BT638 bestätigt"
+      ],
+      "meanings": [
+        "Settings-naher Kanal mit bestätigten Zuständen für Licht und Fahrmodus."
+      ],
+      "properties": [
+        "READ|NOTIFY"
+      ],
+      "propertiesRaw": [
+        "18"
+      ],
+      "connectionEpochs": [
+        "2"
+      ],
+      "measurementConnectionEpochs": [],
+      "independentSemanticConfirmation": false
+    },
+    {
+      "service": "1500",
+      "characteristic": "1509",
+      "serviceUuid": "da1a1500-d532-4285-be94-b07a3e11a098",
+      "characteristicUuid": "da1a1509-d532-4285-be94-b07a3e11a098",
+      "serviceUuidForms": [
+        "da1a1500-d532-4285-be94-b07a3e11a098"
+      ],
+      "characteristicUuidForms": [
+        "da1a1509-d532-4285-be94-b07a3e11a098"
+      ],
+      "knownTarget": "Battery live layout",
+      "attempts": 4,
+      "callbacks": 4,
+      "successes": 4,
+      "validCallbacks": 4,
+      "failures": 0,
+      "nonCallbackEvents": 0,
+      "statusCounts": {
+        "0": 4
+      },
+      "outcomeCounts": {
+        "CALLBACK_SUCCESS": 4
+      },
+      "payloadCount": 4,
+      "validPayloadCount": 4,
+      "invalidPayloadCount": 0,
+      "uniquePayloadCount": 6,
+      "lengthCounts": {
+        "11": 4
+      },
+      "validLengthCounts": {
+        "11": 4
+      },
+      "dynamicAcrossScans": true,
+      "variableByteIndexes": [
+        4,
+        5,
+        6
+      ],
+      "sentinelLikeOnly": false,
+      "samplePayloads": [
+        "00-00-FF-FF-30-BB-1C-00-00-00-00",
+        "00-00-FF-FF-35-BC-48-00-00-00-00",
+        "00-00-FF-FF-36-BC-48-00-00-00-00"
+      ],
+      "samplePayloadHashes": [
+        "160bc2079574ee5f49b537cea0ad8055ff9522a42ed20dba0c26e7c82e0c7bb7",
+        "3d906fa54b0af30a7485c1bad3fc4d1e631d98d0757f14cc522d96782fdf0c2e",
+        "f2565ab66a59bb63a5dc483a49e07a709a426c99e04046a0a51970cbd56e6143"
+      ],
+      "invalidPayloadHashes": [],
+      "sensitivePayloadRedacted": false,
+      "evidenceLabels": [
+        "BT638 bestätigt"
+      ],
+      "meanings": [
+        "Zentraler Akku-Livekanal mit bestätigtem SOC, Strom und Spannung; direkte Leistung bleibt Kandidat."
+      ],
+      "properties": [
+        "READ|NOTIFY"
+      ],
+      "propertiesRaw": [
+        "18"
+      ],
+      "connectionEpochs": [
+        "2"
+      ],
+      "measurementConnectionEpochs": [],
+      "independentSemanticConfirmation": false
+    },
+    {
+      "service": "1500",
+      "characteristic": "150A",
+      "serviceUuid": "da1a1500-d532-4285-be94-b07a3e11a098",
+      "characteristicUuid": "da1a150a-d532-4285-be94-b07a3e11a098",
+      "serviceUuidForms": [
+        "da1a1500-d532-4285-be94-b07a3e11a098"
+      ],
+      "characteristicUuidForms": [
+        "da1a150a-d532-4285-be94-b07a3e11a098"
+      ],
+      "knownTarget": "Motor live layout",
+      "attempts": 4,
+      "callbacks": 4,
+      "successes": 4,
+      "validCallbacks": 4,
+      "failures": 0,
+      "nonCallbackEvents": 0,
+      "statusCounts": {
+        "0": 4
+      },
+      "outcomeCounts": {
+        "CALLBACK_SUCCESS": 4
+      },
+      "payloadCount": 4,
+      "validPayloadCount": 4,
+      "invalidPayloadCount": 0,
+      "uniquePayloadCount": 2,
+      "lengthCounts": {
+        "10": 4
+      },
+      "validLengthCounts": {
+        "10": 4
+      },
+      "dynamicAcrossScans": true,
+      "variableByteIndexes": [],
+      "sentinelLikeOnly": true,
+      "samplePayloads": [
+        "00-00-FF-FF-FF-FF-FF-FF-FF-FF"
+      ],
+      "samplePayloadHashes": [
+        "620caaac7c438c4d77f616fcd3d8fe9eba8e7061bed3bbef5bd2d383cc6ff2c6"
+      ],
+      "invalidPayloadHashes": [],
+      "sensitivePayloadRedacted": false,
+      "evidenceLabels": [
+        "BT638 beobachtet"
+      ],
+      "meanings": [
+        "Dynamischer Block beobachtet; die Motor-Feldrollen stammen bislang nur aus dem nativen SDK-Layout."
+      ],
+      "properties": [
+        "READ|NOTIFY"
+      ],
+      "propertiesRaw": [
+        "18"
+      ],
+      "connectionEpochs": [
+        "2"
+      ],
+      "measurementConnectionEpochs": [],
+      "independentSemanticConfirmation": false
+    },
+    {
+      "service": "1500",
+      "characteristic": "150B",
+      "serviceUuid": "da1a1500-d532-4285-be94-b07a3e11a098",
+      "characteristicUuid": "da1a150b-d532-4285-be94-b07a3e11a098",
+      "serviceUuidForms": [
+        "da1a1500-d532-4285-be94-b07a3e11a098"
+      ],
+      "characteristicUuidForms": [
+        "da1a150b-d532-4285-be94-b07a3e11a098"
+      ],
+      "knownTarget": null,
+      "attempts": 4,
+      "callbacks": 4,
+      "successes": 4,
+      "validCallbacks": 4,
+      "failures": 0,
+      "nonCallbackEvents": 0,
+      "statusCounts": {
+        "0": 4
+      },
+      "outcomeCounts": {
+        "CALLBACK_SUCCESS": 4
+      },
+      "payloadCount": 4,
+      "validPayloadCount": 4,
+      "invalidPayloadCount": 0,
+      "uniquePayloadCount": 2,
+      "lengthCounts": {
+        "20": 4
+      },
+      "validLengthCounts": {
+        "20": 4
+      },
+      "dynamicAcrossScans": true,
+      "variableByteIndexes": [],
+      "sentinelLikeOnly": true,
+      "samplePayloads": [
+        "FF-FF-FF-FF-FF-FF-FF-FF-FF-FF-FF-FF-FF-FF-FF-FF-FF-FF-FF-FF"
+      ],
+      "samplePayloadHashes": [
+        "9a8dcd3f9ff7aa3114e141f03c12989d363ea81fd74c02eea63c5f41489cb17a"
+      ],
+      "invalidPayloadHashes": [],
+      "sensitivePayloadRedacted": false,
+      "evidenceLabels": [
+        "BT638 beobachtet"
+      ],
+      "meanings": [
+        "Bisher überwiegend Platzhalterdaten."
+      ],
+      "properties": [
+        "READ|NOTIFY"
+      ],
+      "propertiesRaw": [
+        "18"
+      ],
+      "connectionEpochs": [
+        "2"
+      ],
+      "measurementConnectionEpochs": [],
+      "independentSemanticConfirmation": false
+    },
+    {
+      "service": "1500",
+      "characteristic": "150C",
+      "serviceUuid": "da1a1500-d532-4285-be94-b07a3e11a098",
+      "characteristicUuid": "da1a150c-d532-4285-be94-b07a3e11a098",
+      "serviceUuidForms": [
+        "da1a1500-d532-4285-be94-b07a3e11a098"
+      ],
+      "characteristicUuidForms": [
+        "da1a150c-d532-4285-be94-b07a3e11a098"
+      ],
+      "knownTarget": "BatteryCellUpdate candidate",
+      "attempts": 4,
+      "callbacks": 4,
+      "successes": 4,
+      "validCallbacks": 4,
+      "failures": 0,
+      "nonCallbackEvents": 0,
+      "statusCounts": {
+        "0": 4
+      },
+      "outcomeCounts": {
+        "CALLBACK_SUCCESS": 4
+      },
+      "payloadCount": 4,
+      "validPayloadCount": 4,
+      "invalidPayloadCount": 0,
+      "uniquePayloadCount": 2,
+      "lengthCounts": {
+        "13": 4
+      },
+      "validLengthCounts": {
+        "13": 4
+      },
+      "dynamicAcrossScans": true,
+      "variableByteIndexes": [],
+      "sentinelLikeOnly": true,
+      "samplePayloads": [
+        "FF-FF-FF-80-00-80-00-80-00-00-00-00-00"
+      ],
+      "samplePayloadHashes": [
+        "11a6021ef07326bb91c6c00e8bc882871f4aeb666e24c17c83ba653120c34c6b"
+      ],
+      "invalidPayloadHashes": [],
+      "sensitivePayloadRedacted": false,
+      "evidenceLabels": [
+        "BT638 beobachtet"
+      ],
+      "meanings": [
+        "Zell- und Temperaturbezug im SDK plausibel, BT638-Details offen."
+      ],
+      "properties": [
+        "READ|NOTIFY"
+      ],
+      "propertiesRaw": [
+        "18"
+      ],
+      "connectionEpochs": [
+        "2"
+      ],
+      "measurementConnectionEpochs": [],
+      "independentSemanticConfirmation": false
+    },
+    {
+      "service": "1500",
+      "characteristic": "150D",
+      "serviceUuid": "da1a1500-d532-4285-be94-b07a3e11a098",
+      "characteristicUuid": "da1a150d-d532-4285-be94-b07a3e11a098",
+      "serviceUuidForms": [
+        "da1a1500-d532-4285-be94-b07a3e11a098"
+      ],
+      "characteristicUuidForms": [
+        "da1a150d-d532-4285-be94-b07a3e11a098"
+      ],
+      "knownTarget": null,
+      "attempts": 4,
+      "callbacks": 4,
+      "successes": 4,
+      "validCallbacks": 4,
+      "failures": 0,
+      "nonCallbackEvents": 0,
+      "statusCounts": {
+        "0": 4
+      },
+      "outcomeCounts": {
+        "CALLBACK_SUCCESS": 4
+      },
+      "payloadCount": 4,
+      "validPayloadCount": 4,
+      "invalidPayloadCount": 0,
+      "uniquePayloadCount": 6,
+      "lengthCounts": {
+        "20": 4
+      },
+      "validLengthCounts": {
+        "20": 4
+      },
+      "dynamicAcrossScans": true,
+      "variableByteIndexes": [
+        1,
+        3
+      ],
+      "sentinelLikeOnly": false,
+      "samplePayloads": [
+        "00-00-00-00-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-FF-FF-00-00",
+        "00-25-00-00-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-FF-FF-00-00",
+        "00-DA-00-64-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-FF-FF-00-00"
+      ],
+      "samplePayloadHashes": [
+        "27af0afdac44ff48e37d1dd4bfb967dd102b91fa1a7d05fa4c1cce398e933496",
+        "f15957cfcf3f265b9378d14bbdfb2e078633f2fc7ed7c65e6870b1316cc0adb8",
+        "ff16038d3573e30a70f401e6808f9ba5ee80a49e701aa1d50da7eaacddfab94a"
+      ],
+      "invalidPayloadHashes": [],
+      "sensitivePayloadRedacted": false,
+      "evidenceLabels": [
+        "BT638 bestätigt"
+      ],
+      "meanings": [
+        "Persistente Fahrstatistik mit Maximum und Durchschnitt; kein Live-Tempo."
+      ],
+      "properties": [
+        "READ|NOTIFY"
+      ],
+      "propertiesRaw": [
+        "18"
+      ],
+      "connectionEpochs": [
+        "2"
+      ],
+      "measurementConnectionEpochs": [],
+      "independentSemanticConfirmation": false
+    },
+    {
+      "service": "1500",
+      "characteristic": "150E",
+      "serviceUuid": "da1a1500-d532-4285-be94-b07a3e11a098",
+      "characteristicUuid": "da1a150e-d532-4285-be94-b07a3e11a098",
+      "serviceUuidForms": [
+        "da1a1500-d532-4285-be94-b07a3e11a098"
+      ],
+      "characteristicUuidForms": [
+        "da1a150e-d532-4285-be94-b07a3e11a098"
+      ],
+      "knownTarget": null,
+      "attempts": 4,
+      "callbacks": 4,
+      "successes": 4,
+      "validCallbacks": 4,
+      "failures": 0,
+      "nonCallbackEvents": 0,
+      "statusCounts": {
+        "0": 4
+      },
+      "outcomeCounts": {
+        "CALLBACK_SUCCESS": 4
+      },
+      "payloadCount": 4,
+      "validPayloadCount": 4,
+      "invalidPayloadCount": 0,
+      "uniquePayloadCount": 1,
+      "lengthCounts": {
+        "20": 4
+      },
+      "validLengthCounts": {
+        "20": 4
+      },
+      "dynamicAcrossScans": false,
+      "variableByteIndexes": [],
+      "sentinelLikeOnly": false,
+      "samplePayloads": [],
+      "samplePayloadHashes": [
+        "eb28e6a4b4ab077e254dae82e43e6913ab94d5b5fc3ab7623dbf11b1f4d3c886"
+      ],
+      "invalidPayloadHashes": [],
+      "sensitivePayloadRedacted": true,
+      "evidenceLabels": [
+        "BT638 beobachtet"
+      ],
+      "meanings": [
+        "REDACTED_IDENTITY_OR_FREE_FORM"
+      ],
+      "properties": [
+        "READ"
+      ],
+      "propertiesRaw": [
+        "2"
+      ],
+      "connectionEpochs": [
+        "2"
+      ],
+      "measurementConnectionEpochs": [],
+      "independentSemanticConfirmation": false
+    },
+    {
+      "service": "1500",
+      "characteristic": "150F",
+      "serviceUuid": "da1a1500-d532-4285-be94-b07a3e11a098",
+      "characteristicUuid": "da1a150f-d532-4285-be94-b07a3e11a098",
+      "serviceUuidForms": [
+        "da1a1500-d532-4285-be94-b07a3e11a098"
+      ],
+      "characteristicUuidForms": [
+        "da1a150f-d532-4285-be94-b07a3e11a098"
+      ],
+      "knownTarget": null,
+      "attempts": 4,
+      "callbacks": 4,
+      "successes": 4,
+      "validCallbacks": 4,
+      "failures": 0,
+      "nonCallbackEvents": 0,
+      "statusCounts": {
+        "0": 4
+      },
+      "outcomeCounts": {
+        "CALLBACK_SUCCESS": 4
+      },
+      "payloadCount": 4,
+      "validPayloadCount": 4,
+      "invalidPayloadCount": 0,
+      "uniquePayloadCount": 1,
+      "lengthCounts": {
+        "20": 4
+      },
+      "validLengthCounts": {
+        "20": 4
+      },
+      "dynamicAcrossScans": false,
+      "variableByteIndexes": [],
+      "sentinelLikeOnly": false,
+      "samplePayloads": [],
+      "samplePayloadHashes": [
+        "eb28e6a4b4ab077e254dae82e43e6913ab94d5b5fc3ab7623dbf11b1f4d3c886"
+      ],
+      "invalidPayloadHashes": [],
+      "sensitivePayloadRedacted": true,
+      "evidenceLabels": [
+        "BT638 beobachtet"
+      ],
+      "meanings": [
+        "REDACTED_IDENTITY_OR_FREE_FORM"
+      ],
+      "properties": [
+        "READ"
+      ],
+      "propertiesRaw": [
+        "2"
+      ],
+      "connectionEpochs": [
+        "2"
+      ],
+      "measurementConnectionEpochs": [],
+      "independentSemanticConfirmation": false
+    },
+    {
+      "service": "1500",
+      "characteristic": "1510",
+      "serviceUuid": "da1a1500-d532-4285-be94-b07a3e11a098",
+      "characteristicUuid": "da1a1510-d532-4285-be94-b07a3e11a098",
+      "serviceUuidForms": [
+        "da1a1500-d532-4285-be94-b07a3e11a098"
+      ],
+      "characteristicUuidForms": [
+        "da1a1510-d532-4285-be94-b07a3e11a098"
+      ],
+      "knownTarget": null,
+      "attempts": 4,
+      "callbacks": 4,
+      "successes": 4,
+      "validCallbacks": 4,
+      "failures": 0,
+      "nonCallbackEvents": 0,
+      "statusCounts": {
+        "0": 4
+      },
+      "outcomeCounts": {
+        "CALLBACK_SUCCESS": 4
+      },
+      "payloadCount": 4,
+      "validPayloadCount": 4,
+      "invalidPayloadCount": 0,
+      "uniquePayloadCount": 1,
+      "lengthCounts": {
+        "20": 4
+      },
+      "validLengthCounts": {
+        "20": 4
+      },
+      "dynamicAcrossScans": false,
+      "variableByteIndexes": [],
+      "sentinelLikeOnly": false,
+      "samplePayloads": [],
+      "samplePayloadHashes": [
+        "eb28e6a4b4ab077e254dae82e43e6913ab94d5b5fc3ab7623dbf11b1f4d3c886"
+      ],
+      "invalidPayloadHashes": [],
+      "sensitivePayloadRedacted": true,
+      "evidenceLabels": [
+        "BT638 beobachtet"
+      ],
+      "meanings": [
+        "REDACTED_IDENTITY_OR_FREE_FORM"
+      ],
+      "properties": [
+        "READ"
+      ],
+      "propertiesRaw": [
+        "2"
+      ],
+      "connectionEpochs": [
+        "2"
+      ],
+      "measurementConnectionEpochs": [],
+      "independentSemanticConfirmation": false
+    },
+    {
+      "service": "1500",
+      "characteristic": "1511",
+      "serviceUuid": "da1a1500-d532-4285-be94-b07a3e11a098",
+      "characteristicUuid": "da1a1511-d532-4285-be94-b07a3e11a098",
+      "serviceUuidForms": [
+        "da1a1500-d532-4285-be94-b07a3e11a098"
+      ],
+      "characteristicUuidForms": [
+        "da1a1511-d532-4285-be94-b07a3e11a098"
+      ],
+      "knownTarget": null,
+      "attempts": 4,
+      "callbacks": 4,
+      "successes": 4,
+      "validCallbacks": 4,
+      "failures": 0,
+      "nonCallbackEvents": 0,
+      "statusCounts": {
+        "0": 4
+      },
+      "outcomeCounts": {
+        "CALLBACK_SUCCESS": 4
+      },
+      "payloadCount": 4,
+      "validPayloadCount": 4,
+      "invalidPayloadCount": 0,
+      "uniquePayloadCount": 2,
+      "lengthCounts": {
+        "20": 4
+      },
+      "validLengthCounts": {
+        "20": 4
+      },
+      "dynamicAcrossScans": true,
+      "variableByteIndexes": [],
+      "sentinelLikeOnly": false,
+      "samplePayloads": [],
+      "samplePayloadHashes": [
+        "ddbb9244acf8127793a84541964b8caae120eaef045f4f997bbdaa6a2295bb67"
+      ],
+      "invalidPayloadHashes": [],
+      "sensitivePayloadRedacted": true,
+      "evidenceLabels": [
+        "BT638 beobachtet"
+      ],
+      "meanings": [
+        "REDACTED_IDENTITY_OR_FREE_FORM"
+      ],
+      "properties": [
+        "READ"
+      ],
+      "propertiesRaw": [
+        "2"
+      ],
+      "connectionEpochs": [
+        "2"
+      ],
+      "measurementConnectionEpochs": [],
+      "independentSemanticConfirmation": false
+    },
+    {
+      "service": "1500",
+      "characteristic": "1512",
+      "serviceUuid": "da1a1500-d532-4285-be94-b07a3e11a098",
+      "characteristicUuid": "da1a1512-d532-4285-be94-b07a3e11a098",
+      "serviceUuidForms": [
+        "da1a1500-d532-4285-be94-b07a3e11a098"
+      ],
+      "characteristicUuidForms": [
+        "da1a1512-d532-4285-be94-b07a3e11a098"
+      ],
+      "knownTarget": null,
+      "attempts": 4,
+      "callbacks": 4,
+      "successes": 4,
+      "validCallbacks": 4,
+      "failures": 0,
+      "nonCallbackEvents": 0,
+      "statusCounts": {
+        "0": 4
+      },
+      "outcomeCounts": {
+        "CALLBACK_SUCCESS": 4
+      },
+      "payloadCount": 4,
+      "validPayloadCount": 4,
+      "invalidPayloadCount": 0,
+      "uniquePayloadCount": 1,
+      "lengthCounts": {
+        "20": 4
+      },
+      "validLengthCounts": {
+        "20": 4
+      },
+      "dynamicAcrossScans": false,
+      "variableByteIndexes": [],
+      "sentinelLikeOnly": false,
+      "samplePayloads": [],
+      "samplePayloadHashes": [
+        "eb28e6a4b4ab077e254dae82e43e6913ab94d5b5fc3ab7623dbf11b1f4d3c886"
+      ],
+      "invalidPayloadHashes": [],
+      "sensitivePayloadRedacted": true,
+      "evidenceLabels": [
+        "BT638 beobachtet"
+      ],
+      "meanings": [
+        "REDACTED_IDENTITY_OR_FREE_FORM"
+      ],
+      "properties": [
+        "READ"
+      ],
+      "propertiesRaw": [
+        "2"
+      ],
+      "connectionEpochs": [
+        "2"
+      ],
+      "measurementConnectionEpochs": [],
+      "independentSemanticConfirmation": false
+    },
+    {
+      "service": "1500",
+      "characteristic": "1513",
+      "serviceUuid": "da1a1500-d532-4285-be94-b07a3e11a098",
+      "characteristicUuid": "da1a1513-d532-4285-be94-b07a3e11a098",
+      "serviceUuidForms": [
+        "da1a1500-d532-4285-be94-b07a3e11a098"
+      ],
+      "characteristicUuidForms": [
+        "da1a1513-d532-4285-be94-b07a3e11a098"
+      ],
+      "knownTarget": null,
+      "attempts": 4,
+      "callbacks": 4,
+      "successes": 4,
+      "validCallbacks": 4,
+      "failures": 0,
+      "nonCallbackEvents": 0,
+      "statusCounts": {
+        "0": 4
+      },
+      "outcomeCounts": {
+        "CALLBACK_SUCCESS": 4
+      },
+      "payloadCount": 4,
+      "validPayloadCount": 4,
+      "invalidPayloadCount": 0,
+      "uniquePayloadCount": 2,
+      "lengthCounts": {
+        "20": 4
+      },
+      "validLengthCounts": {
+        "20": 4
+      },
+      "dynamicAcrossScans": true,
+      "variableByteIndexes": [],
+      "sentinelLikeOnly": false,
+      "samplePayloads": [],
+      "samplePayloadHashes": [
+        "ddbb9244acf8127793a84541964b8caae120eaef045f4f997bbdaa6a2295bb67"
+      ],
+      "invalidPayloadHashes": [],
+      "sensitivePayloadRedacted": true,
+      "evidenceLabels": [
+        "BT638 beobachtet"
+      ],
+      "meanings": [
+        "REDACTED_IDENTITY_OR_FREE_FORM"
+      ],
+      "properties": [
+        "READ"
+      ],
+      "propertiesRaw": [
+        "2"
+      ],
+      "connectionEpochs": [
+        "2"
+      ],
+      "measurementConnectionEpochs": [],
+      "independentSemanticConfirmation": false
+    },
+    {
+      "service": "1500",
+      "characteristic": "151C",
+      "serviceUuid": "da1a1500-d532-4285-be94-b07a3e11a098",
+      "characteristicUuid": "da1a151c-d532-4285-be94-b07a3e11a098",
+      "serviceUuidForms": [
+        "da1a1500-d532-4285-be94-b07a3e11a098"
+      ],
+      "characteristicUuidForms": [
+        "da1a151c-d532-4285-be94-b07a3e11a098"
+      ],
+      "knownTarget": null,
+      "attempts": 4,
+      "callbacks": 4,
+      "successes": 4,
+      "validCallbacks": 4,
+      "failures": 0,
+      "nonCallbackEvents": 0,
+      "statusCounts": {
+        "0": 4
+      },
+      "outcomeCounts": {
+        "CALLBACK_SUCCESS": 4
+      },
+      "payloadCount": 4,
+      "validPayloadCount": 4,
+      "invalidPayloadCount": 0,
+      "uniquePayloadCount": 1,
+      "lengthCounts": {
+        "10": 4
+      },
+      "validLengthCounts": {
+        "10": 4
+      },
+      "dynamicAcrossScans": false,
+      "variableByteIndexes": [],
+      "sentinelLikeOnly": false,
+      "samplePayloads": [],
+      "samplePayloadHashes": [
+        "1d9d37968d88175bae6bd9bfbc24c2f4aab55e364229dff16d8929fe8ab962bb"
+      ],
+      "invalidPayloadHashes": [],
+      "sensitivePayloadRedacted": true,
+      "evidenceLabels": [
+        "BT638 beobachtet"
+      ],
+      "meanings": [
+        "REDACTED_IDENTITY_OR_FREE_FORM"
+      ],
+      "properties": [
+        "READ"
+      ],
+      "propertiesRaw": [
+        "2"
+      ],
+      "connectionEpochs": [
+        "2"
+      ],
+      "measurementConnectionEpochs": [],
+      "independentSemanticConfirmation": false
+    },
+    {
+      "service": "1800",
+      "characteristic": "1802",
+      "serviceUuid": "da1a1800-d532-4285-be94-b07a3e11a098",
+      "characteristicUuid": "da1a1802-d532-4285-be94-b07a3e11a098",
+      "serviceUuidForms": [
+        "da1a1800-d532-4285-be94-b07a3e11a098"
+      ],
+      "characteristicUuidForms": [
+        "da1a1802-d532-4285-be94-b07a3e11a098"
+      ],
+      "knownTarget": null,
+      "attempts": 4,
+      "callbacks": 4,
+      "successes": 4,
+      "validCallbacks": 4,
+      "failures": 0,
+      "nonCallbackEvents": 0,
+      "statusCounts": {
+        "0": 4
+      },
+      "outcomeCounts": {
+        "CALLBACK_SUCCESS": 4
+      },
+      "payloadCount": 4,
+      "validPayloadCount": 4,
+      "invalidPayloadCount": 0,
+      "uniquePayloadCount": 5,
+      "lengthCounts": {
+        "20": 4
+      },
+      "validLengthCounts": {
+        "20": 4
+      },
+      "dynamicAcrossScans": true,
+      "variableByteIndexes": [],
+      "sentinelLikeOnly": false,
+      "samplePayloads": [],
+      "samplePayloadHashes": [
+        "161660a64e88a397a33d90c876888717a0e1f7735754b0fbec20ad3d762038ba",
+        "a9df4748f6f1d6b1d41881d006d20a5d034fc8a9dfcecd702ee0da6fea06da34",
+        "d13909bfd1b7085dc3b93e4c70448a63b5c0ae381203da79c45a2e2c94647fb1"
+      ],
+      "invalidPayloadHashes": [],
+      "sensitivePayloadRedacted": true,
+      "evidenceLabels": [
+        "BT638 beobachtet"
+      ],
+      "meanings": [
+        "REDACTED_IDENTITY_OR_FREE_FORM"
+      ],
+      "properties": [
+        "READ"
+      ],
+      "propertiesRaw": [
+        "2"
+      ],
+      "connectionEpochs": [
+        "2"
+      ],
+      "measurementConnectionEpochs": [],
+      "independentSemanticConfirmation": false
+    },
+    {
+      "service": "1800",
+      "characteristic": "2A00",
+      "serviceUuid": "00001800-0000-1000-8000-00805f9b34fb",
+      "characteristicUuid": "00002a00-0000-1000-8000-00805f9b34fb",
+      "serviceUuidForms": [
+        "00001800-0000-1000-8000-00805f9b34fb"
+      ],
+      "characteristicUuidForms": [
+        "00002a00-0000-1000-8000-00805f9b34fb"
+      ],
+      "knownTarget": null,
+      "attempts": 4,
+      "callbacks": 4,
+      "successes": 4,
+      "validCallbacks": 4,
+      "failures": 0,
+      "nonCallbackEvents": 0,
+      "statusCounts": {
+        "0": 4
+      },
+      "outcomeCounts": {
+        "CALLBACK_SUCCESS": 4
+      },
+      "payloadCount": 4,
+      "validPayloadCount": 4,
+      "invalidPayloadCount": 0,
+      "uniquePayloadCount": 1,
+      "lengthCounts": {
+        "24": 4
+      },
+      "validLengthCounts": {
+        "24": 4
+      },
+      "dynamicAcrossScans": false,
+      "variableByteIndexes": [],
+      "sentinelLikeOnly": false,
+      "samplePayloads": [],
+      "samplePayloadHashes": [
+        "76e372406e5a71538c6e4894bba3797f594705e594733a2bb81339ed5e7403a8"
+      ],
+      "invalidPayloadHashes": [],
+      "sensitivePayloadRedacted": true,
+      "evidenceLabels": [
+        "Bluetooth-Standard"
+      ],
+      "meanings": [
+        "REDACTED_IDENTITY_OR_FREE_FORM"
+      ],
+      "properties": [
+        "READ|NOTIFY"
+      ],
+      "propertiesRaw": [
+        "18"
+      ],
+      "connectionEpochs": [
+        "2"
+      ],
+      "measurementConnectionEpochs": [],
+      "independentSemanticConfirmation": false
+    },
+    {
+      "service": "1800",
+      "characteristic": "2A01",
+      "serviceUuid": "00001800-0000-1000-8000-00805f9b34fb",
+      "characteristicUuid": "00002a01-0000-1000-8000-00805f9b34fb",
+      "serviceUuidForms": [
+        "00001800-0000-1000-8000-00805f9b34fb"
+      ],
+      "characteristicUuidForms": [
+        "00002a01-0000-1000-8000-00805f9b34fb"
+      ],
+      "knownTarget": null,
+      "attempts": 4,
+      "callbacks": 4,
+      "successes": 4,
+      "validCallbacks": 4,
+      "failures": 0,
+      "nonCallbackEvents": 0,
+      "statusCounts": {
+        "0": 4
+      },
+      "outcomeCounts": {
+        "CALLBACK_SUCCESS": 4
+      },
+      "payloadCount": 4,
+      "validPayloadCount": 4,
+      "invalidPayloadCount": 0,
+      "uniquePayloadCount": 2,
+      "lengthCounts": {
+        "2": 4
+      },
+      "validLengthCounts": {
+        "2": 4
+      },
+      "dynamicAcrossScans": true,
+      "variableByteIndexes": [],
+      "sentinelLikeOnly": true,
+      "samplePayloads": [
+        "00-00"
+      ],
+      "samplePayloadHashes": [
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+      ],
+      "invalidPayloadHashes": [],
+      "sensitivePayloadRedacted": false,
+      "evidenceLabels": [
+        "Bluetooth-Standard"
+      ],
+      "meanings": [
+        "Appearance"
+      ],
+      "properties": [
+        "READ"
+      ],
+      "propertiesRaw": [
+        "2"
+      ],
+      "connectionEpochs": [
+        "2"
+      ],
+      "measurementConnectionEpochs": [],
+      "independentSemanticConfirmation": false
+    },
+    {
+      "service": "1800",
+      "characteristic": "2A02",
+      "serviceUuid": "00001800-0000-1000-8000-00805f9b34fb",
+      "characteristicUuid": "00002a02-0000-1000-8000-00805f9b34fb",
+      "serviceUuidForms": [
+        "00001800-0000-1000-8000-00805f9b34fb"
+      ],
+      "characteristicUuidForms": [
+        "00002a02-0000-1000-8000-00805f9b34fb"
+      ],
+      "knownTarget": null,
+      "attempts": 4,
+      "callbacks": 4,
+      "successes": 4,
+      "validCallbacks": 4,
+      "failures": 0,
+      "nonCallbackEvents": 0,
+      "statusCounts": {
+        "0": 4
+      },
+      "outcomeCounts": {
+        "CALLBACK_SUCCESS": 4
+      },
+      "payloadCount": 4,
+      "validPayloadCount": 4,
+      "invalidPayloadCount": 0,
+      "uniquePayloadCount": 2,
+      "lengthCounts": {
+        "2": 4
+      },
+      "validLengthCounts": {
+        "2": 4
+      },
+      "dynamicAcrossScans": true,
+      "variableByteIndexes": [],
+      "sentinelLikeOnly": true,
+      "samplePayloads": [
+        "00-00"
+      ],
+      "samplePayloadHashes": [
+        "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+      ],
+      "invalidPayloadHashes": [],
+      "sensitivePayloadRedacted": false,
+      "evidenceLabels": [
+        "Bluetooth-Standard"
+      ],
+      "meanings": [
+        "Peripheral Privacy Flag"
+      ],
+      "properties": [
+        "READ"
+      ],
+      "propertiesRaw": [
+        "2"
+      ],
+      "connectionEpochs": [
+        "2"
+      ],
+      "measurementConnectionEpochs": [],
+      "independentSemanticConfirmation": false
+    },
+    {
+      "service": "1800",
+      "characteristic": "2A04",
+      "serviceUuid": "00001800-0000-1000-8000-00805f9b34fb",
+      "characteristicUuid": "00002a04-0000-1000-8000-00805f9b34fb",
+      "serviceUuidForms": [
+        "00001800-0000-1000-8000-00805f9b34fb"
+      ],
+      "characteristicUuidForms": [
+        "00002a04-0000-1000-8000-00805f9b34fb"
+      ],
+      "knownTarget": null,
+      "attempts": 4,
+      "callbacks": 4,
+      "successes": 4,
+      "validCallbacks": 4,
+      "failures": 0,
+      "nonCallbackEvents": 0,
+      "statusCounts": {
+        "0": 4
+      },
+      "outcomeCounts": {
+        "CALLBACK_SUCCESS": 4
+      },
+      "payloadCount": 4,
+      "validPayloadCount": 4,
+      "invalidPayloadCount": 0,
+      "uniquePayloadCount": 2,
+      "lengthCounts": {
+        "8": 4
+      },
+      "validLengthCounts": {
+        "8": 4
+      },
+      "dynamicAcrossScans": true,
+      "variableByteIndexes": [],
+      "sentinelLikeOnly": false,
+      "samplePayloads": [
+        "14-00-28-00-00-00-E8-03"
+      ],
+      "samplePayloadHashes": [
+        "8ee55cb630f6fb40848aecd40d31b8f1424e54a5290544cce71e4f8c6b5cccfd"
+      ],
+      "invalidPayloadHashes": [],
+      "sensitivePayloadRedacted": false,
+      "evidenceLabels": [
+        "Bluetooth-Standard"
+      ],
+      "meanings": [
+        "Peripheral Preferred Connection Parameters"
+      ],
+      "properties": [
+        "READ"
+      ],
+      "propertiesRaw": [
+        "2"
+      ],
+      "connectionEpochs": [
+        "2"
+      ],
+      "measurementConnectionEpochs": [],
+      "independentSemanticConfirmation": false
+    },
+    {
+      "service": "1800",
+      "characteristic": "2A28",
+      "serviceUuid": "00001800-0000-1000-8000-00805f9b34fb",
+      "characteristicUuid": "00002a28-0000-1000-8000-00805f9b34fb",
+      "serviceUuidForms": [
+        "00001800-0000-1000-8000-00805f9b34fb"
+      ],
+      "characteristicUuidForms": [
+        "00002a28-0000-1000-8000-00805f9b34fb"
+      ],
+      "knownTarget": null,
+      "attempts": 4,
+      "callbacks": 4,
+      "successes": 4,
+      "validCallbacks": 4,
+      "failures": 0,
+      "nonCallbackEvents": 0,
+      "statusCounts": {
+        "0": 4
+      },
+      "outcomeCounts": {
+        "CALLBACK_SUCCESS": 4
+      },
+      "payloadCount": 4,
+      "validPayloadCount": 4,
+      "invalidPayloadCount": 0,
+      "uniquePayloadCount": 1,
+      "lengthCounts": {
+        "10": 4
+      },
+      "validLengthCounts": {
+        "10": 4
+      },
+      "dynamicAcrossScans": false,
+      "variableByteIndexes": [],
+      "sentinelLikeOnly": false,
+      "samplePayloads": [],
+      "samplePayloadHashes": [
+        "065d10ab6f3c497c3209251b654ac005a7f67238063fbfcf96d99fbc93d910b5"
+      ],
+      "invalidPayloadHashes": [],
+      "sensitivePayloadRedacted": true,
+      "evidenceLabels": [
+        "Bluetooth-Standard"
+      ],
+      "meanings": [
+        "REDACTED_IDENTITY_OR_FREE_FORM"
+      ],
+      "properties": [
+        "READ"
+      ],
+      "propertiesRaw": [
+        "2"
+      ],
+      "connectionEpochs": [
+        "2"
+      ],
+      "measurementConnectionEpochs": [],
+      "independentSemanticConfirmation": false
+    },
+    {
+      "service": "1801",
+      "characteristic": "2A05",
+      "serviceUuid": "00001801-0000-1000-8000-00805f9b34fb",
+      "characteristicUuid": "00002a05-0000-1000-8000-00805f9b34fb",
+      "serviceUuidForms": [
+        "00001801-0000-1000-8000-00805f9b34fb"
+      ],
+      "characteristicUuidForms": [
+        "00002a05-0000-1000-8000-00805f9b34fb"
+      ],
+      "knownTarget": null,
+      "attempts": 4,
+      "callbacks": 4,
+      "successes": 4,
+      "validCallbacks": 4,
+      "failures": 0,
+      "nonCallbackEvents": 0,
+      "statusCounts": {
+        "0": 4
+      },
+      "outcomeCounts": {
+        "CALLBACK_SUCCESS": 4
+      },
+      "payloadCount": 4,
+      "validPayloadCount": 4,
+      "invalidPayloadCount": 0,
+      "uniquePayloadCount": 2,
+      "lengthCounts": {
+        "4": 4
+      },
+      "validLengthCounts": {
+        "4": 4
+      },
+      "dynamicAcrossScans": true,
+      "variableByteIndexes": [],
+      "sentinelLikeOnly": true,
+      "samplePayloads": [
+        "00-00-00-00"
+      ],
+      "samplePayloadHashes": [
+        "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
+      ],
+      "invalidPayloadHashes": [],
+      "sensitivePayloadRedacted": false,
+      "evidenceLabels": [
+        "Bluetooth-Standard"
+      ],
+      "meanings": [
+        "Service Changed"
+      ],
+      "properties": [
+        "READ|WRITE|NOTIFY|INDICATE|BROADCAST"
+      ],
+      "propertiesRaw": [
+        "123"
+      ],
+      "connectionEpochs": [
+        "2"
+      ],
+      "measurementConnectionEpochs": [],
+      "independentSemanticConfirmation": false
+    }
+  ],
+  "evidencePolicy": "Only an explicit GATT callback is a READ response. A successful callback proves only that this BT638/GATT characteristic answered with the recorded bytes. Local timeout/disconnect events, BLE observations and model agreement prove no byte semantics, BMS origin, authentication or write capability."
 }
