@@ -22,6 +22,7 @@ GEMINI_FALLBACK_MODELS = (
     ("gemini-3.5-flash-lite", "low"),
 )
 TRANSIENT_RETRY_DELAYS_S = (2.0, 6.0)
+REQUIRED_FOOTER = "Freigabe: keine automatische Änderung."
 COMPACT_REVIEW_SUFFIX = """
 
 Antwortbudget für diesen Retry:
@@ -36,6 +37,13 @@ def _compact_prompt(prompt: str) -> str:
     if COMPACT_REVIEW_SUFFIX in prompt:
         return prompt
     return f"{prompt.rstrip()}\n\n{COMPACT_REVIEW_SUFFIX}"
+
+
+def _require_complete_text(text: str) -> str:
+    clean = str(text or "").strip()
+    if not clean.endswith(REQUIRED_FOOTER):
+        raise RuntimeError("Unvollständige Reviewer-Antwort: Abschlussmarker fehlt")
+    return clean
 
 
 def _is_quota_error(error: BaseException) -> bool:
@@ -102,12 +110,14 @@ def _gemini_model(
         {"x-goog-api-key": api_key},
         payload,
     )
+    text = _require_complete_text(provider_review.extract_gemini_text(data))
     return {
         "status": "ok",
         "model": model,
         "provider": "Gemini",
         "fallback": fallback,
-        "text": provider_review.extract_gemini_text(data),
+        "text": text,
+        "outputComplete": True,
     }
 
 
@@ -150,7 +160,8 @@ def _gemini_resilient(api_key: str, prompt: str, primary_error: str) -> dict[str
             return item
         except Exception as error:
             last_error = error
-            # A model-specific quota can still leave another fallback model usable.
+            # Quota, truncation or a transient outage on one model may still leave
+            # the next fallback usable, so continue through the full chain.
             continue
 
     raise last_error or RuntimeError("Kein Gemini-Modell konnte die Anfrage beantworten")
@@ -175,7 +186,8 @@ def _glm_free_fallback(api_key: str, prompt: str) -> dict[str, Any]:
                     "model": model,
                     "provider": provider,
                     "fallback": True,
-                    "text": text,
+                    "text": _require_complete_text(text),
+                    "outputComplete": True,
                 }
 
             item = _call_with_transient_retries(call)
@@ -251,7 +263,7 @@ def preserve_last_success(
 
         old = old_providers.get(key) if isinstance(old_providers.get(key), dict) else {}
         old_text = str(old.get("text") or "").strip()
-        old_complete = bool(old.get("outputComplete", old_text.endswith("Freigabe: keine automatische Änderung.")))
+        old_complete = bool(old.get("outputComplete", old_text.endswith(REQUIRED_FOOTER)))
         if old_text and old_complete and old.get("status") in {"ok", "cached_ok"}:
             cached = json.loads(json.dumps(old))
             cached["status"] = "cached_ok"
