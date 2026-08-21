@@ -52,6 +52,45 @@ class EvidenceGuardTests(unittest.TestCase):
         self.assertEqual(1, guarded["confirmedRuleCount"])
         self.assertNotEqual("old", guarded["revision"])
 
+    def test_cross_field_power_evidence_replaces_self_reference_as_confidence_cap(self):
+        profile = {
+            "revision": "old",
+            "rideCount": 13,
+            "ruleCount": 1,
+            "confirmedRuleCount": 1,
+            "rules": [{
+                "signal": "powerW", "channel": "1509", "offset": 9,
+                "encoding": "u16be", "status": "confirmed", "confidence": 99,
+                "rides": 8, "observations": 939,
+            }],
+        }
+        libble = {
+            "aggregate_fields": {
+                "1509.direct_power_W": {
+                    "match_percent": 99.0,
+                    "mae_to_app_live": 0.0,
+                    "independent_semantic_confirmation": False,
+                    "verdict": "APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT",
+                }
+            }
+        }
+        cross = {
+            "comparisons": 120,
+            "closePercent": 76.4,
+            "maeW": 31.2,
+            "correlation": 0.93,
+            "reference": "abs(voltage_v * current_a) via electrical_power_w",
+        }
+
+        guarded = evidence_guard.apply_evidence_guard(profile, libble, cross)
+        power = guarded["rules"][0]
+        self.assertEqual("candidate", power["status"])
+        self.assertEqual(76, power["confidence"])
+        self.assertEqual("sdk-layout+cross-field-check-needs-external-proof", power["source"])
+        self.assertEqual(120, power["evidenceGuard"]["crossFieldComparisons"])
+        self.assertEqual(76.4, power["evidenceGuard"]["crossFieldClosePercent"])
+        self.assertFalse(power["evidenceGuard"]["independentExternalConfirmation"])
+
     def test_independently_confirmed_direct_power_stays_confirmed(self):
         profile = {
             "revision": "old",
@@ -75,7 +114,7 @@ class EvidenceGuardTests(unittest.TestCase):
         self.assertEqual("confirmed", guarded["rules"][0]["status"])
         self.assertEqual(1, guarded["confirmedRuleCount"])
 
-    def test_report_does_not_call_direct_power_ground_truth(self):
+    def test_report_does_not_call_direct_power_ground_truth_and_shows_crosscheck(self):
         profile = {
             "revision": "rev",
             "rideCount": 13,
@@ -83,13 +122,21 @@ class EvidenceGuardTests(unittest.TestCase):
             "confirmedRuleCount": 0,
             "rules": [{
                 "signal": "powerW", "channel": "1509", "offset": 9,
-                "encoding": "u16be", "status": "candidate", "confidence": 89,
+                "encoding": "u16be", "status": "candidate", "confidence": 76,
                 "rides": 8, "observations": 939,
-                "source": "sdk-layout-observed-needs-independent-proof",
+                "source": "sdk-layout+cross-field-check-needs-external-proof",
+                "evidenceGuard": {
+                    "crossFieldComparisons": 120,
+                    "crossFieldClosePercent": 76.4,
+                    "crossFieldMaeW": 31.2,
+                    "crossFieldCorrelation": 0.93,
+                },
             }],
         }
         report = evidence_guard.render_report(profile)
         self.assertIn("Leistungs-Kandidat", report)
+        self.assertIn("Power-Cross-Check ohne Selbstbestätigung", report)
+        self.assertIn("120", report)
         self.assertNotIn("1509/9 u16be = direkte Leistung", report)
 
 
