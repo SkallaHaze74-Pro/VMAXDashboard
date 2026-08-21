@@ -46,6 +46,32 @@ Passende Hyena-Logtexte nennen ausdrücklich:
 
 **Bewertung:** Das ist deutlich konkreter als der alte generische Hinweis auf „soft-charge/storage“. Die Original-App besitzt einen echten Hyena-Batterie-ELM-Unterbau. Für VMAXDashboard ist zuerst nur eine READ-ONLY-Erkennung sinnvoll: unterstützt/nicht unterstützt, aktueller Zustand, vorhandene Konfiguration. Keine Ladeparameter automatisch schreiben.
 
+### 1.1 Primärakku und Extender enthalten mehr Diagnosewerte als bisher dokumentiert
+
+Direkte Hyena-Klassendeskriptoren/Logs in der Base zeigen beim **Hauptakku** zusätzlich:
+
+- `BatteryPartImpl.getChargeCycles`
+- `BatteryPartImpl.getProductionDate`
+- `BatteryPartImpl.getArticleInformation1`
+- `BatteryPartImpl.getArticleInformation2`
+- `BatteryPartImpl.getOptimizedChargingSetting`
+- `capacityThroughputInAh`
+- Callbacks `onCapacityInmwh`, `onStateOfHealthInPercentage`, `onStateOfHealthInmwh`
+
+Beim **ExtenderBatteryPartImpl** sind u. a. vorhanden:
+
+- `getChargeCycles`
+- `getFirmwareKernelVersion`
+- `getFirmwareVersion`
+- `getHardwareVersion`
+- `getMid`
+- `getPartNumber`
+- `readParameters`
+
+Die Battery-Aggregator-Strings unterscheiden ausdrücklich Main-/Extender-Batterie bei Kapazität und `StateOfHealthInmwh`.
+
+**Bewertung:** Das ist ein starker neuer Ansatz für die noch offenen Akku-/SOH-Werte. Die Werte sollten nicht aus unseren heutigen 1502/150C-Paketen geraten werden, sondern über die Original-Hyena-READ-Pfade/Callbacks gesucht und anschließend gegen BT638-Rohdaten verifiziert werden. Insbesondere **Charge Cycles, Produktionsdatum, Kapazitätsdurchsatz in Ah und SOH** sind echte SDK-Ziele – aber ihre BT638-Verfügbarkeit ist noch offen.
+
 ## 2. Neue Hyena-spezifische Diagnose-/Komfortpfade
 
 `HyenaSDKManager` enthält außerdem konkrete Pfade für:
@@ -123,7 +149,9 @@ In der Base liegen Strings wie:
 - `CurrentLimit_1..9`, `SpeedLimit_1..9`
 - `System AutoOff`, `SetAutoOff`
 
-Diese stammen aus dem Multi-Protokoll-Unterbau der App und dürfen nicht auf 15xx-Hyena-Kanäle übertragen werden, solange kein Hyena-/BT638-spezifischer Pfad oder Live-Beweis existiert.
+Zusätzlich existieren generische/Sachs-nahe `WalkAssist`-/Auto-Off-Pfade. Auch diese werden **nicht** als Hyena-Funktion gewertet, solange kein Hyena-spezifischer Manager-/Part-Pfad oder BT638-Nachweis existiert.
+
+Diese Multi-Vendor-Funde dürfen nicht auf 15xx-Hyena-Kanäle übertragen werden, solange kein Hyena-/BT638-spezifischer Pfad oder Live-Beweis existiert.
 
 ## 5. IoT/Cloud-Funktionen in der Base
 
@@ -169,10 +197,10 @@ Das passt zu dem bereits live beobachteten Startmodus. Kein neuer Schreibpfad wi
 ## 8. Priorisierte sichere nächste Schritte
 
 1. Hyena ELM/Charging Capability **nur lesen**: Supported, OptimizedChargingStatus, LongStorageMode, ExtendedLifeMode, ExtenderBattery presence/settings.
-2. Hyena Battery/Health **nur lesen**: BatteryArticle14, BatteryInfo, BatteryCellUpdate, BatteryChange, MaxCapacity-bezogene Felder.
+2. Hyena Battery/Health **nur lesen**: BatteryArticle14, BatteryInfo, BatteryCellUpdate, BatteryChange, ChargeCycles, ProductionDate, CapacityThroughputInAh, SOH und MaxCapacity-bezogene Felder.
 3. Diagnose **nur lesen**: SerialNumbers, Error, ErrorString, Firmware-/Hardwaredetails, MCU bootloader status.
 4. Komfort **nur lesen**: PedalResponse current values, throttle capability flag, wireless remote presence/actions, lock status sowie Cruise-/Lock-Capability ohne Write.
-5. Ergebnisse immer gegen BT638-Live-/READ-Daten validieren; keine Multi-Vendor-EBox-/Brose-Felder als Hyena-Semantik übernehmen.
+5. Ergebnisse immer gegen BT638-Live-/READ-Daten validieren; keine Multi-Vendor-EBox-/Brose-/Sachs-Felder als Hyena-Semantik übernehmen.
 
 ## Evidenz- und Sicherheitsregel
 
