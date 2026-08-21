@@ -73,16 +73,16 @@ internal fun externalAiReviewContractDescriptor(): String = buildString {
     append(EXTERNAL_AI_REVIEW_FOOTER)
 }
 
-/** Bounded fail-closed result when two valid drafts could not be synthesized. */
+/** Bounded fail-closed result for two reviews without a third provider request. */
 internal fun buildUnsynthesizedDuoReview(geminiModel: String, glmModel: String): String = buildString {
     appendLine("Belastbare Evidenz")
-    appendLine("- Gemini ($geminiModel) und GLM ($glmModel) lieferten jeweils eine vollständige Antwort; daraus wurde keine gemeinsame Aussage automatisch übernommen.")
+    appendLine("- Gemini ($geminiModel) und GLM ($glmModel) lieferten jeweils genau eine vollständige READ-ONLY-Antwort; daraus wurde keine gemeinsame Aussage automatisch übernommen.")
     appendLine("Konflikte / mögliche Bugs")
-    appendLine("- Die gemeinsame Synthese war nicht verfügbar. Einzelantworten werden nicht verkettet oder als gegenseitige Bestätigung behandelt.")
+    appendLine("- Die App startet absichtlich keine dritte Synthese-Anfrage. Einzelantworten werden weder verkettet noch als gegenseitige Bestätigung behandelt.")
     appendLine("Hypothesen (nicht bestätigt)")
-    appendLine("- Ohne vollständige Synthese bleibt jede Modellinterpretation unveröffentlicht und unbestätigt.")
+    appendLine("- Jede Modellinterpretation bleibt unbestätigt; zwei gleiche KI-Aussagen sind weiterhin nur Modell-Konsens.")
     appendLine("Nächste sichere READ-ONLY-Tests")
-    appendLine("- Pro-Duo-Prüfung später mit identischem Evidenz-Fingerprint erneut ausführen; Messdaten und deterministische Guards bleiben maßgeblich.")
+    appendLine("- Den GitHub-Bericht mit demselben Evidenz-Fingerprint nutzen; dort darf GPT optional nur die zwei vollständigen Entwürfe ordnen. Messdaten und deterministische Guards bleiben maßgeblich.")
     appendLine("Automatische Änderungen: KEINE")
     append(EXTERNAL_AI_REVIEW_FOOTER)
 }

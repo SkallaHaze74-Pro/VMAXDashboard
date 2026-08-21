@@ -22,6 +22,11 @@ data class ExternalAiAutoReviewSnapshot(
 internal fun shouldPromoteExternalAiAnswer(mode: ExternalAiMode, providerCount: Int): Boolean =
     mode != ExternalAiMode.PRO_DUO || providerCount >= 2
 
+/** Automatic app checks use one provider request; GLM remains AUTO's failover. */
+internal fun selectAutomaticExternalAiMode(
+    @Suppress("UNUSED_PARAMETER") status: ExternalAiSecretStatus
+): ExternalAiMode = ExternalAiMode.AUTO
+
 private data class ExternalAiReviewInput(
     val mode: ExternalAiMode,
     val prompt: String,
@@ -61,30 +66,58 @@ class ExternalAiAutoReviewCoordinator private constructor(context: Context) {
     private val executor = Executors.newSingleThreadScheduledExecutor()
     private val started = AtomicBoolean(false)
     private val running = AtomicBoolean(false)
+    private val requestGate = ExternalAiReviewRequestGate()
+    private val publishStoredReviewPending = AtomicBoolean(false)
 
     fun start() {
-        if (!started.compareAndSet(false, true)) return
-        executor.execute {
-            publishStoredReviewIfAvailable()
-            runIfNeeded(force = false, reason = "App-Start")
-        }
-        executor.scheduleWithFixedDelay(
-            { runIfNeeded(force = false, reason = "Auto") },
-            CHECK_INTERVAL_SECONDS,
-            CHECK_INTERVAL_SECONDS,
-            TimeUnit.SECONDS
-        )
+        enqueueReview(force = false, reason = "App-Start", onlyWhenStarting = true)
     }
 
-    fun requestNow(reason: String = "Manuell angestoßen") {
-        start()
-        executor.execute { runIfNeeded(force = true, reason = reason) }
+    fun requestNow(reason: String = "Manuell angestoßen"): Boolean =
+        enqueueReview(force = true, reason = reason)
+
+    fun requestIfEvidenceChanged(reason: String) {
+        enqueueReview(force = false, reason = reason)
     }
 
     fun setEnabled(value: Boolean) {
         prefs.edit().putBoolean("enabled", value).apply()
-        if (value) requestNow("Automatik aktiviert")
-        else setStatus("Automatische Gemini/GLM-Prüfung ist aus")
+        if (value) requestIfEvidenceChanged("Automatik aktiviert")
+        else setStatus("Automatische READ-ONLY-KI-Prüfung ist aus")
+    }
+
+    private fun enqueueReview(
+        force: Boolean,
+        reason: String,
+        onlyWhenStarting: Boolean = false
+    ): Boolean {
+        val newlyStarted = started.compareAndSet(false, true)
+        if (!newlyStarted && onlyWhenStarting) return false
+
+        if (newlyStarted) {
+            publishStoredReviewPending.set(true)
+            executor.scheduleWithFixedDelay(
+                { enqueueReview(force = false, reason = "Auto") },
+                CHECK_INTERVAL_SECONDS,
+                CHECK_INTERVAL_SECONDS,
+                TimeUnit.SECONDS
+            )
+        }
+
+        val accepted = requestGate.submit(force = force, reason = reason)
+        if (accepted) executor.execute(::drainReviewQueue)
+        return accepted
+    }
+
+    private fun drainReviewQueue() {
+        if (publishStoredReviewPending.getAndSet(false)) {
+            runCatching(::publishStoredReviewIfAvailable)
+        }
+        var request = requestGate.current()
+        while (request != null) {
+            runIfNeeded(force = request.force, reason = request.reason)
+            request = requestGate.completeAndTakeNext()
+        }
     }
 
     fun snapshot(): ExternalAiAutoReviewSnapshot {
@@ -98,7 +131,7 @@ class ExternalAiAutoReviewCoordinator private constructor(context: Context) {
             shouldPromoteExternalAiAnswer(storedMode, storedProviderCount)
         return ExternalAiAutoReviewSnapshot(
             enabled = prefs.getBoolean("enabled", true),
-            running = running.get(),
+            running = requestGate.isBusy() || running.get(),
             status = if (rawStoredText.isNotBlank() && storedText == null) {
                 "Gespeicherte unvollständige KI-Analyse verworfen • vollständige Prüfung wird erneuert"
             } else {
@@ -297,19 +330,15 @@ class ExternalAiAutoReviewCoordinator private constructor(context: Context) {
         profile: AdaptiveProfileSnapshot,
         keyStatus: ExternalAiSecretStatus
     ): ExternalAiReviewInput {
-        val mode = if (keyStatus.geminiConfigured && keyStatus.glmConfigured) {
-            ExternalAiMode.PRO_DUO
-        } else {
-            ExternalAiMode.AUTO
-        }
+        val mode = selectAutomaticExternalAiMode(keyStatus)
         val context = ExternalAiPromptFactory.decoderContext(syncSnapshot, profile)
         return ExternalAiReviewInput(
             mode = mode,
             prompt = DEFAULT_PROMPT,
             context = context,
-            fingerprint = ExternalAiPromptFactory.reviewInputFingerprint(
+            fingerprint = ExternalAiPromptFactory.reviewEvidenceFingerprint(
                 prompt = DEFAULT_PROMPT,
-                context = context,
+                profile = profile,
                 mode = mode
             )
         )

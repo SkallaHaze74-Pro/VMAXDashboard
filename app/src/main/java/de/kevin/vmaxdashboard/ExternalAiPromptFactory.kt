@@ -24,18 +24,29 @@ object ExternalAiPromptFactory {
         appendLine("Wichtig: API-Schlüssel, GitHub-Token, Bluetooth-Adresse und GPS-Daten sind absichtlich nicht enthalten.")
     }
 
-    /** Binds freshness to the exact request text, mode and output contract. */
-    fun reviewInputFingerprint(
+    /**
+     * Binds freshness to decoder evidence, not volatile upload/reconnect status.
+     * The full context is still sent to the selected reviewer, but transport-only
+     * changes must not spend another provider request for identical evidence.
+     */
+    fun reviewEvidenceFingerprint(
         prompt: String,
-        context: String,
+        profile: AdaptiveProfileSnapshot,
         mode: ExternalAiMode
     ): String {
         val digest = MessageDigest.getInstance("SHA-256")
         listOf(
             externalAiReviewContractDescriptor(),
+            "automatic-review-policy-v2-single-provider",
             mode.name,
             prompt,
-            context
+            profile.revision,
+            profile.generatedAtMs.toString(),
+            profile.source,
+            profile.confirmedRuleCount.toString(),
+            profile.ruleCount.toString(),
+            profile.confidenceSummary,
+            profile.signals.sorted().joinToString("\u0000")
         ).forEach { value ->
             val bytes = value.toByteArray(Charsets.UTF_8)
             digest.update(ByteBuffer.allocate(Int.SIZE_BYTES).putInt(bytes.size).array())

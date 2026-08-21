@@ -18,6 +18,28 @@ def complete_review(label="review"):
 
 
 class ProviderRetryStabilityTests(unittest.TestCase):
+    def test_cached_complete_reviewers_are_not_called_again(self):
+        result = {
+            "providers": {
+                "gemini": {"status": "cached_ok", "text": complete_review("g")},
+                "glm": {"status": "cached_ok", "text": complete_review("l")},
+            },
+            "teamSynthesis": {"status": "not_configured", "text": ""},
+        }
+
+        with mock.patch.object(provider_retry, "_gemini_resilient") as gemini_call, \
+                mock.patch.object(provider_retry, "_glm_free_fallback") as glm_call:
+            provider_retry.retry_failed_providers(
+                result,
+                "prompt",
+                "gemini-key",
+                "glm-key",
+                None,
+            )
+
+        gemini_call.assert_not_called()
+        glm_call.assert_not_called()
+
     def test_quota_skips_primary_and_uses_next_gemini_model(self):
         calls = []
 
@@ -134,13 +156,55 @@ class ProviderRetryStabilityTests(unittest.TestCase):
                 "gemini": {"status": "ok", "model": "gemini-old", "text": complete_review("old")},
                 "glm": {"status": "ok", "model": "glm-old", "text": complete_review("old")},
             },
+            "teamSynthesis": {
+                "status": "ok",
+                "role": "synthesis_only",
+                "text": complete_review("old synthesis"),
+            },
         }
 
         bound = provider_retry.bind_result_to_prompt(result, "new prompt")
 
         self.assertEqual("stale_input", bound["providers"]["gemini"]["status"])
         self.assertEqual("", bound["providers"]["gemini"]["text"])
+        self.assertEqual("stale_input", bound["teamSynthesis"]["status"])
+        self.assertEqual("", bound["teamSynthesis"]["text"])
         self.assertTrue(bound["inputChanged"])
+
+    def test_complete_synthesis_is_preserved_only_for_same_evidence_and_drafts(self):
+        providers = {
+            "gemini": {"status": "ok", "model": "g", "text": complete_review("g")},
+            "glm": {"status": "ok", "model": "l", "text": complete_review("l")},
+        }
+        synthesis_fingerprint = provider_retry.provider_review.team_synthesis_fingerprint(providers)
+        current = {
+            "inputFingerprint": "same-evidence",
+            "providers": providers,
+            "teamSynthesis": {
+                "status": "error",
+                "inputFingerprint": synthesis_fingerprint,
+                "text": "",
+                "error": "503",
+            },
+        }
+        previous = {
+            "inputFingerprint": "same-evidence",
+            "providers": providers,
+            "teamSynthesis": {
+                "status": "ok",
+                "role": "synthesis_only",
+                "inputFingerprint": synthesis_fingerprint,
+                "text": complete_review("old synthesis"),
+                "outputComplete": True,
+            },
+        }
+
+        merged = provider_retry.preserve_last_success(current, previous)
+
+        self.assertEqual("cached_ok", merged["teamSynthesis"]["status"])
+        self.assertEqual(complete_review("old synthesis"), merged["teamSynthesis"]["text"])
+        self.assertFalse(merged["teamSynthesis"]["fresh"])
+        self.assertFalse(merged["teamSynthesis"]["countsAsIndependentEvidence"])
 
 
 if __name__ == "__main__":
