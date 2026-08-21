@@ -45,13 +45,17 @@ class ExternalAiAutoReviewCoordinator private constructor(context: Context) {
     private val client = ExternalAiClient(secrets)
     private val sync = GitHubTelemetrySync.get(appContext)
     private val adaptiveStore = AdaptiveDecoderProfileStore.get(appContext)
+    private val reviewPublisher = ExternalAiReviewGitHubPublisher.get(appContext)
     private val executor = Executors.newSingleThreadScheduledExecutor()
     private val started = AtomicBoolean(false)
     private val running = AtomicBoolean(false)
 
     fun start() {
         if (!started.compareAndSet(false, true)) return
-        executor.execute { runIfNeeded(force = false, reason = "App-Start") }
+        executor.execute {
+            publishStoredReviewIfAvailable()
+            runIfNeeded(force = false, reason = "App-Start")
+        }
         executor.scheduleWithFixedDelay(
             { runIfNeeded(force = false, reason = "Auto") },
             CHECK_INTERVAL_SECONDS,
@@ -81,6 +85,28 @@ class ExternalAiAutoReviewCoordinator private constructor(context: Context) {
         lastRunAt = prefs.getLong("last_run_at", 0L),
         nextRetryAt = prefs.getLong("next_retry_at", 0L)
     )
+
+    private fun publishStoredReviewIfAvailable() {
+        val text = prefs.getString("last_result", "").orEmpty()
+        val provider = prefs.getString("last_provider", "").orEmpty()
+        val model = prefs.getString("last_model", "").orEmpty()
+        val runAt = prefs.getLong("last_run_at", 0L)
+        val evidenceFingerprint = prefs.getString("last_success_fingerprint", "").orEmpty()
+        if (text.isBlank() || provider.isBlank() || model.isBlank() || runAt <= 0L) return
+
+        reviewPublisher.publishLatest(
+            answer = ExternalAiAnswer(
+                mode = ExternalAiMode.AUTO,
+                provider = provider,
+                model = model,
+                text = text,
+                fallbackUsed = prefs.getBoolean("last_fallback_used", false)
+            ),
+            evidenceFingerprint = evidenceFingerprint,
+            reason = "Gespeicherte Analyse nach App-Start",
+            generatedAtMs = runAt
+        )
+    }
 
     private fun runIfNeeded(force: Boolean, reason: String) {
         if (!prefs.getBoolean("enabled", true)) return
@@ -115,6 +141,7 @@ class ExternalAiAutoReviewCoordinator private constructor(context: Context) {
                 .putString("last_provider", answer.provider)
                 .putString("last_model", answer.model)
                 .putString("last_result", answer.text.take(MAX_STORED_RESULT_CHARS))
+                .putBoolean("last_fallback_used", answer.fallbackUsed)
                 .putLong("last_run_at", now)
                 .putLong("next_retry_at", 0L)
                 .putString(
@@ -123,6 +150,15 @@ class ExternalAiAutoReviewCoordinator private constructor(context: Context) {
                         if (answer.fallbackUsed) " • Fallback aktiv" else ""
                 )
                 .apply()
+
+            // Mirrors only the sanitized review output + metadata. Provider keys
+            // never leave ExternalAiSecretsStore and are not part of this payload.
+            reviewPublisher.publishLatest(
+                answer = answer,
+                evidenceFingerprint = fingerprint,
+                reason = reason,
+                generatedAtMs = now
+            )
         } catch (error: Throwable) {
             val message = (error.message ?: error::class.java.simpleName)
                 .replace(Regex("[\\r\\n]+"), " ")
