@@ -1,0 +1,56 @@
+name: VMAX Targeted 1505 Scan
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  targeted-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Telemetriedaten laden
+        uses: actions/checkout@v4
+        with:
+          ref: telemetry-data
+          fetch-depth: 1
+
+      - name: Aktuelle Analyse-Logik aus main laden
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: .analyzer-main
+          fetch-depth: 1
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Target-Analyzer testen
+        run: |
+          python -m py_compile .analyzer-main/tools/decoder_ai/targeted_1505_scan.py
+          PYTHONPATH=.analyzer-main/tools/decoder_ai \
+            python -m unittest discover \
+              -s .analyzer-main/tools/decoder_ai \
+              -p 'test_targeted_1505_scan.py'
+
+      - name: RPM, Restreichweite, Power A/B und Batterie-Ziele prüfen
+        run: |
+          python .analyzer-main/tools/decoder_ai/targeted_1505_scan.py \
+            --root fahrdaten \
+            --output decoder-ai/targeted_1505_scan.json \
+            --report decoder-ai/targeted_1505_scan.md
+
+      - name: Ergebnis nach telemetry-data schreiben
+        run: |
+          git config user.name 'VMAX Targeted Analyzer'
+          git config user.email 'actions@users.noreply.github.com'
+          git add decoder-ai/targeted_1505_scan.json decoder-ai/targeted_1505_scan.md
+          if git diff --cached --quiet; then
+            echo 'Keine Änderung an der Zielanalyse.'
+            exit 0
+          fi
+          git commit -m 'Decoder AI: 1505 und Batterie-Ziele gezielt prüfen'
+          git push origin HEAD:telemetry-data
