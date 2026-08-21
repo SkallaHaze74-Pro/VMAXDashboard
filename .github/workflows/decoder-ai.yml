@@ -165,6 +165,23 @@ jobs:
             --output decoder-ai/provider_review.json \
             --report decoder-ai/provider_review.md
 
+      - name: Transiente Provider-Fehler günstig auffangen
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data')
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
+        run: |
+          if [ -f decoder-ai/provider_review.json ]; then
+            python "$ANALYZER_ROOT/tools/decoder_ai/provider_retry.py" \
+              --analysis-report decoder-ai/analysis_report.md \
+              --decoder-profile decoder-ai/decoder_profile.json \
+              --libble decoder-ai/libble_comparison.md \
+              --original-app decoder-ai/original_app_comparison.md \
+              --input decoder-ai/provider_review.json \
+              --output decoder-ai/provider_review.json \
+              --report decoder-ai/provider_review.md
+          fi
+
       - name: Reviewer-Ausgabe auf Vollständigkeit prüfen
         if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data')
         run: |
