@@ -146,11 +146,13 @@ jobs:
             echo 'Gemini/GLM Secrets noch nicht gesetzt – deterministische Decoder-AI läuft ohne externe Zweitprüfung weiter.'
             exit 0
           fi
+          # Die kompakten Markdown-Berichte enthalten den Gesamt-/Aggregate-Stand.
+          # So sehen externe Prüfer nicht nur den Anfang eines großen JSONs bzw. eine einzelne Fahrt.
           python "$ANALYZER_ROOT/tools/decoder_ai/provider_review.py" \
             --analysis-report decoder-ai/analysis_report.md \
             --decoder-profile decoder-ai/decoder_profile.json \
-            --libble decoder-ai/libble_comparison.json \
-            --original-app decoder-ai/original_app_comparison.json \
+            --libble decoder-ai/libble_comparison.md \
+            --original-app decoder-ai/original_app_comparison.md \
             --output decoder-ai/provider_review.json \
             --report decoder-ai/provider_review.md
 
