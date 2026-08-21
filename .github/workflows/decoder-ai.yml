@@ -127,12 +127,21 @@ jobs:
             --output decoder-ai/decoder_profile.json \
             --report decoder-ai/analysis_report.md
 
+      - name: 1509 Power ohne Selbstbestätigung gegen V mal A prüfen
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data')
+        run: |
+          python "$ANALYZER_ROOT/tools/decoder_ai/power_crosscheck.py" \
+            --root fahrdaten \
+            --output decoder-ai/power_crosscheck.json \
+            --report decoder-ai/power_crosscheck.md
+
       - name: Selbstreferenzielle Evidenz gegen unabhängigen Vergleich absichern
         if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data')
         run: |
           python "$ANALYZER_ROOT/tools/decoder_ai/evidence_guard.py" \
             --profile decoder-ai/decoder_profile.json \
             --libble decoder-ai/libble_comparison.json \
+            --power-crosscheck decoder-ai/power_crosscheck.json \
             --report decoder-ai/analysis_report.md
 
       - name: Gemini und GLM als unabhängige Zweitprüfung
@@ -167,7 +176,9 @@ jobs:
             decoder-ai/libble_comparison.json \
             decoder-ai/libble_comparison.md \
             decoder-ai/original_app_comparison.json \
-            decoder-ai/original_app_comparison.md
+            decoder-ai/original_app_comparison.md \
+            decoder-ai/power_crosscheck.json \
+            decoder-ai/power_crosscheck.md
           for file in decoder-ai/provider_review.json decoder-ai/provider_review.md; do
             if [ -f "$file" ]; then
               git add "$file"
