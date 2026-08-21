@@ -1,6 +1,7 @@
 package de.kevin.vmaxdashboard
 
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCharacteristic
 import android.os.Handler
 import android.os.Looper
@@ -13,6 +14,11 @@ import kotlinx.coroutines.flow.StateFlow
  * The existing BleScooterManager owns the BluetoothGatt connection. To avoid a
  * second connection, this helper inspects that same connection and sequentially
  * reads every characteristic that advertises PROPERTY_READ. It never writes.
+ *
+ * READ answers are deliberately kept separate from live telemetry and adaptive
+ * decoder learning. They are archived as diagnostic evidence with UUID, status,
+ * length and exact payload so Battery/Controller/Serial/Firmware candidates can be
+ * compared later without reinterpreting them as notification data.
  */
 data class GattCharacteristicInfo(
     val serviceUuid: String,
@@ -23,6 +29,10 @@ data class GattCharacteristicInfo(
     val indicatable: Boolean,
     val writable: Boolean,
     val lastReadStarted: Boolean = false,
+    val lastReadStatus: Int? = null,
+    val lastReadLength: Int? = null,
+    val lastReadHex: String = "",
+    val lastReadAtMs: Long = 0L,
     val evidence: String = CapabilityEvidence.UNKNOWN.label,
     val family: String = "Unbekannt",
     val meaning: String = "",
@@ -40,6 +50,8 @@ data class GattScanState(
     val characteristicCount: Int = 0,
     val readableCount: Int = 0,
     val startedReads: Int = 0,
+    val successfulReads: Int = 0,
+    val payloadReads: Int = 0,
     val confirmedCount: Int = 0,
     val observedCount: Int = 0,
     val sdkKnownCount: Int = 0,
@@ -54,18 +66,22 @@ class GattReadScanner(private val manager: BleScooterManager) {
     private val handler = Handler(Looper.getMainLooper())
     private val readCoordinator = SequentialGattReadCoordinator<ReadKey>()
     private val characteristicsByKey = mutableMapOf<ReadKey, BluetoothGattCharacteristic>()
+    private val readRecords = mutableListOf<DiagnosticReadRecord>()
     private val _state = MutableStateFlow(GattScanState())
     val state: StateFlow<GattScanState> = _state
 
     private var generation = 0
     private var activeSession: DiagnosticGattReadSession? = null
     private var readTimeout: Runnable? = null
+    private var scanStartedAt = 0L
 
     fun reset() {
         generation++
         cancelReadTimeout()
         readCoordinator.cancel()
         characteristicsByKey.clear()
+        readRecords.clear()
+        scanStartedAt = 0L
         val session = activeSession
         activeSession = null
         if (session != null) manager.cancelDiagnosticGattReadScan(session, this)
@@ -81,6 +97,8 @@ class GattReadScanner(private val manager: BleScooterManager) {
             return false
         }
         activeSession = session
+        readRecords.clear()
+        scanStartedAt = System.currentTimeMillis()
 
         val services = manager.diagnosticGattServices(session)
         if (services == null) {
@@ -115,16 +133,24 @@ class GattReadScanner(private val manager: BleScooterManager) {
                 )
             }
         }.sortedWith(
-            compareBy<GattCharacteristicInfo>({ evidenceRank(it.evidence) }, { it.serviceUuid }, { it.characteristicUuid })
+            compareBy<GattCharacteristicInfo>({ evidenceRank(it.evidence) }, { readPriority(it.characteristicUuid) }, { it.serviceUuid }, { it.characteristicUuid })
         )
 
+        // Diagnostic/identity/battery READs go first, but every PROPERTY_READ
+        // characteristic is still attempted exactly once.
         val readableCharacteristics = buildList {
             services.forEach { service ->
                 service.characteristics
                     .filter { it.properties and BluetoothGattCharacteristic.PROPERTY_READ != 0 }
                     .forEach(::add)
             }
-        }
+        }.sortedWith(
+            compareBy<BluetoothGattCharacteristic>(
+                { readPriority(shortUuid(it.uuid.toString())) },
+                { shortUuid(it.service.uuid.toString()) },
+                { shortUuid(it.uuid.toString()) }
+            )
+        )
         characteristicsByKey.clear()
         readableCharacteristics.forEach { characteristic ->
             characteristicsByKey[readKey(characteristic)] = characteristic
@@ -146,7 +172,7 @@ class GattReadScanner(private val manager: BleScooterManager) {
             sdkKnownCount = sdkKnown,
             unknownCount = unknown,
             entries = entries,
-            status = "${services.size} Dienste, ${entries.size} Characteristics – $confirmed bestätigt, $observed beobachtet, $sdkKnown SDK-bekannt, $unknown unbekannt"
+            status = "${services.size} Dienste, ${entries.size} Characteristics – Deep READ startet"
         )
         readNext(session, currentGeneration)
         return true
@@ -168,16 +194,20 @@ class GattReadScanner(private val manager: BleScooterManager) {
         }
 
         val readStarted = manager.readDiagnosticCharacteristic(session, characteristic)
+        val service = shortUuid(characteristic.service.uuid.toString())
         val uuid = shortUuid(characteristic.uuid.toString())
         _state.value = _state.value.copy(
             startedReads = _state.value.startedReads + if (readStarted) 1 else 0,
             status = "Lese $uuid • ${readCoordinator.remaining} übrig",
             entries = _state.value.entries.map {
-                if (it.characteristicUuid == uuid) it.copy(lastReadStarted = readStarted) else it
+                if (it.serviceUuid == service && it.characteristicUuid == uuid) {
+                    it.copy(lastReadStarted = readStarted)
+                } else it
             }
         )
 
         if (!readStarted) {
+            recordResult(characteristic, STATUS_READ_START_FAILED, "")
             readCoordinator.complete(key)
             handler.post { readNext(session, expectedGeneration) }
             return
@@ -185,6 +215,7 @@ class GattReadScanner(private val manager: BleScooterManager) {
 
         val timeout = Runnable {
             if (expectedGeneration == generation && activeSession == session && readCoordinator.timeout(key)) {
+                recordResult(characteristic, STATUS_READ_TIMEOUT, "")
                 _state.value = _state.value.copy(
                     status = "READ $uuid ohne Callback – fahre nach Timeout fort"
                 )
@@ -206,8 +237,10 @@ class GattReadScanner(private val manager: BleScooterManager) {
             if (!readCoordinator.complete(key)) return@post
             cancelReadTimeout()
             val uuid = shortUuid(characteristic.uuid.toString())
+            val hex = if (status == BluetoothGatt.GATT_SUCCESS) latestManagerReadHex(uuid) else ""
+            recordResult(characteristic, status, hex)
             _state.value = _state.value.copy(
-                status = if (status == android.bluetooth.BluetoothGatt.GATT_SUCCESS) {
+                status = if (status == BluetoothGatt.GATT_SUCCESS) {
                     "READ $uuid beantwortet • ${readCoordinator.remaining} übrig"
                 } else {
                     "READ $uuid fehlgeschlagen ($status) • ${readCoordinator.remaining} übrig"
@@ -225,12 +258,51 @@ class GattReadScanner(private val manager: BleScooterManager) {
             readCoordinator.cancel()
             characteristicsByKey.clear()
             activeSession = null
+            val finishedAt = System.currentTimeMillis()
+            archive(finishedAt, "READ-Scan abgebrochen: Verbindung beendet")
             _state.value = _state.value.copy(
                 running = false,
                 completed = false,
-                status = "READ-Scan abgebrochen: Verbindung beendet"
+                status = "READ-Scan abgebrochen: Verbindung beendet • bisherige Antworten werden gesichert"
             )
         }
+    }
+
+    private fun recordResult(
+        characteristic: BluetoothGattCharacteristic,
+        status: Int,
+        hex: String
+    ) {
+        val now = System.currentTimeMillis()
+        val service = shortUuid(characteristic.service.uuid.toString())
+        val uuid = shortUuid(characteristic.uuid.toString())
+        val knowledge = VmaxSdkCapabilityCatalog.classify(service, uuid)
+        val length = hexLength(hex)
+        readRecords += DiagnosticReadRecord(
+            timestampMs = now,
+            serviceUuid = service,
+            characteristicUuid = uuid,
+            shortId = uuid,
+            status = status,
+            length = length,
+            hex = hex,
+            evidence = knowledge.evidence.label,
+            meaning = knowledge.meaning
+        )
+        _state.value = _state.value.copy(
+            successfulReads = readRecords.count { it.status == BluetoothGatt.GATT_SUCCESS },
+            payloadReads = readRecords.count { it.hex.isNotBlank() },
+            entries = _state.value.entries.map {
+                if (it.serviceUuid == service && it.characteristicUuid == uuid) {
+                    it.copy(
+                        lastReadStatus = status,
+                        lastReadLength = length,
+                        lastReadHex = hex,
+                        lastReadAtMs = now
+                    )
+                } else it
+            }
+        )
     }
 
     private fun finishScan(session: DiagnosticGattReadSession, expectedGeneration: Int) {
@@ -238,12 +310,44 @@ class GattReadScanner(private val manager: BleScooterManager) {
         cancelReadTimeout()
         activeSession = null
         characteristicsByKey.clear()
+        val finishedAt = System.currentTimeMillis()
+        val baseStatus = "READ-Scan fertig: ${_state.value.successfulReads}/${_state.value.readableCount} beantwortet • ${_state.value.payloadReads} Payloads"
         _state.value = _state.value.copy(
             running = false,
             completed = true,
-            status = "READ-Scan fertig: ${_state.value.startedReads}/${_state.value.readableCount} gestartet • ${_state.value.confirmedCount} BT638 bestätigt • ${_state.value.sdkKnownCount} nur SDK"
+            status = "$baseStatus • sichere Dump-Dateien werden gespeichert"
         )
         manager.finishDiagnosticGattReadScan(session, this)
+        archive(finishedAt, baseStatus)
+    }
+
+    private fun archive(finishedAt: Long, baseStatus: String) {
+        val records = readRecords.toList()
+        val startedAt = scanStartedAt.takeIf { it > 0L } ?: finishedAt
+        DiagnosticReadArchive.get(VMAXSyncApplication.appContext).saveAndPublish(
+            records = records,
+            deviceName = manager.state.value.deviceName.ifBlank { BleScooterManager.TARGET_NAME },
+            scanStartedAt = startedAt,
+            scanFinishedAt = finishedAt
+        ) { archiveStatus ->
+            if (!_state.value.running) {
+                _state.value = _state.value.copy(status = "$baseStatus • $archiveStatus")
+            }
+        }
+    }
+
+    /**
+     * BleScooterManager logs the exact byte[] supplied by Android before notifying
+     * this scanner. Reading that immutable log line avoids deprecated
+     * BluetoothGattCharacteristic.value on Android 13+ without mixing READ with live data.
+     */
+    private fun latestManagerReadHex(uuid: String): String {
+        val prefix = "READ $uuid (nur Diagnose, nicht als Live-Telemetrie):"
+        return manager.state.value.log
+            .firstOrNull { it.startsWith(prefix) }
+            ?.substringAfter(prefix)
+            ?.trim()
+            .orEmpty()
     }
 
     private fun cancelReadTimeout() {
@@ -273,11 +377,32 @@ class GattReadScanner(private val manager: BleScooterManager) {
         else -> 4
     }
 
+    private fun readPriority(uuid: String): Int = when (uuid.uppercase()) {
+        // Native GPSTProtocolHandler diagnostic/identity/battery READ targets.
+        "1514" -> 0 // Error
+        "1516" -> 1 // SerialNumbers
+        "1517" -> 2 // ErrorString
+        "1518" -> 3 // DebugLog
+        "150C" -> 4 // BatteryCellUpdate candidate
+        "1502" -> 5 // Battery/static candidate observed live
+        "1509" -> 6 // Battery live layout
+        "150A" -> 7 // Motor live layout
+        "160C" -> 8 // Motor tuning READ/readback
+        "1E03" -> 9 // WirelessRemote
+        "1E04" -> 10 // WirelessRemoteAction
+        else -> 100
+    }
+
+    private fun hexLength(hex: String): Int =
+        if (hex.isBlank()) 0 else hex.split('-').count { it.length == 2 }
+
     private fun shortUuid(uuid: String): String =
-        if (uuid.startsWith("da1a") && uuid.length >= 8) uuid.substring(4, 8).uppercase()
+        if (uuid.startsWith("da1a", ignoreCase = true) && uuid.length >= 8) uuid.substring(4, 8).uppercase()
         else uuid.uppercase()
 
     private companion object {
         const val READ_TIMEOUT_MS = 3_000L
+        const val STATUS_READ_START_FAILED = -1001
+        const val STATUS_READ_TIMEOUT = -1002
     }
 }

@@ -6,6 +6,7 @@ on:
     paths:
       - 'reverse-engineering/reports/ORIGINAL_APP_DEEP_SCAN_2026-08-21.md'
       - 'reverse-engineering/reports/VMAX_VCORE_HYENA_SEPARATION_2026-08-21.md'
+      - 'reverse-engineering/reports/BT638_HANDSHAKE_AUTH_EVIDENCE_2026-08-21.md'
       - 'tools/decoder_ai/original_app_provider_review.py'
       - 'tools/decoder_ai/provider_retry.py'
       - 'tools/decoder_ai/test_provider_retry_stability.py'

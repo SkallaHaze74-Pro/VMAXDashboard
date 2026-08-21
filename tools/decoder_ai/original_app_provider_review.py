@@ -2,7 +2,8 @@
 """Gemini + GLM second-opinion review of the original VMAX app deep scan.
 
 Advisory/read-only only. The models are not allowed to turn app strings or SDK symbols
-into BT638 facts, decoder rules, BLE writes, tuning values, or firmware actions.
+into BT638 facts, decoder rules, BLE writes, tuning values, firmware actions or guessed
+authentication keys.
 """
 
 from __future__ import annotations
@@ -30,13 +31,16 @@ def build_original_app_prompt(
     old_findings: Path,
     original_semantics: Path,
     platform_separation: Path,
+    handshake_evidence: Path,
 ) -> str:
     return "\n".join([
         "Aufgabe: Prüfe den Original-App/Base/libble-Deep-Scan als externe READ-ONLY-Zweitmeinung.",
         "WICHTIG: Der konkrete New VX2 Gear ist laut VMAX-Hardwarebezeichnung V-Core Gear/V-Torque. Hyena/Hylink ist in der APK gebündelt, aber nicht als BT638-Hardware nachgewiesen.",
-        "Trenne zwingend: (A) VMAX/V-Core-Gerätefakten, (B) BT638/GPST-DA1A-Live-/Native-Evidenz, (C) Hyena/Hylink-App-SDK, (D) andere Vendor-SDKs wie Brose/Hobbywing.",
+        "Trenne zwingend: (A) VMAX/V-Core-Gerätefakten, (B) BT638/GPST-DA1A-Live-/Native-Evidenz, (C) Hyena/Hylink-App-SDK, (D) andere Vendor-SDKs wie Sachs/Brose/Hobbywing.",
         "DA1A/15xx darf nicht pauschal Hyena genannt werden, solange keine direkte Runtime-Verknüpfung belegt ist.",
         "Ein String, Klassenname oder nativer Symbolname beweist nur Code-/SDK-Vorhandensein, nicht BT638-Unterstützung.",
+        "AUTH-REGEL: Sachs-spezifische Routinen wie authSachsBike/changeSachsConnectionKey sind KEIN BT638-Handshake. SetApiKey ist ohne gerätespezifische Kette ebenfalls kein Controller-Unlock-Beweis.",
+        "Erfinde oder rate niemals Secret Keys, Challenge-Antworten oder Auth-Frames. Prüfe nur, ob BT638-spezifische Auth-Evidenz tatsächlich vorliegt.",
         "Suche besonders nach übersehenen READ-ONLY-Funktionen, falschen Zuordnungen und nützlichen Diagnosezielen.",
         "Bevorzuge sichere Lese-/Erkennungstests. Keine BLE-Schreibframes, keine Tuningwerte, keine Firmware-Patches oder Bypass-Ideen.",
         "Wenn Gemini und GLM zufällig dasselbe vermuten, ist das weiterhin keine zusätzliche Evidenz.",
@@ -44,6 +48,9 @@ def build_original_app_prompt(
         "",
         "===== Plattform-/Vendor-Trennung =====",
         read(platform_separation, 9000),
+        "",
+        "===== BT638 Handshake/Auth-Evidenz =====",
+        read(handshake_evidence, 10000),
         "",
         "===== Neuer Deep Scan =====",
         read(deep_scan, 14000),
@@ -62,6 +69,7 @@ def render(result: dict[str, Any]) -> str:
         "",
         "> Advisory only / READ-ONLY. KI-Aussagen sind keine Ground Truth und aktivieren nichts automatisch.",
         "> VMAX/V-Core, BT638/GPST-DA1A, Hyena/Hylink und andere Vendor-SDKs werden getrennt bewertet.",
+        "> Fremde Vendor-Authentifizierung oder API-Key-Symbole gelten nicht als BT638-Secret-Key-Beweis.",
         "",
     ]
     for key, title in (("gemini", "Gemini"), ("glm", "GLM / Z.ai")):
@@ -106,6 +114,7 @@ def main() -> int:
     parser.add_argument("--old-findings", default="reverse-engineering/reports/DEEP_FINDINGS_2026-08-05.md")
     parser.add_argument("--original-semantics", default="tools/decoder_ai/original_app_semantics.json")
     parser.add_argument("--platform-separation", default="reverse-engineering/reports/VMAX_VCORE_HYENA_SEPARATION_2026-08-21.md")
+    parser.add_argument("--handshake-evidence", default="reverse-engineering/reports/BT638_HANDSHAKE_AUTH_EVIDENCE_2026-08-21.md")
     parser.add_argument("--output", default="reverse-engineering/reports/ORIGINAL_APP_AI_REVIEW_2026-08-21.json")
     parser.add_argument("--report", default="reverse-engineering/reports/ORIGINAL_APP_AI_REVIEW_2026-08-21.md")
     args = parser.parse_args()
@@ -117,16 +126,17 @@ def main() -> int:
         Path(args.old_findings),
         Path(args.original_semantics),
         Path(args.platform_separation),
+        Path(args.handshake_evidence),
     )
     gemini_key = os.environ.get("GEMINI_API_KEY", "").strip() or None
     glm_key = os.environ.get("ZHIPU_API_KEY", "").strip() or None
 
     result: dict[str, Any] = {
-        "schema": "vmax-original-app-provider-review-v2",
+        "schema": "vmax-original-app-provider-review-v3",
         "advisoryOnly": True,
         "readOnlyReviewerContract": True,
         "automaticChangeAuthority": False,
-        "platformEvidencePolicy": "vcore_bt638_gpst_hyena_vendor_separated",
+        "platformEvidencePolicy": "vcore_bt638_gpst_vendor_auth_separated",
         "providers": {
             "gemini": provider_review.run_provider(
                 "Gemini", provider_review.GEMINI_MODEL, gemini_key, provider_review.ask_gemini, prompt
@@ -137,9 +147,6 @@ def main() -> int:
         },
     }
 
-    # Retry internally with compact prompts and lower-cost models. The output guard
-    # rejects partial responses, and a provider outage never erases the previous
-    # complete advisory review.
     result = provider_retry.retry_failed_providers(result, prompt, gemini_key, glm_key)
     result = review_output_guard.validate(result)
     result = provider_retry.preserve_last_success(result, previous)
