@@ -143,6 +143,8 @@ class ExternalAiAutoReviewCoordinator private constructor(context: Context) {
                 .putString("last_result", answer.text.take(MAX_STORED_RESULT_CHARS))
                 .putBoolean("last_fallback_used", answer.fallbackUsed)
                 .putLong("last_run_at", now)
+                .putLong("last_attempt_at", now)
+                .remove("last_attempt_error")
                 .putLong("next_retry_at", 0L)
                 .putString(
                     "status",
@@ -163,14 +165,28 @@ class ExternalAiAutoReviewCoordinator private constructor(context: Context) {
             val message = (error.message ?: error::class.java.simpleName)
                 .replace(Regex("[\\r\\n]+"), " ")
                 .take(360)
+            val lower = message.lowercase()
             val retryDelay = when {
-                "429" in message || "Quota" in message || "Rate-Limit" in message -> RATE_LIMIT_RETRY_MS
-                "502" in message || "503" in message || "Zeitüberschreitung" in message -> TRANSIENT_RETRY_MS
+                "429" in message || "quota" in lower || "rate-limit" in lower -> RATE_LIMIT_RETRY_MS
+                "408" in message || "500" in message || "502" in message ||
+                    "503" in message || "504" in message || "timeout" in lower ||
+                    "zeitüberschreitung" in lower || "high demand" in lower -> TRANSIENT_RETRY_MS
                 else -> TRANSIENT_RETRY_MS
             }
+            val hasLastGoodReview = prefs.getString("last_result", "").orEmpty().isNotBlank()
             prefs.edit()
-                .putString("status", "Automatische KI-Prüfung wartet: $message")
-                .putLong("last_run_at", now)
+                // Keep last_run_at as the timestamp of the last successful review.
+                // A failed refresh is diagnostic metadata, not a new successful run.
+                .putLong("last_attempt_at", now)
+                .putString("last_attempt_error", message)
+                .putString(
+                    "status",
+                    if (hasLastGoodReview) {
+                        "✓ Letzte KI-Analyse bleibt aktiv • Aktualisierung wird automatisch wiederholt"
+                    } else {
+                        "Automatische KI-Prüfung wartet auf Provider • neuer Versuch automatisch"
+                    }
+                )
                 .putLong("next_retry_at", now + retryDelay)
                 .apply()
         } finally {
