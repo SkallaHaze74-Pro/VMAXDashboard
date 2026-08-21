@@ -8,6 +8,10 @@ import android.os.Looper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
+/** Shared four-hex GATT label used by BleScooterManager logs and the READ archive. */
+internal fun normalizeGattShortUuid(uuid: String): String =
+    uuid.takeIf { it.length >= 8 }?.substring(4, 8)?.uppercase() ?: uuid.uppercase()
+
 /**
  * Read-only GATT inventory and safe READ scanner.
  *
@@ -108,9 +112,9 @@ class GattReadScanner(private val manager: BleScooterManager) {
             return false
         }
         val entries = services.flatMap { service ->
-            val serviceShort = shortUuid(service.uuid.toString())
+            val serviceShort = normalizeGattShortUuid(service.uuid.toString())
             service.characteristics.map { characteristic ->
-                val characteristicShort = shortUuid(characteristic.uuid.toString())
+                val characteristicShort = normalizeGattShortUuid(characteristic.uuid.toString())
                 val p = characteristic.properties
                 val knowledge = VmaxSdkCapabilityCatalog.classify(serviceShort, characteristicShort)
                 GattCharacteristicInfo(
@@ -146,9 +150,9 @@ class GattReadScanner(private val manager: BleScooterManager) {
             }
         }.sortedWith(
             compareBy<BluetoothGattCharacteristic>(
-                { readPriority(shortUuid(it.uuid.toString())) },
-                { shortUuid(it.service.uuid.toString()) },
-                { shortUuid(it.uuid.toString()) }
+                { readPriority(normalizeGattShortUuid(it.uuid.toString())) },
+                { normalizeGattShortUuid(it.service.uuid.toString()) },
+                { normalizeGattShortUuid(it.uuid.toString()) }
             )
         )
         characteristicsByKey.clear()
@@ -194,8 +198,8 @@ class GattReadScanner(private val manager: BleScooterManager) {
         }
 
         val readStarted = manager.readDiagnosticCharacteristic(session, characteristic)
-        val service = shortUuid(characteristic.service.uuid.toString())
-        val uuid = shortUuid(characteristic.uuid.toString())
+        val service = normalizeGattShortUuid(characteristic.service.uuid.toString())
+        val uuid = normalizeGattShortUuid(characteristic.uuid.toString())
         _state.value = _state.value.copy(
             startedReads = _state.value.startedReads + if (readStarted) 1 else 0,
             status = "Lese $uuid • ${readCoordinator.remaining} übrig",
@@ -236,7 +240,7 @@ class GattReadScanner(private val manager: BleScooterManager) {
             val key = readKey(characteristic)
             if (!readCoordinator.complete(key)) return@post
             cancelReadTimeout()
-            val uuid = shortUuid(characteristic.uuid.toString())
+            val uuid = normalizeGattShortUuid(characteristic.uuid.toString())
             val hex = if (status == BluetoothGatt.GATT_SUCCESS) latestManagerReadHex(uuid) else ""
             recordResult(characteristic, status, hex)
             _state.value = _state.value.copy(
@@ -274,8 +278,8 @@ class GattReadScanner(private val manager: BleScooterManager) {
         hex: String
     ) {
         val now = System.currentTimeMillis()
-        val service = shortUuid(characteristic.service.uuid.toString())
-        val uuid = shortUuid(characteristic.uuid.toString())
+        val service = normalizeGattShortUuid(characteristic.service.uuid.toString())
+        val uuid = normalizeGattShortUuid(characteristic.uuid.toString())
         val knowledge = VmaxSdkCapabilityCatalog.classify(service, uuid)
         val length = hexLength(hex)
         readRecords += DiagnosticReadRecord(
@@ -338,8 +342,8 @@ class GattReadScanner(private val manager: BleScooterManager) {
 
     /**
      * BleScooterManager logs the exact byte[] supplied by Android before notifying
-     * this scanner. Reading that immutable log line avoids deprecated
-     * BluetoothGattCharacteristic.value on Android 13+ without mixing READ with live data.
+     * this scanner. The shared short-UUID normalizer deliberately mirrors the
+     * manager's four-hex log label for DA1A, Bluetooth-standard and other UUIDs.
      */
     private fun latestManagerReadHex(uuid: String): String {
         val prefix = "READ $uuid (nur Diagnose, nicht als Live-Telemetrie):"
@@ -395,10 +399,6 @@ class GattReadScanner(private val manager: BleScooterManager) {
 
     private fun hexLength(hex: String): Int =
         if (hex.isBlank()) 0 else hex.split('-').count { it.length == 2 }
-
-    private fun shortUuid(uuid: String): String =
-        if (uuid.startsWith("da1a", ignoreCase = true) && uuid.length >= 8) uuid.substring(4, 8).uppercase()
-        else uuid.uppercase()
 
     private companion object {
         const val READ_TIMEOUT_MS = 3_000L
