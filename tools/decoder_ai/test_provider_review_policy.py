@@ -19,13 +19,18 @@ class ProviderReviewPolicyTests(unittest.TestCase):
         self.assertIn("keine BLE-Schreibframes", prompt)
         self.assertIn("Freigabe: keine automatische Änderung.", prompt)
 
-    def test_review_metadata_has_no_change_authority(self):
-        self.assertIn("AI-Mehrheit ist kein Freigabekriterium", provider_review.build_prompt(
+    def test_ai_outputs_cannot_self_confirm_or_confirm_each_other(self):
+        prompt = provider_review.SYSTEM_PROMPT
+        self.assertIn("weder deine eigene frühere Aussage noch die Aussage eines anderen KI-Modells", prompt)
+        self.assertIn("weiterhin nur mehrere Meinungen und kein zusätzlicher Messbeweis", prompt)
+        built = provider_review.build_prompt(
             Path("missing-analysis"),
             Path("missing-profile"),
             Path("missing-libble"),
             Path("missing-original"),
-        ))
+        )
+        self.assertIn("KI-Mehrheit ist kein Freigabekriterium", built)
+        self.assertIn("niemals als unabhängige Evidenz oder gegenseitige Bestätigung", built)
 
 
 if __name__ == "__main__":
