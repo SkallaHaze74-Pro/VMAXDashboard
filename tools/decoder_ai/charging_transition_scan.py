@@ -10,6 +10,9 @@ from pathlib import Path
 from typing import Optional
 
 MIN_GAP_MS = 10_000
+UNMARKED_CHARGE_MIN_GAP_MS = 60_000
+UNMARKED_SOC_RISE_MIN = 2
+UNMARKED_VOLTAGE_RISE_MIN_V = 0.50
 CHARGE_MARKER_TERMS = ("ladegerät", "laden", "charging", "ble beim laden")
 
 
@@ -127,22 +130,40 @@ def finite_delta(after: Optional[float], before: Optional[float], digits: int = 
     return round(after - before, digits)
 
 
-def classify_gap(before: BatterySample, after: BatterySample, markers: list[str]) -> tuple[str, list[str]]:
+def classify_gap(
+    before: BatterySample,
+    after: BatterySample,
+    markers: list[str],
+    gap_ms: int,
+) -> tuple[str, list[str]]:
     reasons = []
     explicit = charge_marker_present(markers)
     soc_delta = None if before.soc_percent is None or after.soc_percent is None else after.soc_percent - before.soc_percent
     voltage_delta = finite_delta(after.voltage_v, before.voltage_v)
+
     if explicit:
         reasons.append("expliziter Lade-/BLE-Marker im Übergangsfenster")
-    if soc_delta is not None and soc_delta >= 1:
-        reasons.append(f"SOC stieg um {soc_delta} Prozentpunkt(e)")
-    if voltage_delta is not None and voltage_delta >= 0.30:
-        reasons.append(f"Spannung stieg um {voltage_delta:.3f} V")
-
-    if explicit and (soc_delta is None or soc_delta >= 0):
+        if soc_delta is not None:
+            reasons.append(f"SOC-Änderung {soc_delta:+d} Prozentpunkt(e)")
+        if voltage_delta is not None:
+            reasons.append(f"Spannungsänderung {voltage_delta:+.3f} V")
         return "EXPLICIT_CHARGE_GAP_OBSERVED", reasons
-    if (soc_delta is not None and soc_delta >= 1) or (voltage_delta is not None and voltage_delta >= 0.30):
+
+    long_enough = gap_ms >= UNMARKED_CHARGE_MIN_GAP_MS
+    strong_soc_rise = soc_delta is not None and soc_delta >= UNMARKED_SOC_RISE_MIN
+    strong_voltage_rise = voltage_delta is not None and voltage_delta >= UNMARKED_VOLTAGE_RISE_MIN_V
+    if long_enough and (strong_soc_rise or strong_voltage_rise):
+        reasons.append(f"lange BLE-Lücke ({gap_ms / 1000.0:.1f}s)")
+        if strong_soc_rise:
+            reasons.append(f"SOC stieg um {soc_delta} Prozentpunkt(e)")
+        if strong_voltage_rise:
+            reasons.append(f"Spannung stieg um {voltage_delta:.3f} V")
         return "BATTERY_RISE_DURING_BLE_GAP", reasons
+
+    if soc_delta is not None and soc_delta > 0:
+        reasons.append("kleiner SOC-Sprung reicht ohne Lade-Marker/lange Lücke nicht als Ladeevidenz")
+    if voltage_delta is not None and voltage_delta > 0:
+        reasons.append("kleiner Spannungssprung reicht ohne Lade-Marker/lange Lücke nicht als Ladeevidenz")
     return "BLE_GAP_NO_CLEAR_CHARGE_EVIDENCE", reasons
 
 
@@ -178,7 +199,7 @@ def analyze_ride(ride: Path) -> dict:
             continue
 
         local_markers = markers_near_gap(markers, before.timestamp_ms, after.timestamp_ms)
-        status, reasons = classify_gap(before, after, local_markers)
+        status, reasons = classify_gap(before, after, local_markers, gap_ms)
         transitions.append({
             "beforeTimestampMs": before.timestamp_ms,
             "afterTimestampMs": after.timestamp_ms,
@@ -237,7 +258,7 @@ def analyze(root: Path) -> dict:
         "batteryRiseGapCount": rises,
         "transitions": transitions,
         "rideSummaries": rides,
-        "evidenceRule": "BLE-Lücken werden nur als Vorher/Nachher-Übergang ausgewertet. Eine Lücke allein beweist keinen Ladevorgang.",
+        "evidenceRule": "BLE-Lücken werden nur als Vorher/Nachher-Übergang ausgewertet. Kurze Reconnects und kleine SOC-Sprünge gelten ohne expliziten Lademarker nicht als Ladebeweis.",
     }
 
 
