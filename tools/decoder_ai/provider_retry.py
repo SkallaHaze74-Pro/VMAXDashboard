@@ -21,6 +21,8 @@ GEMINI_FALLBACK_MODELS = (
     ("gemini-3.6-flash", "medium"),
     ("gemini-3.5-flash-lite", "low"),
 )
+# Compatibility alias for older tests/callers that expect one fallback model.
+GEMINI_FALLBACK_MODEL = GEMINI_FALLBACK_MODELS[0][0]
 TRANSIENT_RETRY_DELAYS_S = (2.0, 6.0)
 REQUIRED_FOOTER = "Freigabe: keine automatische Änderung."
 COMPACT_REVIEW_SUFFIX = """
@@ -44,6 +46,19 @@ def _require_complete_text(text: str) -> str:
     if not clean.endswith(REQUIRED_FOOTER):
         raise RuntimeError("Unvollständige Reviewer-Antwort: Abschlussmarker fehlt")
     return clean
+
+
+def _provider_needs_retry(item: dict[str, Any]) -> bool:
+    if item.get("status") != "ok":
+        return True
+    text = str(item.get("text") or "").strip()
+    return not text.endswith(REQUIRED_FOOTER)
+
+
+def _primary_problem(item: dict[str, Any]) -> str:
+    if item.get("status") != "ok":
+        return str(item.get("error") or "Providerfehler")
+    return "Unvollständige Primärantwort: Abschlussmarker fehlt"
 
 
 def _is_quota_error(error: BaseException) -> bool:
@@ -99,8 +114,6 @@ def _gemini_model(
         "input": _compact_prompt(prompt),
         "store": False,
         "generation_config": {
-            # A compact answer is more reliable than asking a review model to use
-            # its entire output budget. The mandatory footer still gets validated.
             "max_output_tokens": 2200,
             "thinking_level": thinking_level,
         },
@@ -160,8 +173,6 @@ def _gemini_resilient(api_key: str, prompt: str, primary_error: str) -> dict[str
             return item
         except Exception as error:
             last_error = error
-            # Quota, truncation or a transient outage on one model may still leave
-            # the next fallback usable, so continue through the full chain.
             continue
 
     raise last_error or RuntimeError("Kein Gemini-Modell konnte die Anfrage beantworten")
@@ -208,8 +219,8 @@ def retry_failed_providers(
     providers = retried.setdefault("providers", {})
 
     gemini = providers.get("gemini") if isinstance(providers.get("gemini"), dict) else {}
-    if gemini_key and gemini.get("status") != "ok":
-        primary_error = str(gemini.get("error") or "")
+    if gemini_key and _provider_needs_retry(gemini):
+        primary_error = _primary_problem(gemini)
         try:
             providers["gemini"] = _gemini_resilient(gemini_key, prompt, primary_error)
             providers["gemini"]["primaryError"] = primary_error[:300]
@@ -219,8 +230,8 @@ def retry_failed_providers(
             providers["gemini"] = gemini
 
     glm = providers.get("glm") if isinstance(providers.get("glm"), dict) else {}
-    if glm_key and glm.get("status") != "ok":
-        primary_error = str(glm.get("error") or "")
+    if glm_key and _provider_needs_retry(glm):
+        primary_error = _primary_problem(glm)
         try:
             providers["glm"] = _glm_free_fallback(glm_key, prompt)
             providers["glm"]["primaryError"] = primary_error[:300]
@@ -240,12 +251,7 @@ def preserve_last_success(
     current: dict[str, Any],
     previous: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    """Keep a complete previous review when a fresh provider attempt is unavailable.
-
-    Provider outages should be visible in metadata, but must not erase the last
-    complete technical review. Cached text stays advisory-only and is explicitly
-    marked as not fresh.
-    """
+    """Keep a complete previous review when a fresh provider attempt is unavailable."""
     merged = json.loads(json.dumps(current))
     previous = previous if isinstance(previous, dict) else {}
     providers = merged.setdefault("providers", {})
@@ -255,7 +261,7 @@ def preserve_last_success(
     cached_count = 0
     for key in ("gemini", "glm"):
         now = providers.get(key) if isinstance(providers.get(key), dict) else {}
-        if now.get("status") == "ok" and str(now.get("text") or "").strip():
+        if now.get("status") == "ok" and str(now.get("text") or "").strip().endswith(REQUIRED_FOOTER):
             now["fresh"] = True
             providers[key] = now
             fresh_count += 1
