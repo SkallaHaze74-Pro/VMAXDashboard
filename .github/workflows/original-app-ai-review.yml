@@ -19,7 +19,7 @@ jobs:
       - name: Repository laden
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Python einrichten
         uses: actions/setup-python@v5
@@ -54,4 +54,7 @@ jobs:
             exit 0
           fi
           git commit -m 'Original-App: Gemini/GLM Deep Review aktualisieren'
+          # Andere Analyse-Workflows können während des Provider-Aufrufs main aktualisieren.
+          # Rebase bewahrt diese Änderungen und verhindert einen unnötigen non-fast-forward Fehler.
+          git pull --rebase origin main
           git push origin HEAD:main
