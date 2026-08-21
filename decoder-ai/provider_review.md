@@ -18,20 +18,18 @@ Modell: `glm-4.7-flash`
 
 Kostenloser GLM-Fallback aktiv.
 
-**Belastbare Fakten**
-*   **SDK-Layouts bestätigt:** Die Decodierung für Kanal 1505 (Speed), 1506 (Odo) und 1509 (Volt, SOC, Current) basiert auf dem Original-SDK und ist 100% mit der App-Export-Datenbank konsistent.
-*   **Messwerte korrekt:** Speed, Odometer, Voltage, Current und SOC zeigen 100% Match und 0.0 MAE gegen die Live-App.
-*   **Skalierungen:** Odo (0.1 km), Speed (0.1 km/h) und Voltage (0.001 V) sind korrekt angegeben.
+### Belastbare Übereinstimmungen
+*   **Speed (1505/6)**, **Voltage (1509/5)**, **Current (1509/0)**, **Battery % (1509/4)** und **Odometer (1506/0)** sind extrem robust (99% Konfidenz, >1000 Samples, 100% App-Übereinstimmung).
+*   **Layout-Konsistenz:** Die SDK-Offsets (z.B. Current bei 0, Voltage bei 5, SOC bei 4) sind durch die App-Extraktion bestätigt.
 
-**Konflikte / Unsicherheiten**
-*   **Diskrepanz bei Direkt-Leistung (1509/9):** Der Report gibt 99% Bestätigung, das libble-Tool zeigt jedoch nur 64,74% Übereinstimmung (MAE 34,6). Dies deutet darauf hin, dass das Feld bei Offset 9 **keine direkte physikalische Leistung (W) darstellt** oder die App die Leistung anders berechnet (z.B. Spannung x Strom), während das SDK-Layout den Rohwert direkt liest.
-*   **Motor/Tretler-Leistung (1505):** Offset 0 und 2 sind identifiziert, aber keine semantische Zuordnung (Motor vs. Tretler) getroffen.
-*   **150D Kanal:** Enthält 397 Pakete (100% Nutzlast), wird aber nicht für Geschwindigkeit genutzt. Ursache unklar (Sensor-Müll oder nicht verwendeter Parameter).
-*   **Stichprobengröße:** 13 Fahrten sind für eine statistisch "robuste" Bestätigung gering. Die hohe Konfidenz (99%) beruht stark auf Layout-Konsistenz (App-Export), nicht auf physikalischer Validierung.
+### Konflikte/Unsicherheiten
+*   **Power (1509/9):** Grobe Diskrepanz zwischen dem Konsensbericht (89% Konfidenz) und dem libble-Vergleich (64.74% Match, MAE 34.6). Die physikalische Validierung steht aus; der aktuelle Wert ist sehr wahrscheinlich inkorrekt.
+*   **Stichprobenumfang:** `batteryPercent` basiert nur auf **4 Fahrten** (868 Samples), was für statistische Sicherheit gering ist. `odometerKm` auf **8 Fahrten**.
+*   **1505 Power-Offset:** Das Decoder-Profil dekodiert `speed` bei 6, ignoriert aber die Power-Felder bei 0 und 2, die in der SDK-Liste existieren und vom App-Listener erwartet werden.
 
-**Max 5 konkrete nächste Tests**
-1.  **1509 Direkt-Leistung Validierung:** Fahrt mit bekanntem Lastprofil -> Prüfe ob Rohwert bei Offset 9 exakt Spannung x Strom ergibt.
-2.  **Motor/Tretler Zuordnung:** Fahrt mit aktivem Motor und Pedaleingang -> Teste ob Offset 0 Motor-Leistung und Offset 2 Tretler-Leistung ist.
-3.  **Kilometerstand-Delta:** Fahrt mit bekannter Distanz -> Prüfe Inkrement-Genauigkeit des Kilometerstands über die Zeit.
-4.  **150D Analyse:** Durchsuche die 150D-Pakete auf Muster (z.B. Temperatur, Phasenstrom, Ladezustand) um Funktionsweise zu klären.
-5.  **Sekundär-Strom (1509):** Fahrt -> Prüfe ob Offset 10 (secondary_current) tatsächlich konstant 0.0 bleibt oder einen versteckten Strom misst (z.B. für Licht/Display).
+### Konkrete nächste Tests
+1.  **Validierung `1505/0` und `1505/2` (Power A/B):** Testen gegen App Live, um Tret- und Motorleistung zu identifizieren.
+2.  **Neubewertung `1509/9` (Power):** Physikalische Validierung (z.B. Spannung * Strom vs. Rohwert) oder Verwerfen, da die App-Übereinstimmung nur 64.74% beträgt.
+3.  **Erhöhung der Stichprobe für `batteryPercent`:** Mindestens 5 weitere Fahrten für statistische Signifikanz.
+4.  **Test `1505/8` (RPM):** Validierung des App-Mappings (Command 259) gegen die roten Daten.
+5.  **Überprüfung `1509/1` (Secondary Current):** Korrelation mit `150A` (Motor Current) oder Verifizierung der Null-Werte.
