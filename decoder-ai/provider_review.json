@@ -1,6 +1,6 @@
 {
   "schema": "vmax-provider-review-v1",
-  "generatedAtMs": 1787277460111,
+  "generatedAtMs": 1787277970083,
   "advisoryOnly": true,
   "readOnlyReviewerContract": true,
   "automaticChangeAuthority": false,
@@ -8,10 +8,10 @@
     "gemini": {
       "status": "error",
       "model": "gemini-3.7-flash",
-      "text": "",
-      "error": "Gemini hat keinen Text geliefert",
       "provider": "Gemini",
-      "outputComplete": false
+      "text": "",
+      "outputComplete": false,
+      "error": "Unvollständige Reviewer-Antwort verworfen: Abschlussmarker fehlt. Letzter Ausschnitt: weis darstellt.\n- **Statuskonflikt Odometer (`1506`)**: Im Decoder-Profil ist `odometerKm:1506:0:u32be` als `confirmed` eingetragen, im Original-App-Abgleich jedoch explizit als `MAPPED_VERIFY_WITH_MORE_BT638_DATA` eingestuft. Im libble-Ber"
     },
     "glm": {
       "status": "error",
@@ -19,8 +19,11 @@
       "text": "",
       "error": "The read operation timed out",
       "provider": "GLM",
+      "fallbackAttempted": true,
+      "fallbackError": "The read operation timed out",
       "outputComplete": false
     }
   },
+  "transientFallbackPass": true,
   "outputContractValidated": true
 }

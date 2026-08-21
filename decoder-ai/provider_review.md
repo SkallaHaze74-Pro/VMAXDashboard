@@ -9,7 +9,8 @@ Status: `error`
 
 Modell: `gemini-3.7-flash`
 
-Fehler: Gemini hat keinen Text geliefert
+Fehler: Unvollständige Reviewer-Antwort verworfen: Abschlussmarker fehlt. Letzter Ausschnitt: weis darstellt.
+- **Statuskonflikt Odometer (`1506`)**: Im Decoder-Profil ist `odometerKm:1506:0:u32be` als `confirmed` eingetragen, im Original-App-Abgleich jedoch explizit als `MAPPED_VERIFY_WITH_MORE_BT638_DATA` eingestuft. Im libble-Ber
 
 ## GLM
 
