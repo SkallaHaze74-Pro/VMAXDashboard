@@ -45,6 +45,7 @@ class ExternalAiAutoReviewCoordinator private constructor(context: Context) {
     private val client = ExternalAiClient(secrets)
     private val sync = GitHubTelemetrySync.get(appContext)
     private val adaptiveStore = AdaptiveDecoderProfileStore.get(appContext)
+    private val reviewPublisher = ExternalAiReviewGitHubPublisher.get(appContext)
     private val executor = Executors.newSingleThreadScheduledExecutor()
     private val started = AtomicBoolean(false)
     private val running = AtomicBoolean(false)
@@ -123,6 +124,15 @@ class ExternalAiAutoReviewCoordinator private constructor(context: Context) {
                         if (answer.fallbackUsed) " • Fallback aktiv" else ""
                 )
                 .apply()
+
+            // Mirrors only the sanitized review output + metadata. Provider keys
+            // never leave ExternalAiSecretsStore and are not part of this payload.
+            reviewPublisher.publishLatest(
+                answer = answer,
+                evidenceFingerprint = fingerprint,
+                reason = reason,
+                generatedAtMs = now
+            )
         } catch (error: Throwable) {
             val message = (error.message ?: error::class.java.simpleName)
                 .replace(Regex("[\\r\\n]+"), " ")
