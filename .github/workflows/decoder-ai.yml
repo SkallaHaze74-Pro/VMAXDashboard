@@ -127,6 +127,14 @@ jobs:
             --output decoder-ai/decoder_profile.json \
             --report decoder-ai/analysis_report.md
 
+      - name: Selbstreferenzielle Evidenz gegen unabhängigen Vergleich absichern
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data')
+        run: |
+          python "$ANALYZER_ROOT/tools/decoder_ai/evidence_guard.py" \
+            --profile decoder-ai/decoder_profile.json \
+            --libble decoder-ai/libble_comparison.json \
+            --report decoder-ai/analysis_report.md
+
       - name: Gemini und GLM als unabhängige Zweitprüfung
         if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data')
         env:
