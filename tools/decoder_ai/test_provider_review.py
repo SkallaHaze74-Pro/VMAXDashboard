@@ -6,6 +6,15 @@ import provider_review
 
 
 class ProviderReviewTest(unittest.TestCase):
+    @staticmethod
+    def glm_success(text, finish_reason="stop"):
+        return {
+            "choices": [{
+                "finish_reason": finish_reason,
+                "message": {"content": text},
+            }],
+        }
+
     def test_build_prompt_contains_all_sources_and_no_secret_fields(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -25,6 +34,8 @@ class ProviderReviewTest(unittest.TestCase):
             self.assertIn('"matches": 3', prompt)
             self.assertIn('"semantics": "read-only"', prompt)
             self.assertNotIn("API_KEY", prompt)
+            self.assertIn("BLE verschwindet", prompt)
+            self.assertIn("kein Live-Monitoring während des Ladens", prompt)
 
     def test_read_limited_truncates_large_input(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -55,13 +66,62 @@ class ProviderReviewTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Status failed"):
             provider_review.extract_gemini_text({"status": "failed", "steps": []})
 
+    def test_non_completed_provider_responses_are_rejected(self):
+        with self.assertRaisesRegex(RuntimeError, "nicht vollständig"):
+            provider_review.extract_gemini_text({"status": "in_progress", "steps": []})
+        with self.assertRaisesRegex(RuntimeError, "nicht vollständig"):
+            provider_review.extract_gemini_text({
+                "steps": [{
+                    "type": "model_output",
+                    "content": [{"type": "text", "text": "Text ohne Status"}],
+                }],
+            })
+        with self.assertRaisesRegex(RuntimeError, "nicht vollständig"):
+            provider_review.extract_gemini_text({"status": "COMPLETED", "steps": []})
+        with self.assertRaisesRegex(RuntimeError, "nicht vollständig"):
+            provider_review.extract_glm_text({
+                "choices": [{
+                    "finish_reason": "length",
+                    "message": {"content": "abgeschnitten"},
+                }],
+            })
+        with self.assertRaisesRegex(RuntimeError, "nicht vollständig"):
+            provider_review.extract_glm_text({
+                "choices": [{"message": {"content": "Text ohne Abschlussstatus"}}],
+            })
+        with self.assertRaisesRegex(RuntimeError, "nicht vollständig"):
+            provider_review.extract_glm_text(self.glm_success("Text", finish_reason="STOP"))
+
+    def test_oversized_provider_text_is_rejected_instead_of_truncated(self):
+        oversized = "x" * (provider_review.MAX_PROVIDER_TEXT + 1)
+        with self.assertRaisesRegex(RuntimeError, "zu lang"):
+            provider_review.extract_gemini_text({
+                "status": "completed",
+                "steps": [{
+                    "type": "model_output",
+                    "content": [{"type": "text", "text": oversized}],
+                }],
+            })
+        with self.assertRaisesRegex(RuntimeError, "zu lang"):
+            provider_review.extract_glm_text(self.glm_success(oversized))
+
+    def test_prompt_fingerprint_changes_with_evidence(self):
+        self.assertEqual(
+            provider_review.prompt_fingerprint("same"),
+            provider_review.prompt_fingerprint("same"),
+        )
+        self.assertNotEqual(
+            provider_review.prompt_fingerprint("old"),
+            provider_review.prompt_fingerprint("new"),
+        )
+
     def test_glm_prefers_zai_endpoint(self):
         calls = []
         original = provider_review.post_json
 
         def fake_post(url, headers, payload):
             calls.append((url, payload["model"]))
-            return {"choices": [{"message": {"content": "Z.ai ok"}}]}
+            return self.glm_success("Z.ai ok")
 
         provider_review.post_json = fake_post
         try:
@@ -82,7 +142,7 @@ class ProviderReviewTest(unittest.TestCase):
             calls.append((url, payload["model"]))
             if url == provider_review.ZAI_GLM_URL:
                 raise provider_review.ProviderHttpError(401, "wrong platform")
-            return {"choices": [{"message": {"content": "BigModel ok"}}]}
+            return self.glm_success("BigModel ok")
 
         provider_review.post_json = fake_post
         try:
@@ -110,7 +170,7 @@ class ProviderReviewTest(unittest.TestCase):
             if model == provider_review.GLM_MODEL:
                 raise provider_review.ProviderHttpError(429, "余额不足，请充值")
             if model == provider_review.GLM_FREE_MODEL:
-                return {"choices": [{"message": {"content": "free 4.7"}}]}
+                return self.glm_success("free 4.7")
             raise AssertionError(model)
 
         provider_review.post_json = fake_post
@@ -140,7 +200,7 @@ class ProviderReviewTest(unittest.TestCase):
             if model in (provider_review.GLM_MODEL, provider_review.GLM_FREE_MODEL):
                 raise provider_review.ProviderHttpError(429, "quota")
             if model == provider_review.GLM_FREE_BACKUP_MODEL:
-                return {"choices": [{"message": {"content": "free 4.5"}}]}
+                return self.glm_success("free 4.5")
             raise AssertionError(model)
 
         provider_review.post_json = fake_post
@@ -205,7 +265,7 @@ class ProviderReviewTest(unittest.TestCase):
         report = provider_review.render_markdown(result)
         self.assertIn("Advisory only", report)
         self.assertIn(provider_review.GLM_FREE_MODEL, report)
-        self.assertIn("Kostenloser GLM-Fallback aktiv", report)
+        self.assertIn("Fallbackmodell aktiv", report)
 
 
 if __name__ == "__main__":

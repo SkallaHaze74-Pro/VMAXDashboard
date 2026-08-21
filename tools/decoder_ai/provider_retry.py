@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import provider_review
+import review_output_guard
 
 GEMINI_FALLBACK_MODELS = (
     ("gemini-3.6-flash", "medium"),
@@ -43,8 +44,8 @@ def _compact_prompt(prompt: str) -> str:
 
 def _require_complete_text(text: str) -> str:
     clean = str(text or "").strip()
-    if not clean.endswith(REQUIRED_FOOTER):
-        raise RuntimeError("Unvollständige Reviewer-Antwort: Abschlussmarker fehlt")
+    if not review_output_guard.is_complete_review(clean):
+        raise RuntimeError("Unvollständige Reviewer-Antwort: Pflichtabschnitt oder Abschlussmarker fehlt")
     return clean
 
 
@@ -52,13 +53,13 @@ def _provider_needs_retry(item: dict[str, Any]) -> bool:
     if item.get("status") != "ok":
         return True
     text = str(item.get("text") or "").strip()
-    return not text.endswith(REQUIRED_FOOTER)
+    return not review_output_guard.is_complete_review(text)
 
 
 def _primary_problem(item: dict[str, Any]) -> str:
     if item.get("status") != "ok":
         return str(item.get("error") or "Providerfehler")
-    return "Unvollständige Primärantwort: Abschlussmarker fehlt"
+    return "Unvollständige Primärantwort: Pflichtabschnitt oder Abschlussmarker fehlt"
 
 
 def _is_quota_error(error: BaseException) -> bool:
@@ -70,7 +71,7 @@ def _is_quota_error(error: BaseException) -> bool:
 
 def _is_transient_error(error: BaseException) -> bool:
     if isinstance(error, provider_review.ProviderHttpError):
-        return 500 <= error.code <= 599
+        return error.code == 408 or 500 <= error.code <= 599
     message = str(error).lower()
     return any(
         marker in message
@@ -247,6 +248,29 @@ def retry_failed_providers(
     return retried
 
 
+def bind_result_to_prompt(result: dict[str, Any], prompt: str) -> dict[str, Any]:
+    """Invalidate provider text when it assessed a different evidence snapshot."""
+    bound = json.loads(json.dumps(result))
+    expected = provider_review.prompt_fingerprint(prompt)
+    existing = str(bound.get("inputFingerprint") or "")
+    if existing and existing == expected:
+        return bound
+
+    providers = bound.setdefault("providers", {})
+    for key in ("gemini", "glm"):
+        old = providers.get(key) if isinstance(providers.get(key), dict) else {}
+        providers[key] = {
+            "status": "stale_input",
+            "model": str(old.get("model") or ""),
+            "provider": str(old.get("provider") or key),
+            "text": "",
+            "error": "Evidenzstand geändert; vorhandene Antwort gehört zu einem anderen Input-Fingerprint",
+        }
+    bound["inputFingerprint"] = expected
+    bound["inputChanged"] = True
+    return bound
+
+
 def preserve_last_success(
     current: dict[str, Any],
     previous: dict[str, Any] | None,
@@ -256,12 +280,15 @@ def preserve_last_success(
     previous = previous if isinstance(previous, dict) else {}
     providers = merged.setdefault("providers", {})
     old_providers = previous.get("providers") if isinstance(previous.get("providers"), dict) else {}
+    same_input = bool(merged.get("inputFingerprint")) and (
+        merged.get("inputFingerprint") == previous.get("inputFingerprint")
+    )
 
     fresh_count = 0
     cached_count = 0
     for key in ("gemini", "glm"):
         now = providers.get(key) if isinstance(providers.get(key), dict) else {}
-        if now.get("status") == "ok" and str(now.get("text") or "").strip().endswith(REQUIRED_FOOTER):
+        if now.get("status") == "ok" and review_output_guard.is_complete_review(str(now.get("text") or "")):
             now["fresh"] = True
             providers[key] = now
             fresh_count += 1
@@ -269,8 +296,9 @@ def preserve_last_success(
 
         old = old_providers.get(key) if isinstance(old_providers.get(key), dict) else {}
         old_text = str(old.get("text") or "").strip()
-        old_complete = bool(old.get("outputComplete", old_text.endswith(REQUIRED_FOOTER)))
-        if old_text and old_complete and old.get("status") in {"ok", "cached_ok"}:
+        # Never trust a persisted outputComplete flag without revalidating the text.
+        old_complete = review_output_guard.is_complete_review(old_text)
+        if same_input and old_text and old_complete and old.get("status") in {"ok", "cached_ok"}:
             cached = json.loads(json.dumps(old))
             cached["status"] = "cached_ok"
             cached["fresh"] = False
@@ -316,7 +344,10 @@ def main() -> int:
         Path(args.libble),
         Path(args.original_app),
     )
-    result = json.loads(input_path.read_text(encoding="utf-8"))
+    result = bind_result_to_prompt(
+        json.loads(input_path.read_text(encoding="utf-8")),
+        prompt,
+    )
     retried = retry_failed_providers(
         result,
         prompt,

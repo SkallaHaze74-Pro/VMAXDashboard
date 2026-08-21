@@ -31,6 +31,11 @@ class Targeted1505ScanTests(unittest.TestCase):
                     str(index * 100 + 10), str(ts + 10), "1509", "Akku", "11", str(index + 1), "0",
                     "07-D0-00-00-50-C3-50-00-00-00-64", "NOTIFICATION", "0"
                 ])
+            rows += [
+                ["1000", "2000", "1505", "Rejected hybrid", "12", "6", "0", "00-01-00-02-00-00-00-03-00-04-00-05", "NOTIFICATION_REJECTED_HYBRID", "0"],
+                ["1010", "2010", "1509", "Diagnostic observation", "11", "6", "0", "07-D0-00-00-50-C3-50-00-00-00-64", "DIAGNOSTIC_OBSERVATION", "0"],
+                ["1020", "2020", "1505", "Missing origin", "12", "7", "0", "00-01-00-02-00-00-00-03-00-04-00-05", "", "0"],
+            ]
             write_rows(ride / "BLE_Rohdaten.csv", rows)
 
             result = targeted_1505_scan.analyze(root)

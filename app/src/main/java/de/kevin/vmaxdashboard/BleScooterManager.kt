@@ -18,6 +18,8 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.util.ArrayDeque
 import java.util.UUID
@@ -41,12 +43,188 @@ internal fun resolveExportPowerW(
 ): Double? = decodedPowerW ?: previousDirectPowerW ?: electricalPowerW
 
 internal const val RAW_TELEMETRY_CSV_HEADER =
-    "relative_ms;timestamp_ms;channel;meaning;length;packet_no;changed_bytes;hex;origin;connection_epoch"
+    "relative_ms;timestamp_ms;channel;meaning;length;packet_no;changed_bytes;hex;origin;connection_epoch;" +
+        "service_uuid;characteristic_uuid;properties_raw"
 
 internal fun buildRawTelemetryCsv(rows: List<String>): String =
     RAW_TELEMETRY_CSV_HEADER + "\n" + rows.joinToString("\n")
 
-private enum class BlePacketOrigin { NOTIFICATION, READ }
+internal const val QUARANTINED_NOTIFICATION_ORIGIN = "NOTIFICATION_QUARANTINED"
+internal const val DIAGNOSTIC_NOTIFICATION_ORIGIN = "NOTIFICATION_DIAGNOSTIC"
+
+internal fun rawTelemetryRowsForAnalysis(rows: List<String>): List<String> =
+    rows.filter { row -> row.split(';').getOrNull(8) == BlePacketOrigin.NOTIFICATION.name }
+
+internal fun shouldStartBleScan(
+    scanning: Boolean,
+    connected: Boolean,
+    connectionAllocated: Boolean
+): Boolean = !scanning && !connected && !connectionAllocated
+
+internal fun shouldAcceptBleScanResult(
+    scanning: Boolean,
+    activeScanIntent: Long?,
+    callbackScanIntent: Long
+): Boolean = scanning && activeScanIntent == callbackScanIntent
+
+internal fun shouldForceCloseWriteEpochOnTimeout(
+    writeCallbackExpected: Boolean,
+    writeCallbackReceived: Boolean
+): Boolean = writeCallbackExpected && !writeCallbackReceived
+
+internal enum class NotificationSubscriptionPhase { KNOWN_BT638, REMAINING }
+
+internal enum class NotificationSubscriptionEvent {
+    STARTED,
+    SUCCEEDED,
+    FAILED,
+    TIMEOUT,
+    LOCAL_ENABLE_FAILED,
+    CCCD_MISSING
+}
+
+internal data class NotificationCharacteristicKey(
+    val serviceUuid: String,
+    val characteristicUuid: String
+)
+
+internal data class NotificationInventoryEntry(
+    val serviceUuid: String,
+    val characteristicUuid: String,
+    val properties: Int,
+    val phase: NotificationSubscriptionPhase
+)
+
+internal fun notificationCharacteristicKey(
+    serviceUuid: String,
+    characteristicUuid: String
+): NotificationCharacteristicKey = NotificationCharacteristicKey(
+    serviceUuid = serviceUuid.lowercase(),
+    characteristicUuid = characteristicUuid.lowercase()
+)
+
+internal fun notificationSubscriptionPhase(serviceUuid: String): NotificationSubscriptionPhase =
+    when (normalizeGattShortUuid(serviceUuid)) {
+        "1500", "1600" -> NotificationSubscriptionPhase.KNOWN_BT638
+        else -> NotificationSubscriptionPhase.REMAINING
+    }
+
+internal fun notificationSubscriptionPriority(serviceUuid: String, characteristicUuid: String): Int {
+    val service = normalizeGattShortUuid(serviceUuid)
+    val characteristic = normalizeGattShortUuid(characteristicUuid)
+    return when {
+        characteristic == "1509" -> 0
+        service == "1500" -> 10
+        characteristic == "160C" -> 20
+        service == "1600" -> 30
+        service == "1E00" -> 40
+        else -> 100
+    }
+}
+
+private const val DA1A_UUID_SUFFIX = "-d532-4285-be94-b07a3e11a098"
+private val BT638_LIVE_SERVICE_SHORT_IDS = setOf("1500", "1600", "1E00")
+private val DIAGNOSTIC_ONLY_CHARACTERISTIC_SHORT_IDS =
+    setOf("1514", "1516", "1517", "1518", "2A25")
+
+/**
+ * A short UUID alone is not a routing identity. Only the observed DA1A
+ * service/characteristic family pairs may feed live state or decoder learning;
+ * notifications from every other discovered service remain diagnostic RAW data.
+ */
+internal fun isBt638LiveNotificationRoute(
+    serviceUuid: String,
+    characteristicUuid: String
+): Boolean {
+    val normalizedServiceUuid = serviceUuid.lowercase()
+    val normalizedCharacteristicUuid = characteristicUuid.lowercase()
+    val serviceShort = normalizeGattShortUuid(normalizedServiceUuid)
+    val characteristicShort = normalizeGattShortUuid(normalizedCharacteristicUuid)
+    if (serviceShort !in BT638_LIVE_SERVICE_SHORT_IDS) return false
+    if (characteristicShort in DIAGNOSTIC_ONLY_CHARACTERISTIC_SHORT_IDS) return false
+    if (normalizedServiceUuid != "da1a${serviceShort.lowercase()}$DA1A_UUID_SUFFIX") return false
+    if (normalizedCharacteristicUuid != "da1a${characteristicShort.lowercase()}$DA1A_UUID_SUFFIX") return false
+    return characteristicShort.take(2) == serviceShort.take(2)
+}
+
+internal fun isDiagnosticReadAllowed(connectionEpoch: Long, reconnectRequiredEpoch: Long?): Boolean =
+    reconnectRequiredEpoch != connectionEpoch
+
+internal enum class GattConnectionStage { CONNECTING, DISCOVERING_SERVICES }
+
+internal data class GattConnectionDeadline(
+    val connectionEpoch: Long,
+    val stage: GattConnectionStage
+)
+
+internal fun matchesGattConnectionDeadline(
+    expected: GattConnectionDeadline,
+    actualConnectionEpoch: Long,
+    actualStage: GattConnectionStage
+): Boolean = expected.connectionEpoch == actualConnectionEpoch && expected.stage == actualStage
+
+internal enum class GattConnectedCallbackDisposition {
+    ACCEPT,
+    IGNORE_STALE_OR_DUPLICATE,
+    FAIL_GATT_STATUS
+}
+
+internal fun gattConnectedCallbackDisposition(
+    deadline: GattConnectionDeadline?,
+    connectionEpoch: Long,
+    gattSuccess: Boolean
+): GattConnectedCallbackDisposition {
+    val expected = GattConnectionDeadline(connectionEpoch, GattConnectionStage.CONNECTING)
+    if (deadline != expected) return GattConnectedCallbackDisposition.IGNORE_STALE_OR_DUPLICATE
+    return if (gattSuccess) {
+        GattConnectedCallbackDisposition.ACCEPT
+    } else {
+        GattConnectedCallbackDisposition.FAIL_GATT_STATUS
+    }
+}
+
+internal enum class GattServicesCallbackDisposition {
+    ACCEPT,
+    IGNORE_STALE_OR_DUPLICATE,
+    FAIL_GATT_STATUS,
+    FAIL_EMPTY_SERVICES
+}
+
+internal fun gattServicesCallbackDisposition(
+    deadline: GattConnectionDeadline?,
+    connectionEpoch: Long,
+    gattSuccess: Boolean,
+    serviceCount: Int
+): GattServicesCallbackDisposition {
+    val expected = GattConnectionDeadline(connectionEpoch, GattConnectionStage.DISCOVERING_SERVICES)
+    if (deadline != expected) return GattServicesCallbackDisposition.IGNORE_STALE_OR_DUPLICATE
+    if (!gattSuccess) return GattServicesCallbackDisposition.FAIL_GATT_STATUS
+    if (serviceCount == 0) return GattServicesCallbackDisposition.FAIL_EMPTY_SERVICES
+    return GattServicesCallbackDisposition.ACCEPT
+}
+
+internal fun linkDiagnosticRecordsToMeasurement(
+    records: List<DiagnosticReadRecord>,
+    measurementStartedAt: Long,
+    measurementEpochByGattEpoch: Map<Long, Int>
+): List<DiagnosticReadRecord> = records
+    .filter { it.timestampMs >= measurementStartedAt }
+    .map { record ->
+        record.copy(
+            measurementConnectionEpoch = measurementEpochByGattEpoch[record.connectionEpoch]
+        )
+    }
+
+private fun BluetoothGattCharacteristic.toNotificationInventoryEntry(
+    phase: NotificationSubscriptionPhase
+): NotificationInventoryEntry = NotificationInventoryEntry(
+    serviceUuid = service.uuid.toString().lowercase(),
+    characteristicUuid = uuid.toString().lowercase(),
+    properties = properties,
+    phase = phase
+)
+
+private enum class BlePacketOrigin { NOTIFICATION, NOTIFICATION_QUARANTINED, READ }
 
 internal data class DiagnosticGattReadSession(
     internal val gatt: BluetoothGatt,
@@ -73,6 +251,9 @@ class BleScooterManager(private val context: Context) {
         val CCCD: UUID =
             UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
         const val TARGET_NAME = "BT638"
+        private const val NOTIFICATION_DESCRIPTOR_TIMEOUT_MS = 3_000L
+        private const val GATT_CONNECT_TIMEOUT_MS = 6_000L
+        private const val GATT_SERVICE_DISCOVERY_TIMEOUT_MS = 6_000L
     }
 
     private data class PendingMotorTuningWrite(
@@ -83,7 +264,11 @@ class BleScooterManager(private val context: Context) {
         val startedAt: Long,
         val gatt: BluetoothGatt,
         val connectionEpoch: Long,
-        val operationToken: GattOperationToken
+        val operationToken: GattOperationToken,
+        val writeCallbackExpected: Boolean,
+        var writeCallbackReceived: Boolean = false,
+        var domainConfirmed: Boolean = false,
+        var verificationReadScheduled: Boolean = false
     )
 
     private data class PendingStartModeWrite(
@@ -91,7 +276,10 @@ class BleScooterManager(private val context: Context) {
         val startedAt: Long,
         val gatt: BluetoothGatt,
         val connectionEpoch: Long,
-        val operationToken: GattOperationToken
+        val operationToken: GattOperationToken,
+        val writeCallbackExpected: Boolean,
+        var writeCallbackReceived: Boolean = false,
+        var domainConfirmed: Boolean = false
     )
 
     private data class ActiveGattConnection(
@@ -108,7 +296,9 @@ class BleScooterManager(private val context: Context) {
         val receivedNotifications: Int,
         val acceptedNotifications: Int,
         val rejectedReads: Int,
-        val rejectedHybrids: Int
+        val rejectedHybrids: Int,
+        val diagnosticNotifications: Int,
+        val diagnosticReadBundles: List<DiagnosticReadBundle>
     )
 
     private val bluetoothManager =
@@ -121,11 +311,25 @@ class BleScooterManager(private val context: Context) {
     private val gatt: BluetoothGatt?
         get() = activeGattConnection?.gatt
     private val notificationQueue = ArrayDeque<BluetoothGattCharacteristic>()
+    private val deferredKnownNotificationQueue = ArrayDeque<BluetoothGattCharacteristic>()
+    private val deferredNotificationQueue = ArrayDeque<BluetoothGattCharacteristic>()
+    private var notificationSubscriptionPhase = NotificationSubscriptionPhase.KNOWN_BT638
     private var descriptorWriteRunning = false
+    private var descriptorWriteTimeout: Runnable? = null
+    private var descriptorWriteKey: NotificationCharacteristicKey? = null
+    private var gattConnectionStageTimeout: Runnable? = null
+    private var gattConnectionDeadline: GattConnectionDeadline? = null
     private var notificationSetupOperation: GattOperationToken? = null
     private var motorTuningOperation: GattOperationToken? = null
     private var diagnosticGattReadSession: DiagnosticGattReadSession? = null
     private var diagnosticGattReadScanner: GattReadScanner? = null
+    @Volatile private var diagnosticGattReadObserver: GattReadScanner? = null
+    private var diagnosticReadReconnectRequiredEpoch: Long? = null
+    private var diagnosticReadFirstEpoch: Long? = null
+    private var powerCriticalNotificationEpoch: Long? = null
+    private var powerCriticalNotificationSucceededEpoch: Long? = null
+    private var deferredMotorTuningReadEpoch: Long? = null
+    private val measurementDiagnosticReadBundles = mutableListOf<DiagnosticReadBundle>()
 
     private val decoderLab = DecoderLabEngine()
     private val secureStore = SecureTelemetryStore(context)
@@ -142,10 +346,15 @@ class BleScooterManager(private val context: Context) {
     private var recordingActive = false
     private var recordingPaused = false
     private var measurementConnectionEpoch = 0
+    private val measurementEpochByGattEpoch = mutableMapOf<Long, Int>()
     private var receivedNotificationPackets = 0
     private var acceptedNotificationPackets = 0
     private var rejectedReadPackets = 0
     private var rejectedHybridPackets = 0
+    private var diagnosticOnlyNotificationPackets = 0
+    private var nextScanIntent = 0L
+    private var activeScanIntent: Long? = null
+    private var activeScanCallback: ScanCallback? = null
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val motorTuningBuffer = mutableListOf<Byte>()
@@ -176,16 +385,34 @@ class BleScooterManager(private val context: Context) {
                 PackageManager.PERMISSION_GRANTED
         }
 
+    internal fun registerDiagnosticGattReadObserver(scanner: GattReadScanner) {
+        diagnosticGattReadObserver = scanner
+        activeGattConnection?.epoch?.let(scanner::onDiagnosticConnectionOpened)
+    }
+
+    internal fun currentDiagnosticConnectionEpoch(): Long? = activeGattConnection?.epoch
+
     internal fun beginDiagnosticGattReadScan(scanner: GattReadScanner): DiagnosticGattReadSession? =
         synchronized(gattOperationLock) {
             val active = activeGattConnection
             val snapshot = _state.value
+            val notificationQueueBlocks = notificationQueue.isNotEmpty() &&
+                diagnosticReadFirstEpoch != active?.epoch
             val blocked = active == null || !snapshot.connected || descriptorWriteRunning ||
-                notificationQueue.isNotEmpty() || pendingStartModeWrite != null ||
+                gattConnectionDeadline != null ||
+                active?.gatt?.services.isNullOrEmpty() ||
+                notificationQueueBlocks || pendingStartModeWrite != null ||
                 pendingMotorTuningWrite != null || snapshot.motorTuningBusy ||
+                (active != null && !isDiagnosticReadAllowed(active.epoch, diagnosticReadReconnectRequiredEpoch)) ||
                 gattOperationCoordinator.currentKind(active?.epoch ?: -1L) != null
             if (blocked) {
-                addLog("GATT-READ-Scan verschoben: anderer BLE-Vorgang aktiv")
+                addLog(
+                    if (active != null && !isDiagnosticReadAllowed(active.epoch, diagnosticReadReconnectRequiredEpoch)) {
+                        "GATT-READ-Scan gesperrt: nach Timeout ist ein Reconnect erforderlich"
+                    } else {
+                        "GATT-READ-Scan verschoben: anderer BLE-Vorgang aktiv"
+                    }
+                )
                 return@synchronized null
             }
             val operation = gattOperationCoordinator.tryBegin(
@@ -228,17 +455,155 @@ class BleScooterManager(private val context: Context) {
         diagnosticGattReadSession = null
         diagnosticGattReadScanner = null
         update { it.copy(diagnosticGattReadRunning = false, gattOperationBusy = false) }
+        resumeDeferredGattSetupLocked(session.connectionEpoch)
     }
 
     internal fun cancelDiagnosticGattReadScan(
         session: DiagnosticGattReadSession,
-        scanner: GattReadScanner
+        scanner: GattReadScanner,
+        resumeDeferredSetup: Boolean = true
     ) = synchronized(gattOperationLock) {
         if (diagnosticGattReadSession != session || diagnosticGattReadScanner !== scanner) return@synchronized
         gattOperationCoordinator.finish(session.operationToken)
         diagnosticGattReadSession = null
         diagnosticGattReadScanner = null
+        if (!resumeDeferredSetup && diagnosticReadFirstEpoch == session.connectionEpoch) {
+            diagnosticReadFirstEpoch = null
+            notificationQueue.clear()
+            deferredKnownNotificationQueue.clear()
+            deferredNotificationQueue.clear()
+            powerCriticalNotificationEpoch = null
+            powerCriticalNotificationSucceededEpoch = null
+        }
         update { it.copy(diagnosticGattReadRunning = false, gattOperationBusy = false) }
+        if (resumeDeferredSetup) resumeDeferredGattSetupLocked(session.connectionEpoch)
+    }
+
+    @SuppressLint("MissingPermission")
+    internal fun timeoutDiagnosticGattReadScan(
+        session: DiagnosticGattReadSession,
+        scanner: GattReadScanner
+    ) = synchronized(gattOperationLock) {
+        if (diagnosticGattReadSession != session || diagnosticGattReadScanner !== scanner) return@synchronized
+        diagnosticReadReconnectRequiredEpoch = session.connectionEpoch
+        gattOperationCoordinator.finish(session.operationToken)
+        diagnosticGattReadSession = null
+        diagnosticGattReadScanner = null
+        notificationQueue.clear()
+        deferredKnownNotificationQueue.clear()
+        deferredNotificationQueue.clear()
+        diagnosticReadFirstEpoch = null
+        powerCriticalNotificationEpoch = null
+        powerCriticalNotificationSucceededEpoch = null
+        deferredMotorTuningReadEpoch = null
+        update {
+            it.copy(
+                diagnosticGattReadRunning = false,
+                gattOperationBusy = false,
+                status = "Deep READ Timeout – für weitere READs neu verbinden"
+            )
+        }
+        activeGattConnection?.takeIf {
+            it.gatt === session.gatt && it.epoch == session.connectionEpoch
+        }?.let { active ->
+            forceCloseGattEpochLocked(active, "Deep READ ohne Callback")
+        }
+    }
+
+    private fun resumeDeferredGattSetupLocked(connectionEpoch: Long) {
+        val active = activeGattConnection
+        if (active == null || active.epoch != connectionEpoch || !_state.value.connected ||
+            !isDiagnosticReadAllowed(connectionEpoch, diagnosticReadReconnectRequiredEpoch)
+        ) return
+
+        if (diagnosticReadFirstEpoch == connectionEpoch) {
+            val diagnosticObserver = diagnosticGattReadObserver
+            if (diagnosticObserver?.hasPendingReadRequest(connectionEpoch) == true) {
+                diagnosticObserver.onDiagnosticGattSlotAvailable(connectionEpoch)
+                return
+            }
+            if (deferredKnownNotificationQueue.isNotEmpty()) {
+                val operation = gattOperationCoordinator.tryBegin(
+                    connectionEpoch,
+                    GattOperationKind.NOTIFICATION_SETUP
+                ) ?: return
+                notificationSetupOperation = operation
+                notificationSubscriptionPhase = NotificationSubscriptionPhase.KNOWN_BT638
+                notificationQueue.clear()
+                notificationQueue.addAll(deferredKnownNotificationQueue)
+                deferredKnownNotificationQueue.clear()
+                update {
+                    it.copy(
+                        status = "Deep READ gesichert – aktiviere bekannte BT638-Notifications",
+                        gattOperationBusy = true
+                    )
+                }
+                enableNextNotification(active.gatt, connectionEpoch)
+                return
+            }
+            diagnosticReadFirstEpoch = null
+            deferredMotorTuningReadEpoch = connectionEpoch
+        }
+
+        if (deferredNotificationQueue.isNotEmpty()) {
+            val operation = gattOperationCoordinator.tryBegin(
+                connectionEpoch,
+                GattOperationKind.NOTIFICATION_SETUP
+            ) ?: return
+            notificationSetupOperation = operation
+            notificationSubscriptionPhase = NotificationSubscriptionPhase.REMAINING
+            notificationQueue.clear()
+            notificationQueue.addAll(deferredNotificationQueue)
+            deferredNotificationQueue.clear()
+            update {
+                it.copy(
+                    status = "Deep READ gesichert – aktiviere übrige Notify-Kanäle",
+                    gattOperationBusy = true
+                )
+            }
+            enableNextNotification(active.gatt, connectionEpoch)
+            return
+        }
+
+        val diagnosticObserver = diagnosticGattReadObserver
+        if (diagnosticObserver?.hasPendingReadRequest(connectionEpoch) == true) {
+            diagnosticObserver.onDiagnosticGattSlotAvailable(connectionEpoch)
+            return
+        }
+
+        if (deferredMotorTuningReadEpoch == connectionEpoch) {
+            deferredMotorTuningReadEpoch = null
+            if (_state.value.motorTuningReadAvailable) {
+                mainHandler.post { readMotorTuningValues() }
+            }
+        }
+    }
+
+    /** Keeps diagnostic READ evidence separate while making it available to the measurement export. */
+    internal fun retainDiagnosticReadBundle(bundle: DiagnosticReadBundle) = synchronized(gattOperationLock) {
+        if (bundle.records.isEmpty()) return@synchronized
+        val inMeasurementRecords = linkDiagnosticRecordsToMeasurement(
+            records = bundle.records,
+            measurementStartedAt = measurementStartedAt,
+            measurementEpochByGattEpoch = measurementEpochByGattEpoch
+        )
+        val frozen = bundle.copy(
+            records = inMeasurementRecords,
+            scanStartedAt = maxOf(bundle.scanStartedAt, measurementStartedAt)
+        )
+        if (recordingActive && frozen.records.isNotEmpty() &&
+            frozen.scanFinishedAt >= measurementStartedAt
+        ) {
+            addMeasurementDiagnosticBundleLocked(frozen)
+        }
+    }
+
+    private fun addMeasurementDiagnosticBundleLocked(bundle: DiagnosticReadBundle) {
+        val linked = bundle.copy(records = bundle.records.toList())
+        val duplicate = measurementDiagnosticReadBundles.any {
+            it.scanId == linked.scanId
+        }
+        if (!duplicate) measurementDiagnosticReadBundles += linked
     }
 
     private fun isCurrentDiagnosticSessionLocked(session: DiagnosticGattReadSession): Boolean {
@@ -267,25 +632,88 @@ class BleScooterManager(private val context: Context) {
             update { it.copy(status = "Bluetooth ist ausgeschaltet") }
             return
         }
-        update { it.copy(scanning = true, status = "Suche nach $TARGET_NAME …") }
-        adapter?.bluetoothLeScanner?.startScan(scanCallback)
+        val platformScanner = adapter?.bluetoothLeScanner
+        if (platformScanner == null) {
+            update { it.copy(scanning = false, status = "BLE-Scanner nicht verfügbar") }
+            return
+        }
+        val callback = synchronized(gattOperationLock) {
+            val allowed = shouldStartBleScan(
+                scanning = _state.value.scanning,
+                connected = _state.value.connected,
+                connectionAllocated = activeGattConnection != null
+            )
+            if (!allowed) return@synchronized null
+            val intent = ++nextScanIntent
+            createScanCallback(intent).also {
+                activeScanIntent = intent
+                activeScanCallback = it
+                update { state -> state.copy(scanning = true, status = "Suche nach $TARGET_NAME …") }
+            }
+        }
+        if (callback == null) return
+        runCatching { platformScanner.startScan(callback) }
+            .onSuccess {
+                val stillCurrent = synchronized(gattOperationLock) {
+                    activeScanCallback === callback && _state.value.scanning
+                }
+                if (!stillCurrent) {
+                    // stopScan/disconnect may have won between publishing the
+                    // intent and Android accepting startScan.
+                    runCatching { platformScanner.stopScan(callback) }
+                }
+            }
+            .onFailure { error ->
+                synchronized(gattOperationLock) {
+                    if (activeScanCallback === callback) {
+                        activeScanCallback = null
+                        activeScanIntent = null
+                        update {
+                            it.copy(
+                                scanning = false,
+                                status = "BLE-Suche konnte nicht gestartet werden: ${error.message ?: error.javaClass.simpleName}"
+                            )
+                        }
+                    }
+                }
+            }
     }
 
     @SuppressLint("MissingPermission")
     fun stopScan() {
-        if (!hasRequiredPermissions()) return
-        adapter?.bluetoothLeScanner?.stopScan(scanCallback)
+        synchronized(gattOperationLock) {
+            stopActiveBleScanLocked()
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun stopActiveBleScanLocked() {
+        val callback = activeScanCallback
+        activeScanCallback = null
+        activeScanIntent = null
+        nextScanIntent++
+        if (callback != null && hasRequiredPermissions()) {
+            runCatching { adapter?.bluetoothLeScanner?.stopScan(callback) }
+        }
         update { it.copy(scanning = false) }
     }
 
     @SuppressLint("MissingPermission")
     fun disconnect() {
         decoderLab.cancel()
-        if (recordingActive) stopMeasurementAndExport()
+        diagnosticGattReadObserver?.finalizeForMeasurementExport(
+            resumeDeferredSetup = false,
+            forceAttempt = false
+        )
+        diagnosticGattReadObserver?.cancelPendingAttemptForUserDisconnect()
+        if (recordingActive) stopMeasurementAndExportAfterDiagnosticFlush()
         mainHandler.removeCallbacksAndMessages(null)
         synchronized(gattOperationLock) {
             val active = activeGattConnection
+            stopActiveBleScanLocked()
+            cancelGattConnectionStageTimeoutLocked()
             cancelDiagnosticGattReadScanLocked()
+            cancelDescriptorWriteTimeoutLocked()
             pendingMotorTuningWrite = null
             pendingStartModeWrite = null
             notificationSetupOperation = null
@@ -296,6 +724,13 @@ class BleScooterManager(private val context: Context) {
             previousValues.clear()
             channelPacketCounts.clear()
             notificationQueue.clear()
+            deferredKnownNotificationQueue.clear()
+            deferredNotificationQueue.clear()
+            deferredMotorTuningReadEpoch = null
+            diagnosticReadReconnectRequiredEpoch = null
+            diagnosticReadFirstEpoch = null
+            powerCriticalNotificationEpoch = null
+            powerCriticalNotificationSucceededEpoch = null
             descriptorWriteRunning = false
             active?.gatt?.disconnect()
             active?.gatt?.close()
@@ -367,20 +802,28 @@ class BleScooterManager(private val context: Context) {
     }
 
     @SuppressLint("MissingPermission")
-    private fun connect(device: BluetoothDevice) {
-        stopScan()
-        update {
-            it.copy(
-                status = "Verbinde …",
-                deviceName = device.name ?: TARGET_NAME,
-                address = device.address,
-                motorTuningProfiles = emptyList(),
-                motorTuningOriginalProfiles = emptyList(),
-                motorTuningStatus = "Prüfe Motor-Tuning-Dienst",
-                motorTuningLastVerified = null
-            )
-        }
+    private fun connect(result: ScanResult, scanIntent: Long) {
+        val device = result.device
+        val observedAt = System.currentTimeMillis()
+        val observedName = device.name ?: result.scanRecord?.deviceName ?: TARGET_NAME
+        val advertisement = result.scanRecord?.bytes?.copyOf() ?: byteArrayOf()
         synchronized(gattOperationLock) {
+            if (!shouldAcceptBleScanResult(_state.value.scanning, activeScanIntent, scanIntent)) return
+            // Several matching scan callbacks may already be queued when stopScan()
+            // takes effect. Allocate exactly one physical GATT connection.
+            if (activeGattConnection != null || _state.value.connected) return
+            stopActiveBleScanLocked()
+            update {
+                it.copy(
+                    status = "Verbinde …",
+                    deviceName = observedName,
+                    address = device.address,
+                    motorTuningProfiles = emptyList(),
+                    motorTuningOriginalProfiles = emptyList(),
+                    motorTuningStatus = "Prüfe Motor-Tuning-Dienst",
+                    motorTuningLastVerified = null
+                )
+            }
             val previous = activeGattConnection
             cancelDiagnosticGattReadScanLocked()
             previous?.gatt?.close()
@@ -388,26 +831,157 @@ class BleScooterManager(private val context: Context) {
             notificationSetupOperation = null
             motorTuningOperation = null
             notificationQueue.clear()
+            deferredKnownNotificationQueue.clear()
+            deferredNotificationQueue.clear()
+            deferredMotorTuningReadEpoch = null
+            diagnosticReadFirstEpoch = null
+            powerCriticalNotificationEpoch = null
+            powerCriticalNotificationSucceededEpoch = null
+            cancelDescriptorWriteTimeoutLocked()
             descriptorWriteRunning = false
             val newGatt = device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
             val epoch = gattOperationCoordinator.openConnection()
-            activeGattConnection = ActiveGattConnection(newGatt, epoch)
+            val active = ActiveGattConnection(newGatt, epoch)
+            activeGattConnection = active
+            diagnosticGattReadObserver?.onDiagnosticConnectionOpened(epoch)
+            diagnosticGattReadObserver?.onDiagnosticAdvertisementObserved(
+                connectionEpoch = epoch,
+                timestampMs = observedAt,
+                rssi = result.rssi,
+                deviceName = observedName,
+                payload = advertisement
+            )
+            scheduleGattConnectionStageTimeoutLocked(active, GattConnectionStage.CONNECTING)
         }
     }
 
-    private val scanCallback = object : ScanCallback() {
+    private fun scheduleGattConnectionStageTimeoutLocked(
+        active: ActiveGattConnection,
+        stage: GattConnectionStage
+    ) {
+        cancelGattConnectionStageTimeoutLocked()
+        val deadline = GattConnectionDeadline(active.epoch, stage)
+        val timeout = Runnable {
+            synchronized(gattOperationLock) {
+                val current = activeGattConnection ?: return@synchronized
+                if (current.gatt !== active.gatt || gattConnectionDeadline != deadline ||
+                    !matchesGattConnectionDeadline(deadline, current.epoch, stage)
+                ) return@synchronized
+                failGattConnectionStageLocked(
+                    active = current,
+                    stage = stage,
+                    reason = when (stage) {
+                        GattConnectionStage.CONNECTING ->
+                            "BT638-Verbindung ohne Android-Callback"
+                        GattConnectionStage.DISCOVERING_SERVICES ->
+                            "BT638 Service Discovery ohne Android-Callback"
+                    }
+                )
+            }
+        }
+        gattConnectionDeadline = deadline
+        gattConnectionStageTimeout = timeout
+        mainHandler.postDelayed(
+            timeout,
+            when (stage) {
+                GattConnectionStage.CONNECTING -> GATT_CONNECT_TIMEOUT_MS
+                GattConnectionStage.DISCOVERING_SERVICES -> GATT_SERVICE_DISCOVERY_TIMEOUT_MS
+            }
+        )
+    }
+
+    private fun cancelGattConnectionStageTimeoutLocked() {
+        gattConnectionStageTimeout?.let(mainHandler::removeCallbacks)
+        gattConnectionStageTimeout = null
+        gattConnectionDeadline = null
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun failGattConnectionStageLocked(
+        active: ActiveGattConnection,
+        stage: GattConnectionStage,
+        reason: String
+    ) {
+        val current = activeGattConnection
+        if (current == null || current.gatt !== active.gatt || current.epoch != active.epoch) return
+        cancelGattConnectionStageTimeoutLocked()
+        diagnosticGattReadObserver?.onDiagnosticConnectionStageTimeout(active.epoch, stage, reason)
+        forceCloseGattEpochLocked(active, reason)
+    }
+
+    /**
+     * Permanently retires one exact poisoned Android GATT instance. Waiting only
+     * for STATE_DISCONNECTED is unsafe because the platform may omit that callback.
+     */
+    @SuppressLint("MissingPermission")
+    private fun forceCloseGattEpochLocked(active: ActiveGattConnection, reason: String) {
+        val current = activeGattConnection
+        if (current == null || current.gatt !== active.gatt || current.epoch != active.epoch) return
+        cancelGattConnectionStageTimeoutLocked()
+        val diagnosticSessionWasActive = diagnosticGattReadSession != null
+        cancelDiagnosticGattReadScanLocked()
+        if (!diagnosticSessionWasActive) {
+            diagnosticGattReadObserver?.onDiagnosticConnectionClosedBeforeRead(active.epoch)
+        }
+        cancelDescriptorWriteTimeoutLocked()
+        descriptorWriteRunning = false
+        notificationQueue.clear()
+        deferredKnownNotificationQueue.clear()
+        deferredNotificationQueue.clear()
+        deferredMotorTuningReadEpoch = null
+        diagnosticReadFirstEpoch = null
+        powerCriticalNotificationEpoch = null
+        powerCriticalNotificationSucceededEpoch = null
+        pendingMotorTuningWrite = null
+        pendingStartModeWrite = null
+        notificationSetupOperation = null
+        motorTuningOperation = null
+        legacyStartModeCharacteristicAvailable = false
+        lastMotorTuningReadRequestAt = 0L
+        gattOperationCoordinator.closeConnection(active.epoch)
+        activeGattConnection = null
+        update {
+            it.clearConnectionScopedTelemetry(active.epoch).copy(
+                connected = false,
+                scanning = false,
+                status = "$reason – Teil-Dump gesichert; neuer Versuch möglich",
+                labRunning = false,
+                motorTuningBusy = false,
+                motorTuningStatus = "Verbindung wird neu aufgebaut",
+                startModeWriteAvailable = false,
+                startModeBusy = false,
+                startModeStatus = "Verbindung wird neu aufgebaut"
+            )
+        }
+        addLog("$reason; GATT-Epoche ${active.epoch} sicher geschlossen")
+        runCatching { active.gatt.disconnect() }
+        runCatching { active.gatt.close() }
+    }
+
+    private fun createScanCallback(scanIntent: Long): ScanCallback = object : ScanCallback() {
         @SuppressLint("MissingPermission")
         override fun onScanResult(callbackType: Int, result: ScanResult) {
+            val accepted = synchronized(gattOperationLock) {
+                activeScanCallback === this &&
+                    shouldAcceptBleScanResult(_state.value.scanning, activeScanIntent, scanIntent)
+            }
+            if (!accepted) return
             val name = result.device.name ?: result.scanRecord?.deviceName
             if (name == TARGET_NAME) {
                 addLog("$TARGET_NAME gefunden")
                 update { it.copy(rssi = result.rssi) }
-                connect(result.device)
+                connect(result, scanIntent)
             }
         }
 
         override fun onScanFailed(errorCode: Int) {
-            update { it.copy(scanning = false, status = "Scanfehler: $errorCode") }
+            synchronized(gattOperationLock) {
+                if (activeScanCallback !== this || activeScanIntent != scanIntent) return@synchronized
+                activeScanCallback = null
+                activeScanIntent = null
+                nextScanIntent++
+                update { it.copy(scanning = false, status = "Scanfehler: $errorCode") }
+            }
         }
     }
 
@@ -418,7 +992,33 @@ class BleScooterManager(private val context: Context) {
                 val active = activeGattConnection ?: return@synchronized
                 when (newState) {
                     BluetoothProfile.STATE_CONNECTED -> {
-                        if (recordingActive) measurementConnectionEpoch++
+                        when (
+                            gattConnectedCallbackDisposition(
+                                deadline = gattConnectionDeadline,
+                                connectionEpoch = active.epoch,
+                                gattSuccess = status == BluetoothGatt.GATT_SUCCESS
+                            )
+                        ) {
+                            GattConnectedCallbackDisposition.IGNORE_STALE_OR_DUPLICATE -> {
+                                addLog("Verspäteter/duplizierter CONNECTED-Callback verworfen")
+                                return@synchronized
+                            }
+                            GattConnectedCallbackDisposition.FAIL_GATT_STATUS -> {
+                                failGattConnectionStageLocked(
+                                    active,
+                                    GattConnectionStage.CONNECTING,
+                                    "BT638-Verbindung fehlgeschlagen (GATT $status)"
+                                )
+                                return@synchronized
+                            }
+                            GattConnectedCallbackDisposition.ACCEPT -> Unit
+                        }
+                        cancelGattConnectionStageTimeoutLocked()
+                        diagnosticReadReconnectRequiredEpoch = null
+                        if (recordingActive) {
+                            measurementConnectionEpoch++
+                            measurementEpochByGattEpoch[active.epoch] = measurementConnectionEpoch
+                        }
                         sessionStartedAt = System.currentTimeMillis()
                         // A reconnect starts fresh live state, but it must not erase
                         // packets already captured by the same measurement session.
@@ -432,6 +1032,13 @@ class BleScooterManager(private val context: Context) {
                         notificationSetupOperation = null
                         motorTuningOperation = null
                         notificationQueue.clear()
+                        deferredKnownNotificationQueue.clear()
+                        deferredNotificationQueue.clear()
+                        deferredMotorTuningReadEpoch = null
+                        diagnosticReadFirstEpoch = null
+                        powerCriticalNotificationEpoch = null
+                        powerCriticalNotificationSucceededEpoch = null
+                        cancelDescriptorWriteTimeoutLocked()
                         descriptorWriteRunning = false
                         legacyStartModeCharacteristicAvailable = false
                         lastMotorTuningReadRequestAt = 0L
@@ -449,12 +1056,35 @@ class BleScooterManager(private val context: Context) {
                             )
                         }
                         addLog("BLE verbunden, Status $status")
-                        g.discoverServices()
+                        scheduleGattConnectionStageTimeoutLocked(
+                            active,
+                            GattConnectionStage.DISCOVERING_SERVICES
+                        )
+                        val discoveryStarted = runCatching { g.discoverServices() }.getOrDefault(false)
+                        if (!discoveryStarted) {
+                            failGattConnectionStageLocked(
+                                active,
+                                GattConnectionStage.DISCOVERING_SERVICES,
+                                "BT638 Service Discovery konnte nicht gestartet werden"
+                            )
+                        }
                     }
                     BluetoothProfile.STATE_DISCONNECTED -> {
+                        cancelGattConnectionStageTimeoutLocked()
+                        val diagnosticSessionWasActive = diagnosticGattReadSession != null
                         cancelDiagnosticGattReadScanLocked()
+                        if (!diagnosticSessionWasActive) {
+                            diagnosticGattReadObserver?.onDiagnosticConnectionClosedBeforeRead(active.epoch)
+                        }
+                        cancelDescriptorWriteTimeoutLocked()
                         descriptorWriteRunning = false
                         notificationQueue.clear()
+                        deferredKnownNotificationQueue.clear()
+                        deferredNotificationQueue.clear()
+                        deferredMotorTuningReadEpoch = null
+                        diagnosticReadFirstEpoch = null
+                        powerCriticalNotificationEpoch = null
+                        powerCriticalNotificationSucceededEpoch = null
                         pendingMotorTuningWrite = null
                         pendingStartModeWrite = null
                         notificationSetupOperation = null
@@ -487,25 +1117,40 @@ class BleScooterManager(private val context: Context) {
             synchronized(gattOperationLock) {
                 if (gatt !== g) return@synchronized
                 val active = activeGattConnection ?: return@synchronized
-                if (status != BluetoothGatt.GATT_SUCCESS) {
-                    update { it.copy(status = "Dienste konnten nicht gelesen werden: $status") }
-                    return@synchronized
+                when (
+                    gattServicesCallbackDisposition(
+                        deadline = gattConnectionDeadline,
+                        connectionEpoch = active.epoch,
+                        gattSuccess = status == BluetoothGatt.GATT_SUCCESS,
+                        serviceCount = g.services.size
+                    )
+                ) {
+                    GattServicesCallbackDisposition.IGNORE_STALE_OR_DUPLICATE -> {
+                        addLog("Verspäteter/duplizierter Service-Discovery-Callback verworfen")
+                        return@synchronized
+                    }
+                    GattServicesCallbackDisposition.FAIL_GATT_STATUS -> {
+                        failGattConnectionStageLocked(
+                            active,
+                            GattConnectionStage.DISCOVERING_SERVICES,
+                            "BT638 Service Discovery fehlgeschlagen (GATT $status)"
+                        )
+                        return@synchronized
+                    }
+                    GattServicesCallbackDisposition.FAIL_EMPTY_SERVICES -> {
+                        failGattConnectionStageLocked(
+                            active,
+                            GattConnectionStage.DISCOVERING_SERVICES,
+                            "BT638 Service Discovery lieferte kein GATT-Inventar"
+                        )
+                        return@synchronized
+                    }
+                    GattServicesCallbackDisposition.ACCEPT -> Unit
                 }
-                val telemetryService = g.getService(SERVICE_TELEMETRY)
-                if (telemetryService == null) {
-                    update { it.copy(status = "Telemetrie-Dienst nicht gefunden") }
-                    return@synchronized
+                cancelGattConnectionStageTimeoutLocked()
+                if (g.getService(SERVICE_TELEMETRY) == null) {
+                    addLog("Telemetrie-Dienst 1500 nicht gefunden – sichere übriges READ/Notify-Inventar")
                 }
-                val notificationOperation = gattOperationCoordinator.tryBegin(
-                    active.epoch,
-                    GattOperationKind.NOTIFICATION_SETUP
-                )
-                if (notificationOperation == null) {
-                    update { it.copy(status = "Dienste gefunden – anderer BLE-Vorgang läuft") }
-                    return@synchronized
-                }
-                notificationSetupOperation = notificationOperation
-
                 val tuningService = g.getService(SERVICE_MOTOR_TUNING)
                 val tuningRead = tuningService?.getCharacteristic(MOTOR_TUNING_READ_CHARACTERISTIC)
                 val tuningWrite = tuningService?.getCharacteristic(MOTOR_TUNING_WRITE_CHARACTERISTIC)
@@ -526,27 +1171,95 @@ class BleScooterManager(private val context: Context) {
                 // eight-byte frame when the newer 1A03 settings route is exposed.
                 legacyStartModeCharacteristicAvailable = legacyStartModeWritable && !modernStartModeRoutePresent
 
-                val notifyChars = buildList {
-                    addAll(telemetryService.characteristics.filter { characteristic ->
-                        val p = characteristic.properties
-                        p and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0 ||
-                            p and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0
-                    })
-                    tuningService?.characteristics?.filterTo(this) { characteristic ->
-                        val p = characteristic.properties
-                        p and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0 ||
-                            p and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0
+                val notifyChars = g.services
+                    .flatMap { service ->
+                        service.characteristics.filter { characteristic ->
+                            val p = characteristic.properties
+                            p and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0 ||
+                                p and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0
+                        }
                     }
-                }.distinctBy { it.uuid }
+                    // A UUID may legally occur under more than one service. Preserve
+                    // the full pair so the GATT inventory never drops a channel.
+                    .distinctBy { characteristic ->
+                        notificationCharacteristicKey(
+                            characteristic.service.uuid.toString(),
+                            characteristic.uuid.toString()
+                        )
+                    }
+                    .sortedBy { characteristic ->
+                        notificationSubscriptionPriority(
+                            characteristic.service.uuid.toString(),
+                            characteristic.uuid.toString()
+                        )
+                    }
 
+                val (knownBt638NotifyChars, remainingNotifyChars) = notifyChars.partition { characteristic ->
+                    notificationSubscriptionPhase(characteristic.service.uuid.toString()) ==
+                        NotificationSubscriptionPhase.KNOWN_BT638
+                }
+                diagnosticGattReadObserver?.onNotificationInventoryDiscovered(
+                    connectionEpoch = active.epoch,
+                    entries = notifyChars.map { characteristic ->
+                        NotificationInventoryEntry(
+                            serviceUuid = characteristic.service.uuid.toString().lowercase(),
+                            characteristicUuid = characteristic.uuid.toString().lowercase(),
+                            properties = characteristic.properties,
+                            phase = notificationSubscriptionPhase(characteristic.service.uuid.toString())
+                        )
+                    }
+                )
+
+                val diagnosticObserver = diagnosticGattReadObserver
+                val readBeforeNotifications =
+                    diagnosticObserver?.shouldReadBeforeNotificationSetup(active.epoch) == true
+                val criticalBatteryNotifyChars = knownBt638NotifyChars.filter { characteristic ->
+                    characteristic.service.uuid == SERVICE_TELEMETRY &&
+                        characteristic.uuid == BATTERY_CHARACTERISTIC
+                }
+                val postReadKnownNotifyChars = if (readBeforeNotifications) {
+                    knownBt638NotifyChars.filterNot { it in criticalBatteryNotifyChars }
+                } else {
+                    emptyList()
+                }
+                notificationSubscriptionPhase = NotificationSubscriptionPhase.KNOWN_BT638
                 notificationQueue.clear()
                 notificationQueue.addAll(
-                    notifyChars.sortedWith(
-                        compareByDescending<BluetoothGattCharacteristic> { it.uuid == BATTERY_CHARACTERISTIC }
-                            .thenByDescending { it.uuid == MOTOR_TUNING_READ_CHARACTERISTIC }
-                    )
+                    if (readBeforeNotifications) criticalBatteryNotifyChars else knownBt638NotifyChars
                 )
+                deferredKnownNotificationQueue.clear()
+                deferredKnownNotificationQueue.addAll(postReadKnownNotifyChars)
+                deferredNotificationQueue.clear()
+                deferredNotificationQueue.addAll(remainingNotifyChars)
+                val startNotificationSetup = !readBeforeNotifications || notificationQueue.isNotEmpty()
+                val notificationOperation = if (startNotificationSetup) {
+                    gattOperationCoordinator.tryBegin(
+                        active.epoch,
+                        GattOperationKind.NOTIFICATION_SETUP
+                    )
+                } else {
+                    null
+                }
+                if (startNotificationSetup && notificationOperation == null) {
+                    update { it.copy(status = "Dienste gefunden – anderer BLE-Vorgang läuft") }
+                    return@synchronized
+                }
+                notificationSetupOperation = notificationOperation
+                diagnosticReadFirstEpoch = active.epoch.takeIf { readBeforeNotifications }
+                powerCriticalNotificationEpoch = active.epoch.takeIf {
+                    readBeforeNotifications && criticalBatteryNotifyChars.isNotEmpty()
+                }
+                powerCriticalNotificationSucceededEpoch = null
                 addLog("${notifyChars.size} Datenkanäle gefunden")
+                addLog(
+                    if (readBeforeNotifications) {
+                        "POWER-Priorität: ${criticalBatteryNotifyChars.size} kritisches 1509-Abo, dann Deep READ, " +
+                            "danach ${postReadKnownNotifyChars.size + remainingNotifyChars.size} weitere Abos"
+                    } else {
+                        "Notify-Phasen: ${knownBt638NotifyChars.size} bekannte 1500/1600 zuerst, " +
+                            "${remainingNotifyChars.size} weitere nach Deep READ"
+                    }
+                )
                 addLog(
                     if (supported) "Motor-Tuning-Kanäle 160C/160D gefunden"
                     else "Motor-Tuning nicht vollständig verfügbar: Lesen=$readAvailable, Schreiben=$writeAvailable"
@@ -560,8 +1273,16 @@ class BleScooterManager(private val context: Context) {
                 )
                 update {
                     it.copy(
-                        status = "Verbunden – aktiviere Live-Daten",
-                        gattOperationBusy = true,
+                        status = if (readBeforeNotifications) {
+                            if (criticalBatteryNotifyChars.isNotEmpty()) {
+                                "POWER-Kurzfenster – sichere zuerst 1509-Livekanal"
+                            } else {
+                                "POWER-Kurzfenster – Deep READ startet sofort"
+                            }
+                        } else {
+                            "Verbunden – aktiviere Live-Daten"
+                        },
+                        gattOperationBusy = startNotificationSetup,
                         motorTuningSupported = supported,
                         motorTuningReadAvailable = readAvailable,
                         motorTuningWriteAvailable = writeAvailable,
@@ -574,7 +1295,11 @@ class BleScooterManager(private val context: Context) {
                         }
                     )
                 }
-                enableNextNotification(g, active.epoch)
+                if (readBeforeNotifications && !startNotificationSetup) {
+                    diagnosticObserver?.onDiagnosticGattReady(active.epoch)
+                } else {
+                    enableNextNotification(g, active.epoch)
+                }
             }
         }
 
@@ -586,7 +1311,7 @@ class BleScooterManager(private val context: Context) {
                 handleValue(
                     g,
                     active.epoch,
-                    characteristic.uuid,
+                    characteristic,
                     characteristic.value ?: byteArrayOf(),
                     BlePacketOrigin.NOTIFICATION
                 )
@@ -601,7 +1326,7 @@ class BleScooterManager(private val context: Context) {
             synchronized(gattOperationLock) {
                 if (gatt !== g) return@synchronized
                 val active = activeGattConnection ?: return@synchronized
-                handleValue(g, active.epoch, characteristic.uuid, value, BlePacketOrigin.NOTIFICATION)
+                handleValue(g, active.epoch, characteristic, value, BlePacketOrigin.NOTIFICATION)
             }
         }
 
@@ -652,8 +1377,13 @@ class BleScooterManager(private val context: Context) {
                     ) {
                         return@synchronized
                     }
+                    pending.writeCallbackReceived = true
                     if (status == BluetoothGatt.GATT_SUCCESS) {
-                        update { it.copy(startModeStatus = "Gesendet – warte auf 1508/11-Rückmeldung") }
+                        if (pending.domainConfirmed) {
+                            finishStartModeWriteLocked("✓ ${pending.mode.label} zurückgelesen und Plattform-Write bestätigt")
+                        } else {
+                            update { it.copy(startModeStatus = "Gesendet – warte auf 1508/11-Rückmeldung") }
+                        }
                     } else {
                         finishStartModeWriteLocked("Schreiben auf 1608 fehlgeschlagen: $status")
                     }
@@ -666,20 +1396,14 @@ class BleScooterManager(private val context: Context) {
                     motorTuningOperation != pendingMotor.operationToken ||
                     !gattOperationCoordinator.isCurrent(pendingMotor.operationToken)
                 ) return@synchronized
+                pendingMotor.writeCallbackReceived = true
                 if (status == BluetoothGatt.GATT_SUCCESS) {
-                    update { it.copy(motorTuningStatus = "Paket gesendet – lese Bestätigung über 160C") }
-                    addLog("Motor-Tuning 160D geschrieben, lese nach 1 Sekunde zurück")
-                    mainHandler.postDelayed({
-                        synchronized(gattOperationLock) {
-                            if (pendingMotorTuningWrite === pendingMotor && gatt === pendingMotor.gatt &&
-                                activeGattConnection?.epoch == pendingMotor.connectionEpoch &&
-                                motorTuningOperation == pendingMotor.operationToken &&
-                                gattOperationCoordinator.isCurrent(pendingMotor.operationToken)
-                            ) {
-                                readMotorTuningValues(verificationRead = true)
-                            }
-                        }
-                    }, 1_000L)
+                    if (pendingMotor.domainConfirmed) {
+                        completeMotorTuningWriteIfSafeLocked(pendingMotor)
+                    } else {
+                        update { it.copy(motorTuningStatus = "Paket gesendet – lese Bestätigung über 160C") }
+                        scheduleMotorTuningVerificationLocked(pendingMotor)
+                    }
                 } else {
                     finishMotorTuningFailure("Schreiben auf 160D fehlgeschlagen: $status")
                 }
@@ -691,7 +1415,34 @@ class BleScooterManager(private val context: Context) {
                 if (gatt !== g) return@synchronized
                 val active = activeGattConnection ?: return@synchronized
                 if (!gattOperationCoordinator.isCurrent(notificationSetupOperation)) return@synchronized
+                val characteristic = descriptor.characteristic
+                val callbackKey = notificationCharacteristicKey(
+                    characteristic.service.uuid.toString(),
+                    characteristic.uuid.toString()
+                )
+                if (!descriptorWriteRunning || descriptorWriteKey != callbackKey) {
+                    addLog("Verspäteter/fremder CCCD-Callback ${shortUuid(characteristic.uuid)} ignoriert")
+                    return@synchronized
+                }
+                cancelDescriptorWriteTimeoutLocked()
                 descriptorWriteRunning = false
+                diagnosticGattReadObserver?.onNotificationSubscriptionEvent(
+                    connectionEpoch = active.epoch,
+                    entry = characteristic.toNotificationInventoryEntry(notificationSubscriptionPhase),
+                    event = if (status == BluetoothGatt.GATT_SUCCESS) {
+                        NotificationSubscriptionEvent.SUCCEEDED
+                    } else {
+                        NotificationSubscriptionEvent.FAILED
+                    },
+                    status = status
+                )
+                if (status == BluetoothGatt.GATT_SUCCESS &&
+                    powerCriticalNotificationEpoch == active.epoch &&
+                    characteristic.service.uuid == SERVICE_TELEMETRY &&
+                    characteristic.uuid == BATTERY_CHARACTERISTIC
+                ) {
+                    powerCriticalNotificationSucceededEpoch = active.epoch
+                }
                 if (status != BluetoothGatt.GATT_SUCCESS) addLog("Notify-Aktivierung fehlgeschlagen: $status")
                 enableNextNotification(g, active.epoch)
             }
@@ -706,17 +1457,33 @@ class BleScooterManager(private val context: Context) {
         status: Int
     ) {
         if (gatt !== g || activeGattConnection?.epoch != connectionEpoch) return
+        val session = diagnosticGattReadSession
+        val scanner = diagnosticGattReadScanner
+        if (session != null && scanner != null && isCurrentDiagnosticSessionLocked(session)) {
+            // A diagnostic callback belongs exclusively to the Deep-READ scanner.
+            // In particular, 160C must not reach the normal motor parser first.
+            scanner.onDiagnosticCharacteristicRead(session, characteristic, value.copyOf(), status)
+            return
+        }
+        if (!isDiagnosticReadAllowed(connectionEpoch, diagnosticReadReconnectRequiredEpoch)) {
+            // Android may deliver the old callback after our timeout. There is no
+            // request id in BluetoothGattCallback, so this epoch stays poisoned
+            // until reconnect instead of attributing stale bytes to another READ.
+            addLog("Verspäteter READ ${shortUuid(characteristic.uuid)} nach Timeout verworfen")
+            return
+        }
         if (status == BluetoothGatt.GATT_SUCCESS) {
-            handleValue(g, connectionEpoch, characteristic.uuid, value, BlePacketOrigin.READ)
+            if (characteristic.service.uuid == SERVICE_MOTOR_TUNING &&
+                characteristic.uuid == MOTOR_TUNING_READ_CHARACTERISTIC &&
+                gattOperationCoordinator.isCurrent(motorTuningOperation)
+            ) {
+                handleMotorTuningValue(value.copyOf())
+            }
+            handleValue(g, connectionEpoch, characteristic, value, BlePacketOrigin.READ)
         } else if (characteristic.uuid == MOTOR_TUNING_READ_CHARACTERISTIC &&
             gattOperationCoordinator.isCurrent(motorTuningOperation)
         ) {
             finishMotorTuningFailure("Lesen von 160C fehlgeschlagen: $status")
-        }
-        val session = diagnosticGattReadSession
-        val scanner = diagnosticGattReadScanner
-        if (session != null && scanner != null && isCurrentDiagnosticSessionLocked(session)) {
-            scanner.onDiagnosticCharacteristicRead(session, characteristic, status)
         }
     }
 
@@ -730,20 +1497,91 @@ class BleScooterManager(private val context: Context) {
         if (characteristic == null) {
             gattOperationCoordinator.finish(notificationSetupOperation)
             notificationSetupOperation = null
-            update { it.copy(status = "Live-Daten aktiv", gattOperationBusy = false) }
-            addLog("Alle verfügbaren Benachrichtigungen aktiviert")
-            if (_state.value.motorTuningReadAvailable) readMotorTuningValues()
+            if (notificationSubscriptionPhase == NotificationSubscriptionPhase.KNOWN_BT638) {
+                val powerCriticalAttempted = powerCriticalNotificationEpoch == connectionEpoch
+                val powerCriticalSucceeded =
+                    powerCriticalNotificationSucceededEpoch == connectionEpoch
+                val postReadKnownCompleted = !powerCriticalAttempted &&
+                    diagnosticReadFirstEpoch == connectionEpoch
+                when {
+                    powerCriticalAttempted -> {
+                        powerCriticalNotificationEpoch = null
+                        powerCriticalNotificationSucceededEpoch = null
+                        update {
+                            it.copy(
+                                status = if (powerCriticalSucceeded) {
+                                    "1509-Livekanal bestätigt – POWER-Deep-READ startet"
+                                } else {
+                                    "1509-Abo nicht bestätigt – POWER-Deep-READ startet trotzdem"
+                                },
+                                gattOperationBusy = false
+                            )
+                        }
+                        addLog(
+                            if (powerCriticalSucceeded) {
+                                "Kritischer 1509-Livekanal vor dem POWER-Deep-READ bestätigt"
+                            } else {
+                                "Kritisches 1509-Abo nicht bestätigt; Deep READ bleibt READ-only aktiv"
+                            }
+                        )
+                        val observer = diagnosticGattReadObserver
+                        if (observer != null) observer.onDiagnosticGattReady(connectionEpoch)
+                        else resumeDeferredGattSetupLocked(connectionEpoch)
+                    }
+                    postReadKnownCompleted -> {
+                        deferredMotorTuningReadEpoch = connectionEpoch
+                        diagnosticReadFirstEpoch = null
+                        update {
+                            it.copy(
+                                status = "Deep READ und bekannte BT638-Notifications gesichert",
+                                gattOperationBusy = false
+                            )
+                        }
+                        addLog("Weitere 1500/1600-Benachrichtigungen nach dem POWER-Deep-READ aktiviert")
+                        resumeDeferredGattSetupLocked(connectionEpoch)
+                    }
+                    else -> {
+                        deferredMotorTuningReadEpoch = connectionEpoch
+                        update {
+                            it.copy(
+                                status = "Bekannte BT638-Notifications aktiv – Deep READ startet",
+                                gattOperationBusy = false
+                            )
+                        }
+                        addLog("Bekannte 1500/1600-Benachrichtigungen aktiviert; Deep READ hat jetzt Vorrang")
+                        val observer = diagnosticGattReadObserver
+                        if (observer != null) observer.onDiagnosticGattReady(connectionEpoch)
+                        else resumeDeferredGattSetupLocked(connectionEpoch)
+                    }
+                }
+            } else {
+                update { it.copy(status = "Live-Daten aktiv", gattOperationBusy = false) }
+                addLog("Alle entdeckten Benachrichtigungen aktiviert")
+                resumeDeferredGattSetupLocked(connectionEpoch)
+            }
             return
         }
 
         if (!g.setCharacteristicNotification(characteristic, true)) {
             addLog("Kanal ${shortUuid(characteristic.uuid)} konnte nicht aktiviert werden")
+            diagnosticGattReadObserver?.onNotificationSubscriptionEvent(
+                connectionEpoch = connectionEpoch,
+                entry = characteristic.toNotificationInventoryEntry(notificationSubscriptionPhase),
+                event = NotificationSubscriptionEvent.LOCAL_ENABLE_FAILED,
+                status = null
+            )
             enableNextNotification(g, connectionEpoch)
             return
         }
 
         val descriptor = characteristic.getDescriptor(CCCD)
         if (descriptor == null) {
+            diagnosticGattReadObserver?.onNotificationSubscriptionEvent(
+                connectionEpoch = connectionEpoch,
+                entry = characteristic.toNotificationInventoryEntry(notificationSubscriptionPhase),
+                event = NotificationSubscriptionEvent.CCCD_MISSING,
+                status = null
+            )
             enableNextNotification(g, connectionEpoch)
             return
         }
@@ -754,6 +1592,12 @@ class BleScooterManager(private val context: Context) {
             else BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
 
         descriptorWriteRunning = true
+        diagnosticGattReadObserver?.onNotificationSubscriptionEvent(
+            connectionEpoch = connectionEpoch,
+            entry = characteristic.toNotificationInventoryEntry(notificationSubscriptionPhase),
+            event = NotificationSubscriptionEvent.STARTED,
+            status = null
+        )
         val started =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 g.writeDescriptor(descriptor, value) == BluetoothStatusCodes.SUCCESS
@@ -767,8 +1611,80 @@ class BleScooterManager(private val context: Context) {
 
         if (!started) {
             descriptorWriteRunning = false
+            diagnosticGattReadObserver?.onNotificationSubscriptionEvent(
+                connectionEpoch = connectionEpoch,
+                entry = characteristic.toNotificationInventoryEntry(notificationSubscriptionPhase),
+                event = NotificationSubscriptionEvent.FAILED,
+                status = null
+            )
             enableNextNotification(g, connectionEpoch)
+        } else {
+            scheduleDescriptorWriteTimeoutLocked(g, connectionEpoch, characteristic)
         }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun scheduleDescriptorWriteTimeoutLocked(
+        g: BluetoothGatt,
+        connectionEpoch: Long,
+        characteristic: BluetoothGattCharacteristic
+    ) {
+        cancelDescriptorWriteTimeoutLocked()
+        val operation = notificationSetupOperation ?: return
+        val key = notificationCharacteristicKey(
+            characteristic.service.uuid.toString(),
+            characteristic.uuid.toString()
+        )
+        descriptorWriteKey = key
+        val timeout = Runnable {
+            synchronized(gattOperationLock) {
+                if (gatt !== g || activeGattConnection?.epoch != connectionEpoch ||
+                    !descriptorWriteRunning || descriptorWriteKey != key ||
+                    notificationSetupOperation != operation ||
+                    !gattOperationCoordinator.isCurrent(operation)
+                ) return@synchronized
+
+                descriptorWriteTimeout = null
+                descriptorWriteKey = null
+                descriptorWriteRunning = false
+                diagnosticGattReadObserver?.onNotificationSubscriptionEvent(
+                    connectionEpoch = connectionEpoch,
+                    entry = characteristic.toNotificationInventoryEntry(notificationSubscriptionPhase),
+                    event = NotificationSubscriptionEvent.TIMEOUT,
+                    status = null
+                )
+                notificationQueue.clear()
+                deferredKnownNotificationQueue.clear()
+                deferredNotificationQueue.clear()
+                deferredMotorTuningReadEpoch = null
+                diagnosticReadFirstEpoch = null
+                powerCriticalNotificationEpoch = null
+                powerCriticalNotificationSucceededEpoch = null
+                diagnosticReadReconnectRequiredEpoch = connectionEpoch
+                gattOperationCoordinator.finish(operation)
+                notificationSetupOperation = null
+                update {
+                    it.copy(
+                        gattOperationBusy = false,
+                        status = "Notify-CCCD ohne Callback – Teil-Dump gesichert; sichere Neuverbindung"
+                    )
+                }
+                addLog("Notify-CCCD ${shortUuid(characteristic.uuid)} Timeout; GATT wird sicher neu aufgebaut")
+                activeGattConnection?.takeIf {
+                    it.gatt === g && it.epoch == connectionEpoch
+                }?.let { active ->
+                    forceCloseGattEpochLocked(active, "Notify-CCCD ohne Callback")
+                }
+            }
+        }
+        descriptorWriteTimeout = timeout
+        mainHandler.postDelayed(timeout, NOTIFICATION_DESCRIPTOR_TIMEOUT_MS)
+    }
+
+    private fun cancelDescriptorWriteTimeoutLocked() {
+        descriptorWriteTimeout?.let(mainHandler::removeCallbacks)
+        descriptorWriteTimeout = null
+        descriptorWriteKey = null
     }
 
     @SuppressLint("MissingPermission")
@@ -778,6 +1694,14 @@ class BleScooterManager(private val context: Context) {
         val ownsExistingOperation = gattOperationCoordinator.isCurrent(existingOperation)
         if (active == null || !_state.value.connected) {
             finishMotorTuningFailureLocked("Motor-Tuning-Lesekanal 160C nicht verfügbar")
+            return@synchronized
+        }
+        if (!isDiagnosticReadAllowed(active.epoch, diagnosticReadReconnectRequiredEpoch)) {
+            update { it.copy(motorTuningStatus = "Nach Deep-READ-Timeout ist ein Reconnect erforderlich") }
+            return@synchronized
+        }
+        if (gattConnectionDeadline != null) {
+            update { it.copy(motorTuningStatus = "Service Discovery läuft – Lesen verschoben") }
             return@synchronized
         }
         val pendingVerification = pendingMotorTuningWrite
@@ -864,16 +1788,46 @@ class BleScooterManager(private val context: Context) {
                     motorTuningOperation == readOperation &&
                     gattOperationCoordinator.isCurrent(readOperation)
                 ) {
-                    finishMotorTuningFailureLocked("Keine vollständige 160C-Antwort empfangen")
+                    timeoutMotorTuningReadLocked(g, active.epoch, readOperation)
                 }
             }
         }, 5_000L)
     }
 
+    @SuppressLint("MissingPermission")
+    private fun timeoutMotorTuningReadLocked(
+        g: BluetoothGatt,
+        connectionEpoch: Long,
+        operation: GattOperationToken?
+    ) {
+        diagnosticReadReconnectRequiredEpoch = connectionEpoch
+        pendingMotorTuningWrite = null
+        lastMotorTuningReadRequestAt = 0L
+        motorTuningBuffer.clear()
+        gattOperationCoordinator.finish(operation)
+        motorTuningOperation = null
+        update {
+            it.copy(
+                motorTuningBusy = false,
+                gattOperationBusy = false,
+                motorTuningStatus = "✕ 160C-READ ohne Callback – sichere Neuverbindung",
+                motorTuningLastVerified = false,
+                status = "160C-READ Timeout – GATT wird neu aufgebaut"
+            )
+        }
+        addLog("Motor-Tuning 160C Timeout; verspätete Callback-Zuordnung durch Reconnect verhindert")
+        activeGattConnection?.takeIf {
+            it.gatt === g && it.epoch == connectionEpoch
+        }?.let { active ->
+            forceCloseGattEpochLocked(active, "Motor-Tuning 160C ohne Callback")
+        }
+    }
+
     private fun hasCompetingGattOperationLocked(snapshot: ScooterState, connectionEpoch: Long): Boolean =
-        descriptorWriteRunning || notificationQueue.isNotEmpty() ||
+        gattConnectionDeadline != null || descriptorWriteRunning || notificationQueue.isNotEmpty() ||
             pendingMotorTuningWrite != null || snapshot.motorTuningBusy ||
             snapshot.diagnosticGattReadRunning ||
+            !isDiagnosticReadAllowed(connectionEpoch, diagnosticReadReconnectRequiredEpoch) ||
             gattOperationCoordinator.currentKind(connectionEpoch) != null
 
     private fun startModeBlockMessage(reason: StartModeWriteBlockReason): String = when (reason) {
@@ -977,7 +1931,7 @@ class BleScooterManager(private val context: Context) {
             )
         )
         if (latestBlockReason != null || VmaxStartMode.fromRaw(latest.startModeRaw) == mode) {
-            gattOperationCoordinator.finish(operation)
+            finishGattOperationLocked(operation)
             val message = latestBlockReason?.let(::startModeBlockMessage) ?: "${mode.label} ist bereits aktiv"
             update { it.copy(startModeBusy = false, gattOperationBusy = false, startModeStatus = message) }
             addLog("Startmodus nicht geändert: $message")
@@ -986,7 +1940,16 @@ class BleScooterManager(private val context: Context) {
 
         val packet = VmaxStartModeProtocol.buildLegacyWriteFrame(mode)
         val startedAt = SystemClock.elapsedRealtime()
-        val pending = PendingStartModeWrite(mode, startedAt, g, active.epoch, operation)
+        val pending = PendingStartModeWrite(
+            mode = mode,
+            startedAt = startedAt,
+            gatt = g,
+            connectionEpoch = active.epoch,
+            operationToken = operation,
+            // Android completes both WRITE_TYPE_DEFAULT and NO_RESPONSE through
+            // onCharacteristicWrite; never release the platform slot without it.
+            writeCallbackExpected = true
+        )
         pendingStartModeWrite = pending
         update {
             it.copy(
@@ -1014,11 +1977,31 @@ class BleScooterManager(private val context: Context) {
 
         mainHandler.postDelayed({
             synchronized(gattOperationLock) {
-                if (pendingStartModeWrite == pending && gatt === pending.gatt &&
+                if (pendingStartModeWrite === pending && gatt === pending.gatt &&
                     activeGattConnection?.epoch == pending.connectionEpoch &&
                     gattOperationCoordinator.isCurrent(pending.operationToken)
                 ) {
-                    finishStartModeWriteLocked("Keine bestätigte 1508/11-Rückmeldung")
+                    if (shouldForceCloseWriteEpochOnTimeout(
+                            pending.writeCallbackExpected,
+                            pending.writeCallbackReceived
+                        )
+                    ) {
+                        pendingStartModeWrite = null
+                        update {
+                            it.copy(
+                                startModeBusy = false,
+                                gattOperationBusy = false,
+                                startModeStatus = "Android-Schreibcallback fehlt – sichere Neuverbindung"
+                            )
+                        }
+                        activeGattConnection?.takeIf {
+                            it.gatt === pending.gatt && it.epoch == pending.connectionEpoch
+                        }?.let { current ->
+                            forceCloseGattEpochLocked(current, "Startmodus-Write ohne Callback")
+                        }
+                    } else {
+                        finishStartModeWriteLocked("Keine bestätigte 1508/11-Rückmeldung")
+                    }
                 }
             }
         }, 8_000L)
@@ -1026,7 +2009,7 @@ class BleScooterManager(private val context: Context) {
 
     private fun finishStartModeWriteLocked(message: String) {
         val pending = pendingStartModeWrite
-        if (pending != null) gattOperationCoordinator.finish(pending.operationToken)
+        if (pending != null) finishGattOperationLocked(pending.operationToken)
         pendingStartModeWrite = null
         update {
             it.copy(
@@ -1123,10 +2106,15 @@ class BleScooterManager(private val context: Context) {
                 update { it.copy(motorTuningStatus = "Motor-Tuning-Vorgang läuft bereits") }
                 false
             }
-            pendingStartModeWrite != null || descriptorWriteRunning || notificationQueue.isNotEmpty() ||
-                activeGattConnection?.let {
-                    gattOperationCoordinator.currentKind(it.epoch) != null
-                } != false -> {
+            activeGattConnection?.let {
+                !isDiagnosticReadAllowed(it.epoch, diagnosticReadReconnectRequiredEpoch)
+            } == true -> {
+                finishMotorTuningFailure("Nach Deep-READ-Timeout ist ein Reconnect erforderlich")
+                false
+            }
+            pendingStartModeWrite != null || activeGattConnection?.let {
+                hasCompetingGattOperationLocked(snapshot, it.epoch)
+            } != false -> {
                 finishMotorTuningFailure("Anderer BLE-Vorgang läuft – bitte kurz warten")
                 false
             }
@@ -1188,7 +2176,7 @@ class BleScooterManager(private val context: Context) {
 
         val operation = gattOperationCoordinator.tryBegin(active.epoch, GattOperationKind.MOTOR_TUNING)
         if (operation == null || gatt !== g || activeGattConnection?.epoch != active.epoch || !_state.value.connected) {
-            gattOperationCoordinator.finish(operation)
+            finishGattOperationLocked(operation)
             finishMotorTuningFailure("Anderer BLE-Vorgang läuft – bitte kurz warten")
             return
         }
@@ -1203,7 +2191,8 @@ class BleScooterManager(private val context: Context) {
             startedAt = System.currentTimeMillis(),
             gatt = g,
             connectionEpoch = active.epoch,
-            operationToken = operation
+            operationToken = operation,
+            writeCallbackExpected = true
         )
         pendingMotorTuningWrite = pending
         update {
@@ -1231,7 +2220,6 @@ class BleScooterManager(private val context: Context) {
             finishMotorTuningFailure("Schreibvorgang auf 160D konnte nicht gestartet werden")
             return
         }
-
         mainHandler.postDelayed({
             synchronized(gattOperationLock) {
                 if (gatt === g && activeGattConnection?.epoch == active.epoch &&
@@ -1239,10 +2227,74 @@ class BleScooterManager(private val context: Context) {
                     motorTuningOperation == pending.operationToken &&
                     gattOperationCoordinator.isCurrent(pending.operationToken)
                 ) {
-                    finishMotorTuningFailureLocked("Keine bestätigte Rückmeldung vom Controller")
+                    if (shouldForceCloseWriteEpochOnTimeout(
+                            pending.writeCallbackExpected,
+                            pending.writeCallbackReceived
+                        )
+                    ) {
+                        pendingMotorTuningWrite = null
+                        update {
+                            it.copy(
+                                motorTuningBusy = false,
+                                gattOperationBusy = false,
+                                motorTuningStatus = "✕ Android-Schreibcallback fehlt – sichere Neuverbindung",
+                                motorTuningLastVerified = false
+                            )
+                        }
+                        activeGattConnection?.takeIf {
+                            it.gatt === pending.gatt && it.epoch == pending.connectionEpoch
+                        }?.let { current ->
+                            forceCloseGattEpochLocked(current, "Motor-Tuning-Write ohne Callback")
+                        }
+                    } else if (lastMotorTuningReadRequestAt <= 0L && !pending.domainConfirmed) {
+                        // With a completed platform write there is no old write
+                        // left in flight. A readable 160C request owns its own
+                        // timeout; notify-only/no-response paths end here.
+                        finishMotorTuningFailureLocked("Keine bestätigte Rückmeldung vom Controller")
+                    }
                 }
             }
         }, 8_000L)
+    }
+
+    private fun scheduleMotorTuningVerificationLocked(pending: PendingMotorTuningWrite) {
+        if (pendingMotorTuningWrite !== pending || pending.verificationReadScheduled ||
+            !gattOperationCoordinator.isCurrent(pending.operationToken)
+        ) return
+        if (pending.domainConfirmed) {
+            completeMotorTuningWriteIfSafeLocked(pending)
+            return
+        }
+        pending.verificationReadScheduled = true
+        addLog("Motor-Tuning 160D übergeben, lese nach 1 Sekunde über 160C zurück")
+        mainHandler.postDelayed({
+            synchronized(gattOperationLock) {
+                if (pendingMotorTuningWrite === pending && gatt === pending.gatt &&
+                    activeGattConnection?.epoch == pending.connectionEpoch &&
+                    motorTuningOperation == pending.operationToken &&
+                    gattOperationCoordinator.isCurrent(pending.operationToken)
+                ) {
+                    readMotorTuningValues(verificationRead = true)
+                }
+            }
+        }, 1_000L)
+    }
+
+    private fun completeMotorTuningWriteIfSafeLocked(pending: PendingMotorTuningWrite) {
+        if (pendingMotorTuningWrite !== pending || !pending.domainConfirmed ||
+            (pending.writeCallbackExpected && !pending.writeCallbackReceived)
+        ) return
+        pendingMotorTuningWrite = null
+        finishGattOperationLocked(pending.operationToken)
+        motorTuningOperation = null
+        update {
+            it.copy(
+                motorTuningBusy = false,
+                gattOperationBusy = activeGattConnection?.let { active ->
+                    gattOperationCoordinator.currentKind(active.epoch) != null
+                } ?: false
+            )
+        }
     }
 
     private fun handleMotorTuningValue(value: ByteArray) {
@@ -1294,21 +2346,31 @@ class BleScooterManager(private val context: Context) {
             }
             addLog("Motor-Tuning RX 160C: ${result.frameHex}")
             addLog("Motor-Tuning Prüfung: $resultStatus")
-            pendingMotorTuningWrite = null
+            pending.domainConfirmed = true
         } else {
             addLog("Motor-Tuning gelesen: ${result.mode.label}, ${result.profiles.size} Profil(e)")
         }
 
-        finishGattOperationLocked(motorTuningOperation)
-        motorTuningOperation = null
+        val writeCanComplete = pending == null ||
+            (!pending.writeCallbackExpected || pending.writeCallbackReceived)
+        if (pending == null) {
+            finishGattOperationLocked(motorTuningOperation)
+            motorTuningOperation = null
+        } else if (writeCanComplete) {
+            completeMotorTuningWriteIfSafeLocked(pending)
+        }
 
         update {
             it.copy(
-                motorTuningBusy = false,
+                motorTuningBusy = if (pending != null && !writeCanComplete) true else false,
                 gattOperationBusy = activeGattConnection?.let { active ->
                     gattOperationCoordinator.currentKind(active.epoch) != null
                 } ?: false,
-                motorTuningStatus = resultStatus,
+                motorTuningStatus = if (pending != null && !writeCanComplete) {
+                    "$resultStatus • warte auf Android-Schreibcallback"
+                } else {
+                    resultStatus
+                },
                 motorTuningProtocol = result.mode,
                 motorTuningProfiles = result.profiles,
                 motorTuningOriginalProfiles = original,
@@ -1341,24 +2403,42 @@ class BleScooterManager(private val context: Context) {
     }
 
     private fun finishGattOperationLocked(operation: GattOperationToken?) {
-        gattOperationCoordinator.finish(operation)
+        if (gattOperationCoordinator.finish(operation)) {
+            scheduleGattSetupResumeLocked(operation?.connectionEpoch)
+        }
+    }
+
+    private fun scheduleGattSetupResumeLocked(connectionEpoch: Long?) {
+        if (connectionEpoch == null) return
+        mainHandler.post {
+            synchronized(gattOperationLock) {
+                if (activeGattConnection?.epoch == connectionEpoch &&
+                    gattOperationCoordinator.currentKind(connectionEpoch) == null
+                ) {
+                    resumeDeferredGattSetupLocked(connectionEpoch)
+                }
+            }
+        }
     }
 
     private fun handleValue(
         callbackGatt: BluetoothGatt,
         callbackConnectionEpoch: Long,
-        uuid: UUID,
+        characteristic: BluetoothGattCharacteristic,
         value: ByteArray,
         origin: BlePacketOrigin
     ) {
+        val uuid = characteristic.uuid
         if (gatt !== callbackGatt || activeGattConnection?.epoch != callbackConnectionEpoch ||
             !gattOperationCoordinator.isActiveConnection(callbackConnectionEpoch) || !_state.value.connected
         ) {
             addLog("${origin.name} ${shortUuid(uuid)} nach Verbindungsende verworfen")
             return
         }
+        val serviceUuid = characteristic.service.uuid.toString().lowercase()
+        val characteristicUuid = uuid.toString().lowercase()
+        val propertiesRaw = characteristic.properties
         val packet = value.copyOf()
-        if (uuid == MOTOR_TUNING_READ_CHARACTERISTIC) handleMotorTuningValue(packet)
         val short = shortUuid(uuid)
         val hex = packet.joinToString("-") { "%02X".format(it.toInt() and 0xFF) }
         if (origin == BlePacketOrigin.READ) {
@@ -1366,11 +2446,66 @@ class BleScooterManager(private val context: Context) {
             addLog("READ $short (nur Diagnose, nicht als Live-Telemetrie): $hex")
             return
         }
+        if (powerCriticalNotificationEpoch == callbackConnectionEpoch &&
+            characteristic.service.uuid == SERVICE_TELEMETRY &&
+            uuid == BATTERY_CHARACTERISTIC
+        ) {
+            powerCriticalNotificationSucceededEpoch = callbackConnectionEpoch
+        }
         if (recordingActive && !recordingPaused) receivedNotificationPackets++
         if (VmaxDecoderPolicy.isSuspiciousReadLikePayload(short, packet)) {
-            if (recordingActive && !recordingPaused) rejectedHybridPackets++
-            addLog("$short verworfen: READ-/Firmware-ID-Hybrid erkannt")
+            if (recordingActive && !recordingPaused) {
+                rejectedHybridPackets++
+                val now = System.currentTimeMillis()
+                val measurementMs = now - measurementStartedAt
+                val knowledge = VmaxProtocolCatalog.get(short)
+                sessionRows += listOf(
+                    measurementMs.toString(),
+                    now.toString(),
+                    short,
+                    knowledge.title,
+                    packet.size.toString(),
+                    receivedNotificationPackets.toString(),
+                    "–",
+                    hex,
+                    QUARANTINED_NOTIFICATION_ORIGIN,
+                    measurementConnectionEpoch.toString(),
+                    serviceUuid,
+                    characteristicUuid,
+                    propertiesRaw.toString()
+                ).joinToString(";")
+                if (sessionRows.size > 100_000) sessionRows.removeAt(0)
+            }
+            addLog("$short quarantänisiert: READ-/Firmware-ID-Hybrid exakt im RAW-Export gesichert")
             return
+        }
+        if (!isBt638LiveNotificationRoute(serviceUuid, characteristicUuid)) {
+            if (recordingActive && !recordingPaused) {
+                diagnosticOnlyNotificationPackets++
+                val now = System.currentTimeMillis()
+                val measurementMs = now - measurementStartedAt
+                sessionRows += listOf(
+                    measurementMs.toString(),
+                    now.toString(),
+                    short,
+                    "Diagnose-Notification (nicht im Live-Decoder)",
+                    packet.size.toString(),
+                    receivedNotificationPackets.toString(),
+                    "–",
+                    hex,
+                    DIAGNOSTIC_NOTIFICATION_ORIGIN,
+                    measurementConnectionEpoch.toString(),
+                    serviceUuid,
+                    characteristicUuid,
+                    propertiesRaw.toString()
+                ).joinToString(";")
+                if (sessionRows.size > 100_000) sessionRows.removeAt(0)
+            }
+            addLog("$short aus Service ${normalizeGattShortUuid(serviceUuid)} nur diagnostisch gesichert")
+            return
+        }
+        if (characteristic.service.uuid == SERVICE_MOTOR_TUNING && uuid == MOTOR_TUNING_READ_CHARACTERISTIC) {
+            handleMotorTuningValue(packet)
         }
         if (recordingActive && !recordingPaused) acceptedNotificationPackets++
         decoderLab.record(uuid, packet)
@@ -1398,7 +2533,8 @@ class BleScooterManager(private val context: Context) {
             sessionRows += listOf(
                 measurementMs.toString(), now.toString(), short, knowledge.title,
                 packet.size.toString(), count.toString(), changedText, hex,
-                origin.name, measurementConnectionEpoch.toString()
+                origin.name, measurementConnectionEpoch.toString(),
+                serviceUuid, characteristicUuid, propertiesRaw.toString()
             ).joinToString(";")
             val snapshot = _state.value
             val electricalPower = resolveElectricalPowerW(
@@ -1442,15 +2578,24 @@ class BleScooterManager(private val context: Context) {
         val old = _state.value
         val decodedStartMode = VmaxStartMode.fromRaw(decoded.startModeRaw)
         val pendingStartMode = pendingStartModeWrite
-        val startModeConfirmed = decodedStartMode != null && pendingStartMode != null &&
+        val startModeDomainConfirmed = decodedStartMode != null && pendingStartMode != null &&
             pendingStartMode.mode == decodedStartMode &&
             pendingStartMode.gatt === callbackGatt &&
             pendingStartMode.connectionEpoch == callbackConnectionEpoch &&
             gattOperationCoordinator.isCurrent(pendingStartMode.operationToken)
-        if (startModeConfirmed) {
-            gattOperationCoordinator.finish(pendingStartMode?.operationToken)
-            pendingStartModeWrite = null
-            addLog("Startmodus bestätigt: ${decodedStartMode?.label} (1508/11)")
+        var startModeCompleted = false
+        if (startModeDomainConfirmed && pendingStartMode != null) {
+            pendingStartMode.domainConfirmed = true
+            val platformResolved = !pendingStartMode.writeCallbackExpected ||
+                pendingStartMode.writeCallbackReceived
+            if (platformResolved) {
+                finishGattOperationLocked(pendingStartMode.operationToken)
+                pendingStartModeWrite = null
+                startModeCompleted = true
+                addLog("Startmodus bestätigt: ${decodedStartMode?.label} (1508/11 + Plattform)")
+            } else {
+                addLog("Startmodus 1508/11 bestätigt; warte noch auf Android-Schreibcallback")
+            }
         }
         val packets = (old.rawPackets + (short to hex)).toSortedMap()
         val channels = packets.keys.map { channel ->
@@ -1483,10 +2628,12 @@ class BleScooterManager(private val context: Context) {
                 } else {
                     it.startModeWriteAvailable
                 },
-                startModeBusy = if (startModeConfirmed) false else it.startModeBusy,
-                gattOperationBusy = if (startModeConfirmed) false else it.gattOperationBusy,
+                startModeBusy = if (startModeCompleted) false else it.startModeBusy,
+                gattOperationBusy = if (startModeCompleted) false else it.gattOperationBusy,
                 startModeStatus = when {
-                    startModeConfirmed -> "✓ ${decodedStartMode?.label} zurückgelesen"
+                    startModeCompleted -> "✓ ${decodedStartMode?.label} zurückgelesen"
+                    startModeDomainConfirmed ->
+                        "${decodedStartMode?.label} zurückgelesen – warte auf Android-Schreibcallback"
                     decodedStartMode != null && pendingStartMode != null ->
                         "Gesendet – warte auf ${pendingStartMode.mode.label}"
                     decodedStartMode != null && legacyStartModeCharacteristicAvailable ->
@@ -1507,6 +2654,9 @@ class BleScooterManager(private val context: Context) {
                 packetTotal = it.packetTotal + 1,
                 packetsPerSecond = packetsPerSecond,
                 lastPacketAt = now,
+                lastBatteryTelemetryAt = if (
+                    decoded.batteryPercent != null || decoded.voltageV != null
+                ) now else it.lastBatteryTelemetryAt,
                 telemetryReady = it.telemetryReady || ConnectionTelemetryPolicy.isLiveNotificationChannel(short),
                 speedSampleConnectionEpoch = if (speedSampleElapsedRealtimeMs != null) callbackConnectionEpoch else it.speedSampleConnectionEpoch,
                 lastSpeedSampleElapsedRealtimeMs = speedSampleElapsedRealtimeMs ?: it.lastSpeedSampleElapsedRealtimeMs,
@@ -1545,10 +2695,16 @@ class BleScooterManager(private val context: Context) {
             recordingActive = true
             recordingPaused = false
             measurementConnectionEpoch = 0
+            measurementEpochByGattEpoch.clear()
+            activeGattConnection?.epoch?.let { epoch ->
+                measurementEpochByGattEpoch[epoch] = measurementConnectionEpoch
+            }
             receivedNotificationPackets = 0
             acceptedNotificationPackets = 0
             rejectedReadPackets = 0
             rejectedHybridPackets = 0
+            diagnosticOnlyNotificationPackets = 0
+            measurementDiagnosticReadBundles.clear()
             sessionRows.clear()
             markerRows.clear()
             telemetryRows.clear()
@@ -1612,6 +2768,11 @@ class BleScooterManager(private val context: Context) {
     }
 
     fun stopMeasurementAndExport() {
+        diagnosticGattReadObserver?.finalizeForMeasurementExport(resumeDeferredSetup = true)
+        stopMeasurementAndExportAfterDiagnosticFlush()
+    }
+
+    private fun stopMeasurementAndExportAfterDiagnosticFlush() {
         val (stoppedAt, exportSnapshot) = synchronized(gattOperationLock) {
             if (!recordingActive) return
             val now = System.currentTimeMillis()
@@ -1619,7 +2780,7 @@ class BleScooterManager(private val context: Context) {
             recordingActive = false
             recordingPaused = false
             update { it.copy(recordingActive = false, recordingPaused = false, markerCount = it.markerCount + 1, lastMarker = "STOP", analysisPhase = "Messfahrt beendet") }
-            now to MeasurementExportSnapshot(
+            val snapshot = MeasurementExportSnapshot(
                 rawRows = sessionRows.toList(),
                 markerRows = markerRows.toList(),
                 telemetryRows = telemetryRows.toList(),
@@ -1628,8 +2789,13 @@ class BleScooterManager(private val context: Context) {
                 receivedNotifications = receivedNotificationPackets,
                 acceptedNotifications = acceptedNotificationPackets,
                 rejectedReads = rejectedReadPackets,
-                rejectedHybrids = rejectedHybridPackets
+                rejectedHybrids = rejectedHybridPackets,
+                diagnosticNotifications = diagnosticOnlyNotificationPackets,
+                diagnosticReadBundles = measurementDiagnosticReadBundles.map { it.copy(records = it.records.toList()) }
             )
+            measurementDiagnosticReadBundles.clear()
+            measurementEpochByGattEpoch.clear()
+            now to snapshot
         }
         exportMeasurementBundle(stoppedAt, exportSnapshot)
     }
@@ -1640,15 +2806,51 @@ class BleScooterManager(private val context: Context) {
     }
 
     private fun exportMeasurementBundle(stoppedAt: Long, snapshot: MeasurementExportSnapshot) {
-        val stamp = java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", java.util.Locale.GERMANY).format(java.util.Date(snapshot.startedAt))
+        val stamp = java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss-SSS", java.util.Locale.GERMANY).format(java.util.Date(snapshot.startedAt))
         val folder = "VMAXDashboard/Messfahrt_$stamp"
         val telemetry = buildRawTelemetryCsv(snapshot.rawRows)
         val liveTelemetry = "relative_ms;timestamp_ms;speed_kmh_candidate;battery_percent;voltage_v;current_a;power_w;electrical_power_w;power_provenance;motor_temp_c;battery_temp_c;trip_km;odometer_km;drive_raw_1505_b7;motor_load_raw_be;battery_state_raw_1509_b6;accessory_raw_b0;accessory_raw_b3;source_channel\n" + snapshot.telemetryRows.joinToString("\n")
         val markers = "relative_ms;timestamp_ms;marker\n" + snapshot.markerRows.joinToString("\n")
-        val (findings, analysisReport) = MeasurementAnalyzer.analyze(snapshot.rawRows, snapshot.markerRows)
+        // Quarantined notifications remain byte-exact in BLE_Rohdaten.csv, but only
+        // accepted platform NOTIFICATION rows may influence analysis or learning.
+        val analysisRows = rawTelemetryRowsForAnalysis(snapshot.rawRows)
+        val (findings, analysisReport) = MeasurementAnalyzer.analyze(analysisRows, snapshot.markerRows)
         val measurementChannels = measurementChannelsFromRawRows(snapshot.rawRows)
         learningStore.merge(findings, _state.value.deviceName, stoppedAt)
         val learningJson = learningStore.exportJson()
+        val diagnosticRecords = diagnosticRecordsForBundles(snapshot.diagnosticReadBundles)
+        val diagnosticCounts = diagnosticReadCounts(diagnosticRecords)
+        var diagnosticExportSucceeded = snapshot.diagnosticReadBundles.isEmpty()
+        if (snapshot.diagnosticReadBundles.isNotEmpty()) {
+            runCatching {
+                // Keep the optional triple atomic from the syncer's perspective.
+                // A partial triple is ignored publicly, while the core ride still exports.
+                writeDownloadFile(
+                    folder,
+                    DIAGNOSTIC_READ_CSV_FILE,
+                    "text/csv",
+                    buildDiagnosticReadCsv(diagnosticRecords)
+                )
+                writeDownloadFile(
+                    folder,
+                    DIAGNOSTIC_READ_SUMMARY_FILE,
+                    "text/plain",
+                    buildDiagnosticReadSummary(snapshot.diagnosticReadBundles)
+                )
+                writeDownloadFile(
+                    folder,
+                    DIAGNOSTIC_READ_MANIFEST_FILE,
+                    "application/json",
+                    buildMeasurementDiagnosticManifest(
+                        measurementName = "Messfahrt_$stamp",
+                        bundles = snapshot.diagnosticReadBundles
+                    ).toString(2)
+                )
+                diagnosticExportSucceeded = true
+            }.onFailure { error ->
+                addLog("Optionaler Deep-READ-Export fehlgeschlagen; Fahrtdaten werden trotzdem gespeichert: ${error.message}")
+            }
+        }
         val summary = buildString {
             appendLine("VMAX Dashboard Messfahrt")
             appendLine("Start: ${snapshot.startedAt}")
@@ -1659,7 +2861,19 @@ class BleScooterManager(private val context: Context) {
             appendLine("BLE_Akzeptiert: ${snapshot.acceptedNotifications}")
             appendLine("READ_Verworfen: ${snapshot.rejectedReads}")
             appendLine("Hybrid_Verworfen: ${snapshot.rejectedHybrids}")
+            appendLine("Diagnose_Notifications_isoliert: ${snapshot.diagnosticNotifications}")
             appendLine("Verbindungsepochen: ${snapshot.connectionCount}")
+            appendLine("Deep_READ_Scans: ${snapshot.diagnosticReadBundles.size}")
+            // "Antworten" means actual Android onCharacteristicRead callbacks,
+            // not inventory, timeout or connection-observation rows.
+            appendLine("Deep_READ_Antworten: ${diagnosticCounts.callbacks}")
+            appendLine(
+                "Deep_READ_Export: " + when {
+                    snapshot.diagnosticReadBundles.isEmpty() -> "nicht vorhanden"
+                    diagnosticExportSucceeded -> "vollständig"
+                    else -> "fehlgeschlagen (Fahrtdaten separat gesichert)"
+                }
+            )
             appendLine("Marker: ${snapshot.markerRows.size}")
             appendLine("Gerät: ${_state.value.deviceName}")
             appendLine("Kanäle: ${measurementChannels.joinToString(",")}")
@@ -1689,6 +2903,55 @@ class BleScooterManager(private val context: Context) {
         }
     }
 
+    private fun buildMeasurementDiagnosticManifest(
+        measurementName: String,
+        bundles: List<DiagnosticReadBundle>
+    ): JSONObject {
+        val records = diagnosticRecordsForBundles(bundles)
+        val counts = diagnosticReadCounts(records)
+        val epochs = records.map(DiagnosticReadRecord::connectionEpoch).distinct().sorted()
+        val epochArray = JSONArray().apply { epochs.forEach(::put) }
+        val scanIds = JSONArray().apply { bundles.map(DiagnosticReadBundle::scanId).distinct().forEach(::put) }
+        val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+        return JSONObject()
+            .put("schema", "vmax-bt638-deep-read-v3")
+            .put("measurement", measurementName)
+            .put("embedded_in_measurement", true)
+            .put("read_scans", bundles.size)
+            .put("scan_ids", scanIds)
+            .put("completed", bundles.all(DiagnosticReadBundle::completed))
+            .put("completed_scans", bundles.count(DiagnosticReadBundle::completed))
+            .put("partial_scans", bundles.count { !it.completed })
+            .put("start_ms", bundles.minOfOrNull(DiagnosticReadBundle::scanStartedAt) ?: JSONObject.NULL)
+            .put("end_ms", bundles.maxOfOrNull(DiagnosticReadBundle::scanFinishedAt) ?: JSONObject.NULL)
+            .put("connection_epochs", epochArray)
+            .put(
+                "measurement_connection_epochs",
+                JSONArray().apply {
+                    records.mapNotNull(DiagnosticReadRecord::measurementConnectionEpoch)
+                        .distinct()
+                        .sorted()
+                        .forEach(::put)
+                }
+            )
+            .put("read_attempts", counts.attempts)
+            .put("read_callbacks", counts.callbacks)
+            // Backwards-compatible alias with strict callback semantics.
+            .put("read_responses", counts.callbacks)
+            .put("read_success", counts.successes)
+            .put("read_payload_callbacks", counts.payloadCallbacks)
+            .put("read_valid_payloads", counts.validPayloads)
+            .put("advertisement_payloads", counts.observationPayloads)
+            .put("observations", counts.observations)
+            .put("full_uuids", true)
+            .put("characteristic_properties", true)
+            .put("callback_payload_direct", true)
+            .put("read_only", true)
+            .put("bluetooth_address_included", false)
+            .put("app_version", packageInfo.versionName.orEmpty())
+            .put("created_at_ms", System.currentTimeMillis())
+    }
+
     private fun writeDownloadFile(relativeFolder: String, fileName: String, mimeType: String, content: String) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val values = ContentValues().apply {
@@ -1700,11 +2963,18 @@ class BleScooterManager(private val context: Context) {
             val resolver = context.contentResolver
             val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
                 ?: error("Datei $fileName konnte nicht angelegt werden")
-            resolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(content) }
-                ?: error("Datei $fileName konnte nicht geschrieben werden")
-            values.clear()
-            values.put(MediaStore.Downloads.IS_PENDING, 0)
-            resolver.update(uri, values, null, null)
+            try {
+                resolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(content) }
+                    ?: error("Datei $fileName konnte nicht geschrieben werden")
+                values.clear()
+                values.put(MediaStore.Downloads.IS_PENDING, 0)
+                check(resolver.update(uri, values, null, null) == 1) {
+                    "Datei $fileName konnte nicht veröffentlicht werden"
+                }
+            } catch (error: Throwable) {
+                runCatching { resolver.delete(uri, null, null) }
+                throw error
+            }
         } else {
             val base = context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS) ?: error("Speicher nicht verfügbar")
             val folder = File(base, relativeFolder).apply { mkdirs() }
@@ -1730,11 +3000,18 @@ class BleScooterManager(private val context: Context) {
                 val resolver = context.contentResolver
                 val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
                     ?: error("Download-Datei konnte nicht angelegt werden")
-                resolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(content) }
-                    ?: error("Download-Datei konnte nicht geschrieben werden")
-                values.clear()
-                values.put(MediaStore.Downloads.IS_PENDING, 0)
-                resolver.update(uri, values, null, null)
+                try {
+                    resolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(content) }
+                        ?: error("Download-Datei konnte nicht geschrieben werden")
+                    values.clear()
+                    values.put(MediaStore.Downloads.IS_PENDING, 0)
+                    check(resolver.update(uri, values, null, null) == 1) {
+                        "Download-Datei konnte nicht veröffentlicht werden"
+                    }
+                } catch (error: Throwable) {
+                    runCatching { resolver.delete(uri, null, null) }
+                    throw error
+                }
                 "Downloads/VMAXDashboard"
             } else {
                 val folder = File(context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), "VMAXDashboard").apply { mkdirs() }
@@ -1777,7 +3054,7 @@ class BleScooterManager(private val context: Context) {
     }
 
     private fun shortUuid(uuid: UUID): String =
-        uuid.toString().substring(4, 8).uppercase()
+        normalizeGattShortUuid(uuid.toString())
 
     private fun addLog(message: String) {
         update { it.copy(log = (listOf(message) + it.log).take(80)) }

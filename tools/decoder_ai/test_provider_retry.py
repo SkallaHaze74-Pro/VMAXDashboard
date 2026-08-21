@@ -7,6 +7,16 @@ import provider_review
 FOOTER = "Freigabe: keine automatische Änderung."
 
 
+def complete_review(label="review"):
+    return "\n".join([
+        "Belastbare Evidenz", f"- {label}: deterministische Messdaten bleiben maßgeblich und werden konkret geprüft.",
+        "Konflikte / mögliche Bugs", "- Modell-Konsens ist keine unabhängige Evidenz und darf nichts bestätigen.",
+        "Hypothesen (nicht bestätigt)", "- Offene Byte-Semantik bleibt offen und wird nicht aktiviert.",
+        "Nächste sichere READ-ONLY-Tests", "- Reproduzierbaren Stillstandstest mit getrenntem Dump ausführen.",
+        "Automatische Änderungen: KEINE", FOOTER,
+    ])
+
+
 class ProviderRetryTests(unittest.TestCase):
     def test_gemini_quota_error_uses_36_fallback(self):
         original_post = provider_review.post_json
@@ -16,7 +26,7 @@ class ProviderRetryTests(unittest.TestCase):
                 "type": "model_output",
                 "content": [{
                     "type": "text",
-                    "text": "Gemini fallback ok\n" + FOOTER,
+                    "text": complete_review("Gemini fallback"),
                 }],
             }],
         }
@@ -42,7 +52,7 @@ class ProviderRetryTests(unittest.TestCase):
             "status": "completed",
             "steps": [{
                 "type": "model_output",
-                "content": [{"type": "text", "text": "complete fallback\n" + FOOTER}],
+                "content": [{"type": "text", "text": complete_review("complete fallback")}],
             }],
         }
         try:
@@ -65,7 +75,7 @@ class ProviderRetryTests(unittest.TestCase):
 
         def fake_call(api_key, prompt, model, allow_bigmodel_fallback):
             self.assertEqual(provider_review.GLM_FREE_MODEL, model)
-            return "Z.ai", "GLM fallback ok\n" + FOOTER
+            return "Z.ai", complete_review("GLM fallback")
 
         provider_review.call_glm_model = fake_call
         try:
@@ -86,7 +96,7 @@ class ProviderRetryTests(unittest.TestCase):
 
     def test_successful_provider_is_not_retried(self):
         result = provider_retry.retry_failed_providers(
-            {"providers": {"glm": {"status": "ok", "model": "existing", "text": "done\n" + FOOTER}}},
+            {"providers": {"glm": {"status": "ok", "model": "existing", "text": complete_review("done")}}},
             "prompt",
             None,
             "glm-key",

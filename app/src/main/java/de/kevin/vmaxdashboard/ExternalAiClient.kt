@@ -3,6 +3,7 @@ package de.kevin.vmaxdashboard
 import android.os.Handler
 import android.os.Looper
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -16,12 +17,25 @@ enum class ExternalAiMode(val label: String) {
     PRO_DUO("Pro Duo • Gemini + GLM")
 }
 
+internal val GEMINI_MODEL_FALLBACK_ORDER = listOf(
+    ExternalAiClient.GEMINI_MODEL,
+    ExternalAiClient.GEMINI_QUOTA_FALLBACK_MODEL,
+    ExternalAiClient.GEMINI_BACKUP_FALLBACK_MODEL
+)
+
 data class ExternalAiAnswer(
     val mode: ExternalAiMode,
     val provider: String,
     val model: String,
     val text: String,
-    val fallbackUsed: Boolean = false
+    val fallbackUsed: Boolean = false,
+    val providerCount: Int = 1
+)
+
+private data class GeminiResult(
+    val model: String,
+    val text: String,
+    val fallbackUsed: Boolean
 )
 
 private data class GlmResult(
@@ -44,6 +58,7 @@ class ExternalAiClient(
     companion object {
         const val GEMINI_MODEL = "gemini-3.7-flash"
         const val GEMINI_QUOTA_FALLBACK_MODEL = "gemini-3.6-flash"
+        const val GEMINI_BACKUP_FALLBACK_MODEL = "gemini-3.5-flash-lite"
         const val GLM_MODEL = "glm-5.3"
         const val GLM_FREE_MODEL = "glm-4.7-flash"
         const val GLM_FREE_BACKUP_MODEL = "glm-4.5-flash"
@@ -70,6 +85,9 @@ class ExternalAiClient(
             Gib keine automatisch ausführbaren BLE-Schreibbefehle, keine Firmware-Patches und keine Anweisung zum Umgehen von Sicherheits- oder Geschwindigkeitsgrenzen aus.
             Sichere Schreiboperationen dürfen höchstens als manuell zu bestätigende, bereits im Projekt vorhandene Funktionen erwähnt werden.
             Bevorzuge konkrete Tests, reproduzierbare Vergleiche und Fehlerursachen.
+            Antworte in genau diesen Abschnitten: Belastbare Evidenz; Konflikte / mögliche Bugs;
+            Hypothesen (nicht bestätigt); Nächste sichere READ-ONLY-Tests; Automatische Änderungen: KEINE.
+            Die letzte Zeile muss exakt lauten: Freigabe: keine automatische Änderung.
         """.trimIndent()
     }
 
@@ -98,7 +116,7 @@ class ExternalAiClient(
         require(normalizedPrompt.length <= MAX_PROMPT_CHARS) { "Frage ist zu lang" }
         val payload = buildUserPayload(normalizedPrompt, context.take(MAX_CONTEXT_CHARS))
 
-        return when (mode) {
+        val answer = when (mode) {
             ExternalAiMode.GEMINI -> ExternalAiAnswer(
                 mode = mode,
                 provider = "Google Gemini",
@@ -120,6 +138,7 @@ class ExternalAiClient(
             ExternalAiMode.AUTO -> askAuto(payload)
             ExternalAiMode.PRO_DUO -> askDuo(payload)
         }
+        return answer.copy(text = requireCompleteExternalAiReview(answer.text))
     }
 
     private fun askAuto(payload: String): ExternalAiAnswer {
@@ -128,36 +147,24 @@ class ExternalAiClient(
         require(geminiKey != null || glmKey != null) { "Noch kein Gemini- oder GLM-Key eingerichtet" }
 
         if (geminiKey != null) {
-            val primary = runCatching { askGemini(payload, geminiKey, GEMINI_MODEL) }
-            if (primary.isSuccess) {
+            val gemini = runCatching { askGeminiDetailed(payload, geminiKey) }
+            if (gemini.isSuccess) {
+                val result = gemini.getOrThrow()
                 return ExternalAiAnswer(
                     mode = ExternalAiMode.AUTO,
-                    provider = "Google Gemini",
-                    model = GEMINI_MODEL,
-                    text = primary.getOrThrow()
+                    provider = if (result.fallbackUsed) {
+                        "Google Gemini • Fallback"
+                    } else {
+                        "Google Gemini"
+                    },
+                    model = result.model,
+                    text = result.text,
+                    fallbackUsed = result.fallbackUsed
                 )
             }
 
-            if (isRateLimited(primary.exceptionOrNull())) {
-                val secondary = runCatching {
-                    askGemini(payload, geminiKey, GEMINI_QUOTA_FALLBACK_MODEL)
-                }
-                if (secondary.isSuccess) {
-                    return ExternalAiAnswer(
-                        mode = ExternalAiMode.AUTO,
-                        provider = "Google Gemini • Quota-Fallback",
-                        model = GEMINI_QUOTA_FALLBACK_MODEL,
-                        text = secondary.getOrThrow(),
-                        fallbackUsed = true
-                    )
-                }
-                if (glmKey == null) {
-                    throw secondary.exceptionOrNull()
-                        ?: primary.exceptionOrNull()
-                        ?: IOException("Gemini-Anfrage fehlgeschlagen")
-                }
-            } else if (glmKey == null) {
-                throw primary.exceptionOrNull() ?: IOException("Gemini-Anfrage fehlgeschlagen")
+            if (glmKey == null) {
+                throw gemini.exceptionOrNull() ?: IOException("Gemini-Anfrage fehlgeschlagen")
             }
         }
 
@@ -177,7 +184,7 @@ class ExternalAiClient(
         val glmKey = secrets.glmKeyOrNull()
             ?: error("Für Pro Duo fehlt der GLM-Key")
 
-        val geminiFuture = executor.submit<String> { askGemini(payload, geminiKey) }
+        val geminiFuture = executor.submit<GeminiResult> { askGeminiDetailed(payload, geminiKey) }
         val glmFuture = executor.submit<GlmResult> { askGlmDetailed(payload, glmKey) }
 
         val gemini = runCatching { geminiFuture.get() }
@@ -192,20 +199,22 @@ class ExternalAiClient(
                 mode = ExternalAiMode.PRO_DUO,
                 provider = "${glmAnswer.provider} • Duo-Fallback",
                 model = glmAnswer.model,
-                text = "Gemini-Zweitprüfung war nicht verfügbar.\n\n${glmAnswer.text}",
+                text = glmAnswer.text,
                 fallbackUsed = true
             )
         }
         if (glm.isFailure) {
+            val geminiAnswer = gemini.getOrThrow()
             return ExternalAiAnswer(
                 mode = ExternalAiMode.PRO_DUO,
                 provider = "Google Gemini • Duo-Fallback",
-                model = GEMINI_MODEL,
-                text = "GLM-Zweitprüfung war nicht verfügbar.\n\n${gemini.getOrThrow()}",
+                model = geminiAnswer.model,
+                text = geminiAnswer.text,
                 fallbackUsed = true
             )
         }
 
+        val geminiAnswer = gemini.getOrThrow()
         val glmAnswer = glm.getOrThrow()
         val synthesisPrompt = buildString {
             appendLine("Erstelle aus zwei unabhängigen Prüfungen eine einzige belastbare Endanalyse.")
@@ -215,26 +224,53 @@ class ExternalAiClient(
             appendLine("Nenne Übereinstimmungen, Widersprüche, Unsicherheiten und die sinnvollsten nächsten Tests.")
             appendLine()
             appendLine("=== GEMINI-ENTWURF ===")
-            appendLine(gemini.getOrThrow().take(12_000))
+            appendLine(geminiAnswer.text.take(12_000))
             appendLine()
             appendLine("=== GLM-ENTWURF (${glmAnswer.model}) ===")
             appendLine(glmAnswer.text.take(12_000))
         }
 
-        val synthesis = runCatching { askGemini(synthesisPrompt, geminiKey) }
-        val text = synthesis.getOrElse {
-            "Beide Modelle haben geantwortet; die gemeinsame Endprüfung war nicht verfügbar.\n\n" +
-                "=== Gemini ===\n${gemini.getOrThrow()}\n\n" +
-                "=== GLM ${glmAnswer.model} ===\n${glmAnswer.text}"
-        }
+        val synthesis = runCatching { askGeminiDetailed(synthesisPrompt, geminiKey) }
+        val synthesisAnswer = synthesis.getOrNull()
+        val text = synthesisAnswer?.text ?: buildUnsynthesizedDuoReview(
+            geminiModel = geminiAnswer.model,
+            glmModel = glmAnswer.model
+        )
 
         return ExternalAiAnswer(
             mode = ExternalAiMode.PRO_DUO,
             provider = "Gemini + ${glmAnswer.provider}",
-            model = "$GEMINI_MODEL + ${glmAnswer.model}",
+            model = "${geminiAnswer.model} + ${glmAnswer.model}",
             text = text,
-            fallbackUsed = synthesis.isFailure || glmAnswer.fallbackUsed
+            fallbackUsed = synthesis.isFailure ||
+                synthesisAnswer?.fallbackUsed == true ||
+                geminiAnswer.fallbackUsed ||
+                glmAnswer.fallbackUsed,
+            // Without a synthesized result, keep this as a partial Duo attempt so
+            // it cannot replace the last complete two-provider review.
+            providerCount = if (synthesisAnswer != null) 2 else 1
         )
+    }
+
+    /** Shared Gemini model fallback used by both AUTO and PRO_DUO paths. */
+    private fun askGeminiDetailed(payload: String, key: String): GeminiResult {
+        val primary = runCatching { askGemini(payload, key, GEMINI_MODEL) }
+        if (primary.isSuccess) {
+            return GeminiResult(GEMINI_MODEL, primary.getOrThrow(), fallbackUsed = false)
+        }
+        if (!isTransientProviderError(primary.exceptionOrNull())) {
+            throw primary.exceptionOrNull() ?: IOException("Gemini-Anfrage fehlgeschlagen")
+        }
+
+        var lastError: Throwable? = primary.exceptionOrNull()
+        GEMINI_MODEL_FALLBACK_ORDER.drop(1).forEach { model ->
+            val fallback = runCatching { askGemini(payload, key, model) }
+            if (fallback.isSuccess) {
+                return GeminiResult(model, fallback.getOrThrow(), fallbackUsed = true)
+            }
+            lastError = fallback.exceptionOrNull()
+        }
+        throw lastError ?: IOException("Kein Gemini-Modell konnte die Anfrage beantworten")
     }
 
     private fun askGemini(
@@ -265,10 +301,7 @@ class ExternalAiClient(
     }
 
     private fun extractGeminiInteractionText(data: JSONObject): String {
-        when (val status = data.optString("status")) {
-            "failed", "cancelled", "budget_exceeded" ->
-                error("Gemini-Interaktion beendet mit Status $status")
-        }
+        requireCompletedGeminiInteractionStatus(data.optString("status"))
 
         val steps = data.optJSONArray("steps")
             ?: error("Gemini-Interaktion enthält keine Ausgabeschritte")
@@ -289,7 +322,7 @@ class ExternalAiClient(
             }
         }.trim()
         require(text.isNotBlank()) { "Gemini hat keinen Antworttext geliefert" }
-        return text
+        return requireCompleteExternalAiReview(text)
     }
 
     private fun askGlmDetailed(
@@ -310,7 +343,7 @@ class ExternalAiClient(
         if (primary.isSuccess) return primary.getOrThrow()
 
         val primaryError = primary.exceptionOrNull()
-        if (!isQuotaOrBalanceError(primaryError)) {
+        if (!isQuotaOrBalanceError(primaryError) && !isTransientProviderError(primaryError)) {
             throw primaryError ?: IOException("GLM-Anfrage fehlgeschlagen")
         }
 
@@ -413,14 +446,16 @@ class ExternalAiClient(
             )
 
     private fun extractGlmText(data: JSONObject): String {
-        val text = data.optJSONArray("choices")
-            ?.optJSONObject(0)
+        val choice = data.optJSONArray("choices")?.optJSONObject(0)
+            ?: error("GLM hat keine Auswahl geliefert")
+        requireCompletedGlmFinishReason(choice.optString("finish_reason"))
+        val text = choice
             ?.optJSONObject("message")
             ?.optString("content")
             .orEmpty()
             .trim()
         require(text.isNotBlank()) { "GLM hat keinen Antworttext geliefert" }
-        return text
+        return requireCompleteExternalAiReview(text)
     }
 
     private fun postJsonWithRetry(
@@ -435,13 +470,21 @@ class ExternalAiClient(
             try {
                 return postJsonOnce(url, headers, body, provider)
             } catch (error: ProviderHttpException) {
-                val retryable = error.code == 502 ||
-                    error.code == 503 ||
+                val retryable = error.code == 408 ||
+                    error.code in 500..599 ||
                     (retryRateLimit && error.code == 429)
                 if (!retryable || attempt == 2) throw error
                 val waitMs = (error.retryAfterMs ?: fallbackDelayMs)
                     .coerceIn(500L, MAX_RETRY_DELAY_MS)
                 Thread.sleep(waitMs)
+                fallbackDelayMs = (fallbackDelayMs * 3L).coerceAtMost(MAX_RETRY_DELAY_MS)
+            } catch (error: IOException) {
+                if (attempt == 2) throw error
+                Thread.sleep(fallbackDelayMs.coerceIn(500L, MAX_RETRY_DELAY_MS))
+                fallbackDelayMs = (fallbackDelayMs * 3L).coerceAtMost(MAX_RETRY_DELAY_MS)
+            } catch (error: JSONException) {
+                if (attempt == 2) throw error
+                Thread.sleep(fallbackDelayMs.coerceIn(500L, MAX_RETRY_DELAY_MS))
                 fallbackDelayMs = (fallbackDelayMs * 3L).coerceAtMost(MAX_RETRY_DELAY_MS)
             }
         }
@@ -514,6 +557,14 @@ class ExternalAiClient(
     private fun isRateLimited(error: Throwable?): Boolean =
         (error as? ProviderHttpException)?.code == 429 ||
             error?.message?.contains("(429)") == true
+
+    private fun isTransientProviderError(error: Throwable?): Boolean {
+        val providerError = error as? ProviderHttpException
+        if (providerError != null) return providerError.code == 408 || providerError.code == 429 ||
+            providerError.code in 500..599
+        return error is IOException || error is JSONException ||
+            error is IncompleteExternalAiReviewException
+    }
 
     private fun isQuotaOrBalanceError(error: Throwable?): Boolean {
         val providerError = error as? ProviderHttpException

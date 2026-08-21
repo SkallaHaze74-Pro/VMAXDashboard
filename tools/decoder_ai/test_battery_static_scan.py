@@ -18,6 +18,9 @@ class BatteryStaticScanTests(unittest.TestCase):
                 ["0", "1000", "1502", "Akkuinformationen", "16", "1", "0", "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00", "NOTIFICATION", "0"],
                 ["10", "1010", "1502", "Akkuinformationen", "16", "2", "0", "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00", "NOTIFICATION", "0"],
                 ["20", "1020", "150C", "BatteryCellUpdate", "13", "1", "0", "FF-FF-FF-80-00-80-00-80-00-00-00-00-00", "NOTIFICATION", "0"],
+                ["30", "1030", "1502", "Rejected hybrid", "16", "3", "0", "00-01-00-02-00-03-00-04-00-05-00-06-00-07-00-08", "NOTIFICATION_REJECTED_HYBRID", "0"],
+                ["40", "1040", "150C", "Diagnostic observation", "13", "2", "0", "01-02-03-04-05-06-07-08-09-0A-0B-0C-0D", "DIAGNOSTIC_OBSERVATION", "0"],
+                ["50", "1050", "1502", "Unclassified legacy-like row", "16", "4", "0", "00-01-00-02-00-03-00-04-00-05-00-06-00-07-00-08", "", "0"],
             ]
             (ride / "BLE_Rohdaten.csv").write_text(
                 HEADER + "\n" + "\n".join(";".join(row) for row in rows) + "\n", encoding="utf-8"

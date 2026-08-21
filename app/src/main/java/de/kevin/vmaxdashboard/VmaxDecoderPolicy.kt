@@ -18,21 +18,34 @@ internal object VmaxDecoderPolicy {
     )
 
     private val forbiddenAdaptiveMappings = setOf("speedKmh" to "150D")
+    private val forbiddenAdaptiveLayouts = setOf(
+        Triple("powerW", "1509", Layout(9, "u16be"))
+    )
+    private val forbiddenAdaptiveSignals = setOf("charging")
+    private val diagnosticOnlyChannels = setOf("1514", "1516", "1517", "1518", "2A25")
     private val booleanSignals = setOf(
         "leftIndicator", "rightIndicator", "brakeActive", "lightOn", "charging", "lockActive"
     )
     private val blockedAdaptiveBooleanChannels = setOf(
         "1505", "1506", "1509", "150A", "150C", "150D",
-        "2A00", "2A01", "2A02", "2A04", "2A05", "2A28"
+        "1514", "1516", "1517", "1518",
+        "2A00", "2A01", "2A02", "2A04", "2A05", "2A25", "2A28"
     )
     private val blockedLearningChannels = setOf(
         "1505", "1506", "1509", "150A", "150C",
-        "2A00", "2A01", "2A02", "2A04", "2A05", "2A28"
+        "1514", "1516", "1517", "1518",
+        "2A00", "2A01", "2A02", "2A04", "2A05", "2A25", "2A28"
     )
 
     fun isAdaptiveRuleAllowed(signal: String, channel: String, offset: Int, encoding: String): Boolean {
         val key = signal to channel.uppercase()
+        // Charger-induced BLE loss and an ordinary reconnect cannot establish a
+        // live charging bit. Keep this signal disabled until a direct field is
+        // independently identified and deliberately added as a canonical layout.
+        if (signal in forbiddenAdaptiveSignals) return false
+        if (key.second in diagnosticOnlyChannels) return false
         if (key in forbiddenAdaptiveMappings) return false
+        if (Triple(signal, key.second, Layout(offset, encoding)) in forbiddenAdaptiveLayouts) return false
         if (signal in booleanSignals) {
             if (key.second in blockedAdaptiveBooleanChannels) return false
             if (key.second == "1508") {

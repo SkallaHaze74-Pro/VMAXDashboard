@@ -67,6 +67,11 @@ class OriginalAppComparisonTests(unittest.TestCase):
         self.assertEqual(1, payload["summary"]["confirmedByLiveEvidence"])
 
     def test_source_metadata_does_not_equate_hyena_with_bt638_or_da1a(self):
+        raw_source = self.semantics["source"]
+        self.assertIn("GPSTProtocolHandler", raw_source["nativeSdk"])
+        self.assertIn("not proven", raw_source["bundledHyenaSdk"])
+        self.assertNotIn("libble-sdk-native-lib.so", raw_source["bundledHyenaSdk"])
+
         payload = build_comparison(self.semantics, {"aggregate_fields": {}})
         source = payload["source"]
         self.assertIn("V-Core Gear", source["hardwareControllerBranding"])

@@ -5,10 +5,17 @@ on:
     branches: [main]
     paths:
       - 'reverse-engineering/reports/ORIGINAL_APP_DEEP_SCAN_2026-08-21.md'
+      - 'reverse-engineering/reports/DEEP_FINDINGS_2026-08-05.md'
+      - 'reverse-engineering/reports/LIBBLE_READ_CHARACTERISTICS_2026-08-21.md'
       - 'reverse-engineering/reports/VMAX_VCORE_HYENA_SEPARATION_2026-08-21.md'
       - 'reverse-engineering/reports/BT638_HANDSHAKE_AUTH_EVIDENCE_2026-08-21.md'
+      - 'tools/decoder_ai/original_app_semantics.json'
       - 'tools/decoder_ai/original_app_provider_review.py'
+      - 'tools/decoder_ai/provider_review.py'
       - 'tools/decoder_ai/provider_retry.py'
+      - 'tools/decoder_ai/review_output_guard.py'
+      - 'tools/decoder_ai/test_original_app_compare.py'
+      - 'tools/decoder_ai/test_provider_review.py'
       - 'tools/decoder_ai/test_provider_retry_stability.py'
       - '.github/workflows/original-app-ai-review.yml'
   workflow_dispatch:
@@ -43,7 +50,7 @@ jobs:
             tools/decoder_ai/original_app_provider_review.py \
             tools/decoder_ai/test_provider_retry_stability.py
           PYTHONPATH=tools/decoder_ai \
-            python -m unittest tools.decoder_ai.test_provider_retry_stability
+            python -m unittest discover -s tools/decoder_ai -p 'test_*.py'
 
       - name: Gemini und GLM auf Original-App-Funde ansetzen
         env:
@@ -62,6 +69,7 @@ jobs:
           tmp_dir="$(mktemp -d)"
           cp reverse-engineering/reports/ORIGINAL_APP_AI_REVIEW_2026-08-21.json "$tmp_dir/review.json"
           cp reverse-engineering/reports/ORIGINAL_APP_AI_REVIEW_2026-08-21.md "$tmp_dir/review.md"
+          review_fingerprint="$(python -c 'import json; print(json.load(open("reverse-engineering/reports/ORIGINAL_APP_AI_REVIEW_2026-08-21.json"))["inputFingerprint"])')"
 
           # Provider-Aufrufe können mehrere Minuten dauern. Währenddessen darf main
           # durch andere Analysejobs weiterlaufen. Darum auf den aktuellen Remote-
@@ -69,6 +77,11 @@ jobs:
           # darüberlegen. Das verhindert Rebase-Konflikte in genau diesen Dateien.
           git fetch origin main
           git reset --hard origin/main
+          current_fingerprint="$(PYTHONPATH=tools/decoder_ai python tools/decoder_ai/original_app_provider_review.py --fingerprint-only)"
+          if [ "$review_fingerprint" != "$current_fingerprint" ]; then
+            echo 'Original-App-Evidenz hat sich während des Providerlaufs geändert; veraltetes Review wird nicht veröffentlicht.'
+            exit 0
+          fi
           cp "$tmp_dir/review.json" reverse-engineering/reports/ORIGINAL_APP_AI_REVIEW_2026-08-21.json
           cp "$tmp_dir/review.md" reverse-engineering/reports/ORIGINAL_APP_AI_REVIEW_2026-08-21.md
 

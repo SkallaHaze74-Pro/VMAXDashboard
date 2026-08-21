@@ -132,13 +132,13 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
 
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Gemini + GLM Pro-Prüfung", fontWeight = FontWeight.Bold)
+                Text("Gemini + GLM READ-ONLY-Prüfung", fontWeight = FontWeight.Bold)
                 Text(
-                    "Automatisch: Bei neuer hochgeladener Messfahrt oder geändertem Decoder-Profil startet die Zweitprüfung selbst. Kein KI-Prüfen-Knopf ist nötig.",
+                    "Die App prüft Profil-/Sync-Metadaten; mit beiden Keys als Duo. Nach dem Upload prüft der GitHub-Lauf zusätzlich die deterministischen RAW-, Power- und Deep-READ-Berichte mit beiden Modellen.",
                     style = MaterialTheme.typography.bodySmall
                 )
                 Text(
-                    "Auto-Kette: Gemini 3.7 Flash → bei 429 Gemini 3.6 Flash → GLM-5.3, sobald ein GLM-Key vorhanden ist.",
+                    "Fallbacks: Gemini 3.7 → 3.6 → 3.5; GLM 5.3 → kostenlose 4.7/4.5. Nur vollständige, strukturell geprüfte Antworten werden gespeichert.",
                     style = MaterialTheme.typography.bodySmall
                 )
                 Text(
@@ -164,7 +164,14 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
                 Text(autoReview.status)
                 if (autoReview.lastProvider.isNotBlank()) {
                     Text(
-                        "Letzte KI: ${autoReview.lastProvider} • ${autoReview.lastModel}",
+                        "Letzte vollständige KI: ${autoReview.lastProvider} • ${autoReview.lastModel} • " +
+                            if (autoReview.lastResultMatchesCurrentEvidence) "aktueller App-Evidenzstand" else "historischer Evidenzstand",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                if (autoReview.lastAttemptError.isNotBlank()) {
+                    Text(
+                        "Letzter Aktualisierungsfehler: ${autoReview.lastAttemptError}",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
@@ -267,7 +274,8 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
                 Text("Datenschutz-Hinweis", fontWeight = FontWeight.Bold)
                 Text(
                     "Wenn das GitHub-Repository öffentlich ist, sind auch die hochgeladenen Fahrdaten öffentlich sichtbar. " +
-                        "Der Sync ergänzt weder GPS-Koordinaten noch die Bluetooth-Adresse; Zeitstempel und Fahrtelemetrie bleiben jedoch in den Dateien enthalten.",
+                        "Der Sync ergänzt weder GPS-Koordinaten noch die Bluetooth-Adresse; Zeitstempel und Fahrtelemetrie bleiben jedoch in den Dateien enthalten. " +
+                        "Deep-READ-Rohdaten können außerdem vom Gerät gelieferte Serien-/Firmware-Identität enthalten; Provider-Berichte blenden bekannte Identitäts-Payloads aus.",
                     style = MaterialTheme.typography.bodySmall
                 )
             }

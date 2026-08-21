@@ -44,6 +44,7 @@ def build_original_app_prompt(
         "Suche besonders nach übersehenen READ-ONLY-Funktionen, falschen Zuordnungen und nützlichen Diagnosezielen.",
         "Bevorzuge sichere Lese-/Erkennungstests. Keine BLE-Schreibframes, keine Tuningwerte, keine Firmware-Patches oder Bypass-Ideen.",
         "Wenn Gemini und GLM zufällig dasselbe vermuten, ist das weiterhin keine zusätzliche Evidenz.",
+        "LADEVERHALTEN: Beim Einstecken des Ladegeräts schaltet der Controller nach Nutzerbeobachtung ab und BLE verschwindet. Empfehle kein Live-Monitoring während des Ladens. Vergleiche nur den letzten Zustand davor, einen eventuell sehr kurzen READ-/Notify-Dump nach einem POWER-Versuch und den ersten Zustand nach Abziehen/Reconnect. Ein kurzer Reconnect allein beweist keinen Ladezustand.",
         "Antworte insgesamt höchstens 700 Wörter, pro Abschnitt maximal 4 kurze Punkte und beende zwingend mit dem geforderten Freigabe-Satz.",
         "",
         "===== Plattform-/Vendor-Trennung =====",
@@ -70,6 +71,7 @@ def render(result: dict[str, Any]) -> str:
         "> Advisory only / READ-ONLY. KI-Aussagen sind keine Ground Truth und aktivieren nichts automatisch.",
         "> VMAX/V-Core, BT638/GPST-DA1A, Hyena/Hylink und andere Vendor-SDKs werden getrennt bewertet.",
         "> Fremde Vendor-Authentifizierung oder API-Key-Symbole gelten nicht als BT638-Secret-Key-Beweis.",
+        "> Deterministischer Lade-Guard: Kein Live-BLE während des Ladens voraussetzen; nur Zustand davor, mögliches kurzes POWER-Fenster und Zustand nach Abziehen/Reconnect vergleichen. Ein Reconnect allein beweist keinen Ladezustand.",
         "",
     ]
     for key, title in (("gemini", "Gemini"), ("glm", "GLM / Z.ai")):
@@ -117,6 +119,7 @@ def main() -> int:
     parser.add_argument("--handshake-evidence", default="reverse-engineering/reports/BT638_HANDSHAKE_AUTH_EVIDENCE_2026-08-21.md")
     parser.add_argument("--output", default="reverse-engineering/reports/ORIGINAL_APP_AI_REVIEW_2026-08-21.json")
     parser.add_argument("--report", default="reverse-engineering/reports/ORIGINAL_APP_AI_REVIEW_2026-08-21.md")
+    parser.add_argument("--fingerprint-only", action="store_true")
     args = parser.parse_args()
 
     output = Path(args.output)
@@ -128,6 +131,9 @@ def main() -> int:
         Path(args.platform_separation),
         Path(args.handshake_evidence),
     )
+    if args.fingerprint_only:
+        print(provider_review.prompt_fingerprint(prompt))
+        return 0
     gemini_key = os.environ.get("GEMINI_API_KEY", "").strip() or None
     glm_key = os.environ.get("ZHIPU_API_KEY", "").strip() or None
 
@@ -136,6 +142,7 @@ def main() -> int:
         "advisoryOnly": True,
         "readOnlyReviewerContract": True,
         "automaticChangeAuthority": False,
+        "inputFingerprint": provider_review.prompt_fingerprint(prompt),
         "platformEvidencePolicy": "vcore_bt638_gpst_vendor_auth_separated",
         "providers": {
             "gemini": provider_review.run_provider(

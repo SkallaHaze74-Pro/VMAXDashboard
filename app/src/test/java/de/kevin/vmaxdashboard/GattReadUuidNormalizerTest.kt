@@ -29,9 +29,9 @@ class GattReadUuidNormalizerTest {
     }
 
     @Test
-    fun mirrorsManagerForOtherCustomUuidFamilies() {
+    fun preservesFullIdentityForOtherCustomUuidFamilies() {
         assertEquals(
-            "1234",
+            "ABCD1234-1111-2222-3333-444455556666",
             normalizeGattShortUuid("abcd1234-1111-2222-3333-444455556666")
         )
     }

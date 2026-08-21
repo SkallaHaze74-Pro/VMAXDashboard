@@ -11,6 +11,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Optional
 
+from raw_origin_guard import is_accepted_live_notification
+
 SENTINELS = {0xFFFF, 0x8000}
 
 
@@ -173,7 +175,7 @@ def analyze(root: Path) -> dict:
         local_rpm_valid = local_range_valid = 0
 
         for row in raw_rows:
-            if str(row.get("origin") or "NOTIFICATION").upper() == "READ":
+            if not is_accepted_live_notification(row):
                 continue
             channel = str(row.get("channel") or "").strip().upper()
             data = parse_hex(str(row.get("hex") or ""))

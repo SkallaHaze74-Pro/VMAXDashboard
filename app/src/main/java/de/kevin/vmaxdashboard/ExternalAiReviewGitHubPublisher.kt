@@ -28,12 +28,8 @@ internal fun buildExternalAiReviewJson(
     .put("provider", answer.provider.take(160))
     .put("model", answer.model.take(160))
     .put("fallbackUsed", answer.fallbackUsed)
-    .put("text", redactPotentialSecrets(answer.text).take(18_000))
-
-private fun redactPotentialSecrets(value: String): String = value
-    .replace(Regex("gh[pousr]_[A-Za-z0-9_]+"), "<redacted-github-token>")
-    .replace(Regex("AIza[0-9A-Za-z_-]{20,}"), "<redacted-google-key>")
-    .replace(Regex("sk-[A-Za-z0-9_-]{20,}"), "<redacted-api-key>")
+    .put("providerCount", answer.providerCount)
+    .put("text", prepareExternalAiReviewForPublication(answer.text))
 
 /**
  * Mirrors the latest local Gemini/GLM review to telemetry-data so it can be
@@ -87,14 +83,15 @@ class ExternalAiReviewGitHubPublisher private constructor(context: Context) {
                 return@execute
             }
 
-            val json = buildExternalAiReviewJson(
-                answer = answer,
-                evidenceFingerprint = evidenceFingerprint,
-                reason = reason,
-                generatedAtMs = generatedAtMs
-            )
-
-            runCatching { upsert(token, json.toString(2).toByteArray(Charsets.UTF_8)) }
+            runCatching {
+                val json = buildExternalAiReviewJson(
+                    answer = answer,
+                    evidenceFingerprint = evidenceFingerprint,
+                    reason = reason,
+                    generatedAtMs = generatedAtMs
+                )
+                upsert(token, json.toString(2).toByteArray(Charsets.UTF_8))
+            }
                 .onSuccess {
                     reviewPrefs.edit()
                         .putString("github_publish_status", "✓ KI-Review mit GitHub geteilt")

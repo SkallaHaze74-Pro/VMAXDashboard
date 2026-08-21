@@ -36,6 +36,7 @@ class AutomaticBleReconnectSupervisor private constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var observeJob: Job? = null
     private var observedManager: BleScooterManager? = null
+    private var observedActivity: MainActivity? = null
     private var reconnectGuard: MeasurementReconnectGuard? = null
     private var transitionTracker: ReconnectTransitionTracker? = null
 
@@ -48,7 +49,8 @@ class AutomaticBleReconnectSupervisor private constructor(
 
     override fun onActivityResumed(activity: Activity) {
         if (activity !is MainActivity) return
-        val manager = resolveManager(activity) ?: return
+        observedActivity = activity
+        val manager = activity.bleManagerForReconnectSupervisor
         if (observedManager === manager && observeJob?.isActive == true) return
         attach(manager)
     }
@@ -109,22 +111,14 @@ class AutomaticBleReconnectSupervisor private constructor(
         }
     }
 
-    private fun resolveManager(activity: MainActivity): BleScooterManager? = runCatching {
-        val field = MainActivity::class.java.getDeclaredField("bleManager")
-        field.isAccessible = true
-        field.get(activity) as? BleScooterManager
-    }.getOrNull()
-
     override fun onActivityDestroyed(activity: Activity) {
-        if (activity !is MainActivity) return
-        val manager = resolveManager(activity)
-        if (manager != null && observedManager === manager) {
-            observeJob?.cancel()
-            observeJob = null
-            observedManager = null
-            reconnectGuard = null
-            transitionTracker = null
-        }
+        if (activity !is MainActivity || activity.isChangingConfigurations || observedActivity !== activity) return
+        observeJob?.cancel()
+        observeJob = null
+        observedManager = null
+        observedActivity = null
+        reconnectGuard = null
+        transitionTracker = null
     }
 
     override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = Unit

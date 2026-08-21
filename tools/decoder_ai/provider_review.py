@@ -9,6 +9,7 @@ Android safety policies remain the only authority for activatable decoder rules.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import time
@@ -82,6 +83,11 @@ def read_limited(path: Path, limit: int = MAX_SOURCE_CHARS) -> str:
     return text[:limit] + f"\n\n<gekürzt: {len(text) - limit} Zeichen ausgelassen>"
 
 
+def prompt_fingerprint(prompt: str) -> str:
+    """Bind last-good reviews to the exact evidence context they assessed."""
+    return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+
+
 def build_prompt(
     analysis_report: Path,
     decoder_profile: Path,
@@ -101,6 +107,7 @@ def build_prompt(
         "Begründe jede starke Aussage mit einer konkret gelieferten Evidenzquelle. Fehlt unabhängige Evidenz, bleibt die Aussage offen.",
         "Eigene oder fremde KI-Antworten dürfen niemals als unabhängige Evidenz oder gegenseitige Bestätigung verwendet werden.",
         "Die deterministische Konsenslogik und der Evidence Guard sind maßgeblich; KI-Mehrheit ist kein Freigabekriterium.",
+        "Bekanntes Geräteverhalten: Beim Einstecken des Ladegeräts schaltet der Controller normalerweise ab und BLE verschwindet. Fordere daher kein Live-Monitoring während des Ladens. Zulässig sind nur letzter Zustand vor dem Abbruch, ein möglicher sehr kurzer READ-/Notify-Mitschnitt nach einem POWER-Versuch und der erste Zustand nach Abziehen/Reconnect; ein kurzer Reconnect allein beweist keinen Ladezustand.",
     ]
     for title, text in sections:
         out.extend(["", f"===== {title} =====", text])
@@ -154,6 +161,10 @@ def extract_gemini_text(data: dict[str, Any]) -> str:
     status = str(data.get("status") or "")
     if status in {"failed", "cancelled", "budget_exceeded"}:
         raise RuntimeError(f"Gemini-Interaktion beendet mit Status {status}")
+    if status != "completed":
+        raise RuntimeError(
+            f"Gemini-Interaktion ist nicht vollständig: Status {status or 'fehlt'}"
+        )
 
     chunks: list[str] = []
     for step in data.get("steps") or []:
@@ -168,7 +179,12 @@ def extract_gemini_text(data: dict[str, Any]) -> str:
     text = "\n".join(chunks).strip()
     if not text:
         raise RuntimeError("Gemini hat keinen Text geliefert")
-    return text[:MAX_PROVIDER_TEXT]
+    if len(text) > MAX_PROVIDER_TEXT:
+        raise RuntimeError(
+            f"Gemini-Antwort ist zu lang ({len(text)} > {MAX_PROVIDER_TEXT}); "
+            "sie wird nicht abgeschnitten"
+        )
+    return text
 
 
 def ask_gemini(api_key: str, prompt: str) -> str:
@@ -203,11 +219,23 @@ def glm_payload(model: str, prompt: str) -> dict[str, Any]:
 
 def extract_glm_text(data: dict[str, Any]) -> str:
     choices = data.get("choices") or []
-    message = (choices[0].get("message") or {}) if choices else {}
+    choice = choices[0] if choices else {}
+    finish_reason = str(choice.get("finish_reason") or "")
+    if finish_reason not in {"stop", "completed"}:
+        raise RuntimeError(
+            "GLM-Antwort ist nicht vollständig: "
+            f"finish_reason={finish_reason or 'fehlt'}"
+        )
+    message = choice.get("message") or {}
     text = str(message.get("content") or "").strip()
     if not text:
         raise RuntimeError("GLM hat keinen Text geliefert")
-    return text[:MAX_PROVIDER_TEXT]
+    if len(text) > MAX_PROVIDER_TEXT:
+        raise RuntimeError(
+            f"GLM-Antwort ist zu lang ({len(text)} > {MAX_PROVIDER_TEXT}); "
+            "sie wird nicht abgeschnitten"
+        )
+    return text
 
 
 def call_glm_model(
@@ -324,7 +352,7 @@ def render_markdown(result: dict[str, Any]) -> str:
         if item.get("model"):
             lines.extend([f"Modell: `{item['model']}`", ""])
         if item.get("fallback"):
-            lines.extend(["Kostenloser GLM-Fallback aktiv.", ""])
+            lines.extend([f"Fallbackmodell aktiv: `{item.get('model', 'unbekannt')}`.", ""])
         if item.get("text"):
             lines.extend([item["text"], ""])
         elif item.get("error"):
@@ -353,6 +381,7 @@ def main() -> int:
     result = {
         "schema": "vmax-provider-review-v1",
         "generatedAtMs": int(time.time() * 1000),
+        "inputFingerprint": prompt_fingerprint(prompt),
         "advisoryOnly": True,
         "readOnlyReviewerContract": True,
         "automaticChangeAuthority": False,

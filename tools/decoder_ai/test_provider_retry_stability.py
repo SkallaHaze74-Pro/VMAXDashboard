@@ -7,6 +7,16 @@ import provider_retry
 FOOTER = "Freigabe: keine automatische Änderung."
 
 
+def complete_review(label="review"):
+    return "\n".join([
+        "Belastbare Evidenz", f"- {label}: deterministische Messdaten bleiben maßgeblich und werden konkret geprüft.",
+        "Konflikte / mögliche Bugs", "- Modell-Konsens ist keine unabhängige Evidenz und darf nichts bestätigen.",
+        "Hypothesen (nicht bestätigt)", "- Offene Byte-Semantik bleibt offen und wird nicht aktiviert.",
+        "Nächste sichere READ-ONLY-Tests", "- Reproduzierbaren Stillstandstest mit getrenntem Dump ausführen.",
+        "Automatische Änderungen: KEINE", FOOTER,
+    ])
+
+
 class ProviderRetryStabilityTests(unittest.TestCase):
     def test_quota_skips_primary_and_uses_next_gemini_model(self):
         calls = []
@@ -19,7 +29,7 @@ class ProviderRetryStabilityTests(unittest.TestCase):
                     "model": model,
                     "provider": "Gemini",
                     "fallback": True,
-                    "text": "review\n" + FOOTER,
+                    "text": complete_review("fallback"),
                 }
             raise RuntimeError("unexpected model")
 
@@ -35,15 +45,17 @@ class ProviderRetryStabilityTests(unittest.TestCase):
 
     def test_previous_complete_review_is_kept_when_fresh_attempt_fails(self):
         current = {
+            "inputFingerprint": "same-evidence",
             "providers": {
                 "gemini": {"status": "error", "model": "gemini-3.7-flash", "error": "500 high demand", "text": ""},
                 "glm": {"status": "error", "model": "glm-5.3", "error": "timeout", "text": ""},
             }
         }
         previous = {
+            "inputFingerprint": "same-evidence",
             "providers": {
-                "gemini": {"status": "ok", "model": "gemini-3.7-flash", "text": "old\n" + FOOTER, "outputComplete": True},
-                "glm": {"status": "ok", "model": "glm-4.7-flash", "text": "old glm\n" + FOOTER, "outputComplete": True},
+                "gemini": {"status": "ok", "model": "gemini-3.7-flash", "text": complete_review("old"), "outputComplete": True},
+                "glm": {"status": "ok", "model": "glm-4.7-flash", "text": complete_review("old glm"), "outputComplete": True},
             }
         }
 
@@ -59,6 +71,76 @@ class ProviderRetryStabilityTests(unittest.TestCase):
         compact = provider_retry._compact_prompt("base")
         self.assertIn("maximal 700 Wörter", compact)
         self.assertIn("Abschlussmarker", compact)
+
+    def test_stale_output_complete_flag_cannot_preserve_structurally_incomplete_text(self):
+        current = {"inputFingerprint": "same", "providers": {"gemini": {"status": "error", "error": "timeout", "text": ""}}}
+        previous = {
+            "inputFingerprint": "same",
+            "providers": {
+                "gemini": {
+                    "status": "ok",
+                    "text": "footer-only junk\n" + FOOTER,
+                    "outputComplete": True,
+                }
+            }
+        }
+        merged = provider_retry.preserve_last_success(current, previous)
+        self.assertEqual("error", merged["providers"]["gemini"]["status"])
+        self.assertEqual(0, merged["cachedProviderCount"])
+
+    def test_oversized_previous_review_is_not_reused_as_last_good(self):
+        oversized = complete_review("old").replace(
+            "Automatische Änderungen: KEINE",
+            "x" * provider_retry.provider_review.MAX_PROVIDER_TEXT
+            + "\nAutomatische Änderungen: KEINE",
+        )
+        current = {
+            "inputFingerprint": "same",
+            "providers": {"gemini": {"status": "error", "error": "timeout", "text": ""}},
+        }
+        previous = {
+            "inputFingerprint": "same",
+            "providers": {
+                "gemini": {"status": "ok", "text": oversized, "outputComplete": True},
+            },
+        }
+
+        merged = provider_retry.preserve_last_success(current, previous)
+
+        self.assertEqual("error", merged["providers"]["gemini"]["status"])
+        self.assertEqual(0, merged["cachedProviderCount"])
+
+    def test_complete_previous_review_is_not_reused_for_different_evidence(self):
+        current = {
+            "inputFingerprint": "new-evidence",
+            "providers": {"gemini": {"status": "error", "error": "timeout", "text": ""}},
+        }
+        previous = {
+            "inputFingerprint": "old-evidence",
+            "providers": {
+                "gemini": {"status": "ok", "text": complete_review("old"), "outputComplete": True},
+            },
+        }
+
+        merged = provider_retry.preserve_last_success(current, previous)
+
+        self.assertEqual("error", merged["providers"]["gemini"]["status"])
+        self.assertEqual(0, merged["cachedProviderCount"])
+
+    def test_changed_prompt_invalidates_old_provider_text_before_retry(self):
+        result = {
+            "inputFingerprint": "old",
+            "providers": {
+                "gemini": {"status": "ok", "model": "gemini-old", "text": complete_review("old")},
+                "glm": {"status": "ok", "model": "glm-old", "text": complete_review("old")},
+            },
+        }
+
+        bound = provider_retry.bind_result_to_prompt(result, "new prompt")
+
+        self.assertEqual("stale_input", bound["providers"]["gemini"]["status"])
+        self.assertEqual("", bound["providers"]["gemini"]["text"])
+        self.assertTrue(bound["inputChanged"])
 
 
 if __name__ == "__main__":

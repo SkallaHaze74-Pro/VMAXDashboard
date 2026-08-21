@@ -15,6 +15,7 @@ import android.provider.MediaStore
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
@@ -36,6 +37,112 @@ data class GitHubSyncSnapshot(
     val uploadedBundles: Int,
     val lastStatus: String
 )
+
+internal val REQUIRED_MEASUREMENT_FILES = listOf(
+    "BLE_Rohdaten.csv",
+    "Live_Telemetrie.csv",
+    "Ereignisse.csv",
+    "Zusammenfassung.txt",
+    "Automatische_Analyse.txt",
+    "Lernprofil.json"
+)
+
+internal val OPTIONAL_MEASUREMENT_FILES = listOf(
+    DIAGNOSTIC_READ_CSV_FILE,
+    DIAGNOSTIC_READ_SUMMARY_FILE,
+    DIAGNOSTIC_READ_MANIFEST_FILE
+)
+
+/** A measurement is complete with its core files; present diagnostics travel with it atomically. */
+internal fun measurementFilesToQueue(availableNames: Set<String>): List<String> {
+    if (!REQUIRED_MEASUREMENT_FILES.all(availableNames::contains)) return emptyList()
+    val availableDiagnostics = OPTIONAL_MEASUREMENT_FILES.filter(availableNames::contains)
+    // A complete diagnostic triple travels atomically. If optional export failed
+    // after writing only part of it, never let those leftovers block the six core
+    // ride files or leak a torn diagnostic dataset to the public branch.
+    if (availableDiagnostics.isNotEmpty() && availableDiagnostics.size != OPTIONAL_MEASUREMENT_FILES.size) {
+        return REQUIRED_MEASUREMENT_FILES
+    }
+    return REQUIRED_MEASUREMENT_FILES + availableDiagnostics
+}
+
+internal fun isCompleteMeasurementQueueFileSet(fileNames: Set<String>): Boolean {
+    val optionalPresent = OPTIONAL_MEASUREMENT_FILES.count(fileNames::contains)
+    if (!REQUIRED_MEASUREMENT_FILES.all(fileNames::contains)) return false
+    if (optionalPresent != 0 && optionalPresent != OPTIONAL_MEASUREMENT_FILES.size) return false
+    val expected = REQUIRED_MEASUREMENT_FILES.toSet() +
+        (if (optionalPresent == OPTIONAL_MEASUREMENT_FILES.size) OPTIONAL_MEASUREMENT_FILES else emptyList()) +
+        setOf("manifest.json", ".meta.json")
+    return fileNames == expected
+}
+
+internal fun shouldQueueMeasurementCandidate(
+    alreadyProcessed: Boolean,
+    completeQueueAlreadyExists: Boolean
+): Boolean = !alreadyProcessed && !completeQueueAlreadyExists
+
+internal fun hasExpectedMeasurementFileHeader(name: String, content: String): Boolean {
+    if (content.isBlank()) return false
+    val firstLine = content.lineSequence().firstOrNull()?.removePrefix("\uFEFF").orEmpty()
+    return when (name) {
+        "BLE_Rohdaten.csv", "Live_Telemetrie.csv", "Ereignisse.csv" ->
+            firstLine.startsWith("relative_ms;timestamp_ms;")
+        DIAGNOSTIC_READ_CSV_FILE -> firstLine.startsWith("timestamp_ms;scan_id;")
+        "Zusammenfassung.txt" -> firstLine.startsWith("VMAX Dashboard Messfahrt")
+        DIAGNOSTIC_READ_SUMMARY_FILE -> firstLine.startsWith("VMAX BT638 Deep READ")
+        "Lernprofil.json", DIAGNOSTIC_READ_MANIFEST_FILE, "manifest.json", ".meta.json" ->
+            runCatching { JSONObject(content) }.isSuccess
+        "Automatische_Analyse.txt" -> true
+        else -> false
+    }
+}
+
+private val DIAGNOSTIC_IDENTITY_MANIFEST_KEYS = setOf(
+    "device", "device_name", "devicename", "serial", "serial_number", "serialnumber",
+    "bluetooth_address", "bluetoothaddress"
+)
+
+private fun redactDiagnosticManifestNode(node: Any?) {
+    when (node) {
+        is JSONObject -> {
+            val keys = node.keys().asSequence().toList()
+            keys.forEach { key ->
+                val value = node.opt(key)
+                val canonicalKey = key.lowercase()
+                if (canonicalKey in DIAGNOSTIC_IDENTITY_MANIFEST_KEYS && value != null && value != JSONObject.NULL) {
+                    val exact = value.toString()
+                    node.put(
+                        key,
+                        if (canonicalKey in setOf("device", "device_name", "devicename")) {
+                            diagnosticPublicDeviceLabel(exact)
+                        } else if (exact.isBlank()) {
+                            "redacted"
+                        } else {
+                            "redacted_sha256:${diagnosticTextSha256(exact)}"
+                        }
+                    )
+                } else {
+                    redactDiagnosticManifestNode(value)
+                }
+            }
+        }
+        is JSONArray -> (0 until node.length()).forEach { index ->
+            redactDiagnosticManifestNode(node.opt(index))
+        }
+    }
+}
+
+/** Fail closed and hash identity fields in legacy or current diagnostic manifests. */
+internal fun redactDiagnosticReadManifestForPublic(json: String): String {
+    val manifest = JSONObject(json)
+    redactDiagnosticManifestNode(manifest)
+    manifest.put("public_identity_redacted", true)
+    manifest.put(
+        "public_hash_privacy",
+        "unsalted SHA-256 pseudonym; same payload is linkable across public uploads"
+    )
+    return manifest.toString(2)
+}
 
 internal data class TelemetryCsvMetrics(
     val schemaVersion: Int = 1,
@@ -130,15 +237,6 @@ class GitHubTelemetrySync private constructor(context: Context) {
         private const val REPO = "VMAXDashboard"
         private const val ROOT = "fahrdaten"
 
-        private val EXPECTED_FILES = listOf(
-            "BLE_Rohdaten.csv",
-            "Live_Telemetrie.csv",
-            "Ereignisse.csv",
-            "Zusammenfassung.txt",
-            "Automatische_Analyse.txt",
-            "Lernprofil.json"
-        )
-
         @Volatile private var instance: GitHubTelemetrySync? = null
 
         fun get(context: Context): GitHubTelemetrySync =
@@ -222,7 +320,10 @@ class GitHubTelemetrySync private constructor(context: Context) {
     fun snapshot(): GitHubSyncSnapshot = GitHubSyncSnapshot(
         enabled = prefs.getBoolean("enabled", false),
         tokenConfigured = tokenOrNull() != null,
-        pendingBundles = queueRoot.listFiles()?.count { it.isDirectory } ?: 0,
+        pendingBundles = (queueRoot.listFiles()?.count {
+            it.isDirectory && !it.name.startsWith(".")
+        } ?: 0) +
+            DiagnosticReadArchive.get(appContext).pendingCount(),
         uploadedBundles = prefs.getInt("uploaded_count", 0),
         lastStatus = prefs.getString("status", "Noch nicht eingerichtet").orEmpty()
     )
@@ -233,6 +334,7 @@ class GitHubTelemetrySync private constructor(context: Context) {
             runCatching { scanForCompletedMeasurements() }
                 .onFailure { setStatus("Lokaler Scan: ${safeMessage(it)}") }
             flushPending()
+            DiagnosticReadArchive.get(appContext).retryPending()
         }
     }
 
@@ -250,9 +352,12 @@ class GitHubTelemetrySync private constructor(context: Context) {
             MediaStore.MediaColumns._ID,
             MediaStore.MediaColumns.DISPLAY_NAME,
             MediaStore.MediaColumns.RELATIVE_PATH,
-            MediaStore.MediaColumns.DATE_MODIFIED
+            MediaStore.MediaColumns.DATE_MODIFIED,
+            MediaStore.MediaColumns.SIZE,
+            MediaStore.MediaColumns.IS_PENDING
         )
-        val selection = "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?"
+        val selection = "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ? AND " +
+            "${MediaStore.MediaColumns.IS_PENDING}=0"
         val args = arrayOf("${Environment.DIRECTORY_DOWNLOADS}/VMAXDashboard/Messfahrt_%/")
         val grouped = linkedMapOf<String, MutableMap<String, Uri>>()
 
@@ -266,10 +371,12 @@ class GitHubTelemetrySync private constructor(context: Context) {
             val idIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
             val nameIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
             val pathIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.RELATIVE_PATH)
+            val sizeIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
             while (cursor.moveToNext()) {
                 val path = cursor.getString(pathIndex) ?: continue
                 val name = cursor.getString(nameIndex) ?: continue
-                if (name !in EXPECTED_FILES) continue
+                if (cursor.getLong(sizeIndex) <= 0L) continue
+                if (name !in REQUIRED_MEASUREMENT_FILES && name !in OPTIONAL_MEASUREMENT_FILES) continue
                 val id = cursor.getLong(idIndex)
                 val uri = ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, id)
                 grouped.getOrPut(path) { linkedMapOf() }[name] = uri
@@ -277,7 +384,18 @@ class GitHubTelemetrySync private constructor(context: Context) {
         }
 
         grouped.entries
-            .filter { (_, files) -> EXPECTED_FILES.all(files::containsKey) }
+            .filter { (path, files) ->
+                val folderName = path.trimEnd('/').substringAfterLast('/')
+                val sourceKey = "mediastore:$path"
+                measurementFilesToQueue(files.keys).isNotEmpty() &&
+                    folderName.isNotBlank() &&
+                    shouldQueueMeasurementCandidate(
+                        alreadyProcessed = isProcessed(sourceKey),
+                        completeQueueAlreadyExists = isCompleteMeasurementQueueFolder(
+                            File(queueRoot, safeFolderName(folderName))
+                        )
+                    )
+            }
             .take(20)
             .forEach { (path, files) ->
                 queueMeasurement(path, files, resolver)
@@ -290,9 +408,28 @@ class GitHubTelemetrySync private constructor(context: Context) {
         vmaxRoot.listFiles()
             ?.filter { it.isDirectory && it.name.startsWith("Messfahrt_") }
             ?.sortedByDescending(File::lastModified)
+            ?.filter { folder ->
+                val available = folder.listFiles()
+                    ?.filter(File::isFile)
+                    ?.map(File::getName)
+                    ?.toSet()
+                    .orEmpty()
+                measurementFilesToQueue(available).isNotEmpty() &&
+                    shouldQueueMeasurementCandidate(
+                        alreadyProcessed = isProcessed("legacy:${folder.absolutePath}"),
+                        completeQueueAlreadyExists = isCompleteMeasurementQueueFolder(
+                            File(queueRoot, safeFolderName(folder.name))
+                        )
+                    )
+            }
             ?.take(20)
             ?.forEach { folder ->
-                if (!EXPECTED_FILES.all { File(folder, it).isFile }) return@forEach
+                val available = folder.listFiles()
+                    ?.filter(File::isFile)
+                    ?.map(File::getName)
+                    ?.toSet()
+                    .orEmpty()
+                if (measurementFilesToQueue(available).isEmpty()) return@forEach
                 queueLegacyMeasurement(folder)
             }
     }
@@ -307,16 +444,43 @@ class GitHubTelemetrySync private constructor(context: Context) {
         val sourceKey = "mediastore:$sourcePath"
         if (isProcessed(sourceKey)) return
         val queueFolder = File(queueRoot, safeFolderName(folderName))
-        if (File(queueFolder, ".meta.json").isFile) return
+        if (!prepareMeasurementQueueTarget(queueFolder)) return
 
         val staging = File(queueRoot, ".${safeFolderName(folderName)}.tmp")
         staging.deleteRecursively()
         staging.mkdirs()
         try {
-            EXPECTED_FILES.forEach { name ->
+            measurementFilesToQueue(files.keys).forEach { name ->
                 val uri = files.getValue(name)
                 resolver.openInputStream(uri)?.use { input ->
-                    File(staging, name).outputStream().use { output -> input.copyTo(output) }
+                    val bytes = input.readBytes()
+                    val publicBytes = when (name) {
+                        "BLE_Rohdaten.csv" -> {
+                            redactRawTelemetryCsvForPublic(String(bytes, Charsets.UTF_8))
+                                .toByteArray(Charsets.UTF_8)
+                        }
+                        DIAGNOSTIC_READ_CSV_FILE -> {
+                            redactDiagnosticReadCsvForPublic(String(bytes, Charsets.UTF_8))
+                                .toByteArray(Charsets.UTF_8)
+                        }
+                        DIAGNOSTIC_READ_SUMMARY_FILE -> {
+                            redactDiagnosticReadSummaryForPublic(String(bytes, Charsets.UTF_8))
+                                .toByteArray(Charsets.UTF_8)
+                        }
+                        "Zusammenfassung.txt" -> {
+                            redactDiagnosticReadSummaryForPublic(String(bytes, Charsets.UTF_8))
+                                .toByteArray(Charsets.UTF_8)
+                        }
+                        DIAGNOSTIC_READ_MANIFEST_FILE -> {
+                            redactDiagnosticReadManifestForPublic(String(bytes, Charsets.UTF_8))
+                                .toByteArray(Charsets.UTF_8)
+                        }
+                        else -> bytes
+                    }
+                    check(hasExpectedMeasurementFileHeader(name, String(publicBytes, Charsets.UTF_8))) {
+                        "$name ist leer oder hat kein erwartetes Format"
+                    }
+                    File(staging, name).writeBytes(publicBytes)
                 } ?: error("$name konnte nicht gelesen werden")
             }
             finishQueueBundle(staging, queueFolder, folderName, sourceKey)
@@ -331,13 +495,43 @@ class GitHubTelemetrySync private constructor(context: Context) {
         val sourceKey = "legacy:${sourceFolder.absolutePath}"
         if (isProcessed(sourceKey)) return
         val queueFolder = File(queueRoot, safeFolderName(folderName))
-        if (File(queueFolder, ".meta.json").isFile) return
+        if (!prepareMeasurementQueueTarget(queueFolder)) return
 
         val staging = File(queueRoot, ".${safeFolderName(folderName)}.tmp")
         staging.deleteRecursively()
         staging.mkdirs()
         try {
-            EXPECTED_FILES.forEach { name -> File(sourceFolder, name).copyTo(File(staging, name), overwrite = true) }
+            val available = sourceFolder.listFiles()?.filter(File::isFile)?.map(File::getName)?.toSet().orEmpty()
+            val selectedFiles = measurementFilesToQueue(available)
+            if (selectedFiles.isEmpty()) {
+                staging.deleteRecursively()
+                return
+            }
+            selectedFiles.forEach { name ->
+                val source = File(sourceFolder, name)
+                val destination = File(staging, name)
+                when (name) {
+                    "BLE_Rohdaten.csv" -> {
+                        destination.writeText(redactRawTelemetryCsvForPublic(source.readText()))
+                    }
+                    DIAGNOSTIC_READ_CSV_FILE -> {
+                        destination.writeText(redactDiagnosticReadCsvForPublic(source.readText()))
+                    }
+                    DIAGNOSTIC_READ_SUMMARY_FILE -> {
+                        destination.writeText(redactDiagnosticReadSummaryForPublic(source.readText()))
+                    }
+                    "Zusammenfassung.txt" -> {
+                        destination.writeText(redactDiagnosticReadSummaryForPublic(source.readText()))
+                    }
+                    DIAGNOSTIC_READ_MANIFEST_FILE -> {
+                        destination.writeText(redactDiagnosticReadManifestForPublic(source.readText()))
+                    }
+                    else -> source.copyTo(destination, overwrite = true)
+                }
+                check(hasExpectedMeasurementFileHeader(name, destination.readText())) {
+                    "$name ist leer oder hat kein erwartetes Format"
+                }
+            }
             finishQueueBundle(staging, queueFolder, folderName, sourceKey)
         } catch (error: Exception) {
             staging.deleteRecursively()
@@ -353,11 +547,49 @@ class GitHubTelemetrySync private constructor(context: Context) {
                 .put("remoteFolder", remoteFolder(folderName))
                 .toString()
         )
-        if (!staging.renameTo(queueFolder)) {
-            staging.copyRecursively(queueFolder, overwrite = true)
-            staging.deleteRecursively()
+        val stagedNames = staging.listFiles()?.filter(File::isFile)?.map(File::getName)?.toSet().orEmpty()
+        check(isCompleteMeasurementQueueFileSet(stagedNames)) { "Messfahrt-Staging ist unvollständig" }
+        stagedNames.forEach { name ->
+            check(hasExpectedMeasurementFileHeader(name, File(staging, name).readText())) {
+                "Messfahrt-Staging enthält ungültige Datei: $name"
+            }
         }
+        check(!queueFolder.exists()) { "Messfahrt-Queueziel existiert bereits unvollständig" }
+        check(staging.renameTo(queueFolder)) { "Messfahrt-Staging konnte nicht atomar übernommen werden" }
         setStatus("Messfahrt für GitHub vorgemerkt: $folderName")
+    }
+
+    private fun isCompleteMeasurementQueueFolder(folder: File): Boolean = runCatching {
+        if (!folder.isDirectory || folder.name.startsWith(".")) return@runCatching false
+        val names = folder.listFiles()?.filter(File::isFile)?.map(File::getName)?.toSet().orEmpty()
+        isCompleteMeasurementQueueFileSet(names) && names.all { name ->
+            hasExpectedMeasurementFileHeader(name, File(folder, name).readText())
+        }
+    }.getOrDefault(false)
+
+    /**
+     * A torn app-private queue must never block rebuilding from the still intact
+     * Downloads source. Preserve it under a hidden quarantine name, then build a
+     * fresh atomic directory; flush/pending counters deliberately ignore hidden dirs.
+     */
+    private fun prepareMeasurementQueueTarget(queueFolder: File): Boolean {
+        if (!queueFolder.exists()) return true
+        if (isCompleteMeasurementQueueFolder(queueFolder)) return false
+        var suffix = 0
+        var quarantine: File
+        do {
+            val extra = if (suffix == 0) "" else "-$suffix"
+            quarantine = File(
+                queueRoot,
+                ".invalid-${queueFolder.name}-${System.currentTimeMillis()}$extra"
+            )
+            suffix++
+        } while (quarantine.exists())
+        check(queueFolder.renameTo(quarantine)) {
+            "Ungültige Messfahrt-Queue konnte nicht quarantänisiert werden"
+        }
+        setStatus("Ungültige Queue wird aus Originaldaten neu aufgebaut: ${queueFolder.name}")
+        return true
     }
 
     private fun buildManifest(folder: File, folderName: String): JSONObject {
@@ -400,6 +632,9 @@ class GitHubTelemetrySync private constructor(context: Context) {
             .put("rejected_read_packets", summaryValues["READ_Verworfen"]?.toIntOrNull() ?: JSONObject.NULL)
             .put("rejected_hybrid_packets", summaryValues["Hybrid_Verworfen"]?.toIntOrNull() ?: JSONObject.NULL)
             .put("connection_epochs", summaryValues["Verbindungsepochen"]?.toIntOrNull() ?: JSONObject.NULL)
+            .put("deep_read_dump", File(folder, DIAGNOSTIC_READ_CSV_FILE).isFile)
+            .put("deep_read_scans", summaryValues["Deep_READ_Scans"]?.toIntOrNull() ?: 0)
+            .put("deep_read_responses", summaryValues["Deep_READ_Antworten"]?.toIntOrNull() ?: 0)
             .put("decoder_ai_analysis", true)
             .put("learning_profile", true)
             .put("app_version", packageInfo.versionName.orEmpty())
@@ -412,7 +647,10 @@ class GitHubTelemetrySync private constructor(context: Context) {
             setStatus("GitHub Sync aktiv, aber Token fehlt")
             return
         }
-        val pending = queueRoot.listFiles()?.filter { it.isDirectory }?.sortedBy(File::lastModified).orEmpty()
+        val pending = queueRoot.listFiles()
+            ?.filter { it.isDirectory && !it.name.startsWith(".") }
+            ?.sortedBy(File::lastModified)
+            .orEmpty()
         if (pending.isEmpty()) {
             setStatus("GitHub Sync aktuell – keine offenen Messfahrten")
             return
@@ -421,15 +659,25 @@ class GitHubTelemetrySync private constructor(context: Context) {
         val uploader = GitHubContentsUploader(token, OWNER, REPO, DATA_BRANCH, BASE_BRANCH)
         for (folder in pending) {
             val metaFile = File(folder, ".meta.json")
-            if (!metaFile.isFile) continue
-            val meta = JSONObject(metaFile.readText())
-            val sourceKey = meta.getString("sourceKey")
-            val remoteFolder = meta.getString("remoteFolder")
+            val fileNames = folder.listFiles()?.filter(File::isFile)?.map(File::getName)?.toSet().orEmpty()
+            val queueIsValid = runCatching {
+                isCompleteMeasurementQueueFileSet(fileNames) &&
+                    fileNames.all { name ->
+                        hasExpectedMeasurementFileHeader(name, File(folder, name).readText())
+                    }
+            }.getOrDefault(false)
+            if (!queueIsValid) {
+                setStatus("Upload wartet: unvollständige/ungültige Queue ${folder.name}")
+                continue
+            }
             try {
+                val meta = JSONObject(metaFile.readText())
+                val sourceKey = meta.getString("sourceKey")
+                val remoteFolder = meta.getString("remoteFolder")
                 setStatus("GitHub Upload: ${folder.name}")
                 uploader.ensureDataBranch()
                 val uploadFiles = folder.listFiles()
-                    ?.filter { it.isFile && it.name != ".meta.json" }
+                    ?.filter { it.isFile && it.name != ".meta.json" && it.name in fileNames }
                     ?.sortedWith(compareBy<File> { it.name == "manifest.json" }.thenBy { it.name })
                     .orEmpty()
                 uploadFiles.forEach { file ->

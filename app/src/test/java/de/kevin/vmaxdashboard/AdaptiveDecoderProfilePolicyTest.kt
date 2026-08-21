@@ -59,4 +59,68 @@ class AdaptiveDecoderProfilePolicyTest {
         assertFalse(usable(signal = "lightOn", width = 1, encoding = "u8", scale = 1.0, activeValue = 300, inactiveValue = 0))
         assertTrue(usable(signal = "lightOn", width = 1, encoding = "u8", scale = 1.0, activeValue = 1, inactiveValue = 0))
     }
+
+    @Test
+    fun consumerGateRejectsStructurallyValidButNonCanonicalCloudRule() {
+        fun safe(channel: String, offset: Int = 6, encoding: String = "u16be") =
+            isSafeAdaptiveRuleForActivation(
+                signal = "speedKmh",
+                channel = channel,
+                status = "confirmed",
+                confidence = 99,
+                observations = 10_000,
+                offset = offset,
+                width = 2,
+                encoding = encoding,
+                scale = 0.1,
+                bias = 0.0,
+                activeValue = null,
+                inactiveValue = null
+            )
+
+        assertTrue(safe("1505"))
+        assertFalse(safe("151D"))
+        assertFalse(safe("1505", offset = 4))
+        assertFalse(safe("1505", encoding = "u16le"))
+    }
+
+    @Test
+    fun legacyConfirmedDirectPowerProfileIsBlockedByFinalConsumerGate() {
+        assertFalse(
+            isSafeAdaptiveRuleForActivation(
+                signal = "powerW",
+                channel = "1509",
+                status = "confirmed",
+                confidence = 99,
+                observations = 939,
+                offset = 9,
+                width = 2,
+                encoding = "u16be",
+                scale = 1.0,
+                bias = 0.0,
+                activeValue = null,
+                inactiveValue = null
+            )
+        )
+    }
+
+    @Test
+    fun reconnectDerivedChargingProfileIsBlockedUntilDirectEvidenceExists() {
+        assertFalse(
+            isSafeAdaptiveRuleForActivation(
+                signal = "charging",
+                channel = "151D",
+                status = "confirmed",
+                confidence = 99,
+                observations = 100,
+                offset = 2,
+                width = 1,
+                encoding = "u8",
+                scale = 1.0,
+                bias = 0.0,
+                activeValue = 1,
+                inactiveValue = 0
+            )
+        )
+    }
 }

@@ -37,6 +37,7 @@ class ConsensusPolicyTests(unittest.TestCase):
         self.assertFalse(consensus.discrete_candidate_allowed("lightOn", "1509", 0))
         self.assertFalse(consensus.discrete_candidate_allowed("brakeActive", "150D", 8))
         self.assertFalse(consensus.discrete_candidate_allowed("brakeActive", "1508", 3))
+        self.assertFalse(consensus.discrete_candidate_allowed("charging", "151D", 2))
 
     def test_live_reference_values_keep_their_real_source_channel(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -64,7 +65,10 @@ class ConsensusPolicyTests(unittest.TestCase):
                 "relative_ms;timestamp_ms;channel;meaning;length;packet_no;changed_bytes;hex;origin\n"
                 "0;1000;1505;x;18;1;0;00-00-00-00-FF-FF-00-7B-FF-FF-FF-FF-FF-00-00-00-00-00;NOTIFICATION\n"
                 "10;1010;1505;x;18;2;0;00-00-00-00-FF-FF-00-7B-FF-FF-FF-FF-FF-00-00-00-00-00;READ\n"
-                "20;1020;1505;x;18;3;0;00-00-00-00-FF-FF-00-00-33-34-35-36-37-38-39-35-3D-14;NOTIFICATION\n",
+                "20;1020;1505;x;18;3;0;00-00-00-00-FF-FF-00-00-33-34-35-36-37-38-39-35-3D-14;NOTIFICATION\n"
+                "30;1030;1505;x;18;4;0;00-00-00-00-FF-FF-00-7B-FF-FF-FF-FF-FF-00-00-00-00-00;NOTIFICATION_REJECTED_HYBRID\n"
+                "40;1040;1505;x;18;5;0;00-00-00-00-FF-FF-00-7B-FF-FF-FF-FF-FF-00-00-00-00-00;DIAGNOSTIC_OBSERVATION\n"
+                "50;1050;1505;x;18;6;0;00-00-00-00-FF-FF-00-7B-FF-FF-FF-FF-FF-00-00-00-00-00;\n",
                 encoding="utf-8",
             )
             rows = consensus.read_raw_rows(path)
