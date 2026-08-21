@@ -5,12 +5,15 @@ on:
     branches: [main]
     paths:
       - 'tools/decoder_ai/**'
+      - 'reverse-engineering/reports/BT638_HANDSHAKE_AUTH_EVIDENCE_2026-08-21.md'
       - '.github/workflows/decoder-ai.yml'
       - 'app/src/main/java/de/kevin/vmaxdashboard/AdaptiveDecoderProfileStore.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/AdaptiveDecoderRuntime.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/BleScooterManager.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/DecoderAiCloudSync.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/DiagnosticReadArchive.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/ExternalAi*.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/GattReadScanner.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/GitHubSyncActivity.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/GitHubTelemetrySync.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/LearningProfileStore.kt'
@@ -32,13 +35,16 @@ on:
       - feature/v7-6-adaptive-decoder-ai-final
     paths:
       - 'fahrdaten/**/manifest.json'
+      - 'diagnostics/**/manifest.json'
       - 'tools/decoder_ai/**'
       - '.github/workflows/decoder-ai.yml'
       - 'app/src/main/java/de/kevin/vmaxdashboard/AdaptiveDecoderProfileStore.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/AdaptiveDecoderRuntime.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/BleScooterManager.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/DecoderAiCloudSync.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/DiagnosticReadArchive.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/ExternalAi*.kt'
+      - 'app/src/main/java/de/kevin/vmaxdashboard/GattReadScanner.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/GitHubSyncActivity.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/GitHubTelemetrySync.kt'
       - 'app/src/main/java/de/kevin/vmaxdashboard/LearningProfileStore.kt'
@@ -110,6 +116,14 @@ jobs:
             --output decoder-ai/libble_comparison.json \
             --report decoder-ai/libble_comparison.md
 
+      - name: BT638 Deep READ getrennt auswerten
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data')
+        run: |
+          python "$ANALYZER_ROOT/tools/decoder_ai/gatt_read_scan.py" \
+            --root diagnostics \
+            --output decoder-ai/gatt_read_comparison.json \
+            --report decoder-ai/gatt_read_comparison.md
+
       - name: Original-App Sollwerte gegen BT638 abgleichen
         if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data')
         run: |
@@ -155,28 +169,39 @@ jobs:
             echo 'Gemini/GLM Secrets noch nicht gesetzt – deterministische Decoder-AI läuft ohne externe Zweitprüfung weiter.'
             exit 0
           fi
-          # Die kompakten Markdown-Berichte enthalten den Gesamt-/Aggregate-Stand.
-          # So sehen externe Prüfer nicht nur den Anfang eines großen JSONs bzw. eine einzelne Fahrt.
+          if [ -f decoder-ai/provider_review.json ]; then
+            cp decoder-ai/provider_review.json /tmp/provider_review_previous.json
+          fi
+          provider_context=/tmp/original-app-plus-deep-read.md
+          cat decoder-ai/original_app_comparison.md > "$provider_context"
+          printf '\n\n===== BT638 GATT DEEP READ =====\n\n' >> "$provider_context"
+          cat decoder-ai/gatt_read_comparison.md >> "$provider_context"
           python "$ANALYZER_ROOT/tools/decoder_ai/provider_review.py" \
             --analysis-report decoder-ai/analysis_report.md \
             --decoder-profile decoder-ai/decoder_profile.json \
             --libble decoder-ai/libble_comparison.md \
-            --original-app decoder-ai/original_app_comparison.md \
+            --original-app "$provider_context" \
             --output decoder-ai/provider_review.json \
             --report decoder-ai/provider_review.md
 
-      - name: Transiente Provider-Fehler günstig auffangen
+      - name: Transiente Provider-Fehler intern auffangen
         if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data')
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
         run: |
           if [ -f decoder-ai/provider_review.json ]; then
+            provider_context=/tmp/original-app-plus-deep-read.md
+            if [ ! -f "$provider_context" ]; then
+              cat decoder-ai/original_app_comparison.md > "$provider_context"
+              printf '\n\n===== BT638 GATT DEEP READ =====\n\n' >> "$provider_context"
+              cat decoder-ai/gatt_read_comparison.md >> "$provider_context"
+            fi
             python "$ANALYZER_ROOT/tools/decoder_ai/provider_retry.py" \
               --analysis-report decoder-ai/analysis_report.md \
               --decoder-profile decoder-ai/decoder_profile.json \
               --libble decoder-ai/libble_comparison.md \
-              --original-app decoder-ai/original_app_comparison.md \
+              --original-app "$provider_context" \
               --input decoder-ai/provider_review.json \
               --output decoder-ai/provider_review.json \
               --report decoder-ai/provider_review.md
@@ -192,6 +217,17 @@ jobs:
               --report decoder-ai/provider_review.md
           fi
 
+      - name: Letzte vollständige Provider-Antwort bei Ausfall bewahren
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data')
+        run: |
+          if [ -f decoder-ai/provider_review.json ]; then
+            python "$ANALYZER_ROOT/tools/decoder_ai/provider_last_good.py" \
+              --current decoder-ai/provider_review.json \
+              --previous /tmp/provider_review_previous.json \
+              --output decoder-ai/provider_review.json \
+              --report decoder-ai/provider_review.md
+          fi
+
       - name: Neue Decoder-Ergebnisse speichern
         if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data')
         run: |
@@ -202,6 +238,8 @@ jobs:
             decoder-ai/analysis_report.md \
             decoder-ai/libble_comparison.json \
             decoder-ai/libble_comparison.md \
+            decoder-ai/gatt_read_comparison.json \
+            decoder-ai/gatt_read_comparison.md \
             decoder-ai/original_app_comparison.json \
             decoder-ai/original_app_comparison.md \
             decoder-ai/power_crosscheck.json \
@@ -215,7 +253,7 @@ jobs:
             echo 'Keine neue Decoder-Evidenz.'
             exit 0
           fi
-          git commit -m 'Decoder AI: Original-App, libble und Fahrdaten abgleichen'
+          git commit -m 'Decoder AI: Fahrdaten und BT638 Deep READ abgleichen'
           git push origin HEAD:telemetry-data
 
   android-verify:
@@ -226,7 +264,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Java 17 einrichten
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
