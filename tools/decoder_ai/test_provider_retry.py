@@ -8,7 +8,7 @@ FOOTER = "Freigabe: keine automatische Änderung."
 
 
 class ProviderRetryTests(unittest.TestCase):
-    def test_gemini_error_uses_36_fallback(self):
+    def test_gemini_quota_error_uses_36_fallback(self):
         original_post = provider_review.post_json
         provider_review.post_json = lambda url, headers, payload: {
             "status": "completed",
@@ -22,7 +22,7 @@ class ProviderRetryTests(unittest.TestCase):
         }
         try:
             result = provider_retry.retry_failed_providers(
-                {"providers": {"gemini": {"status": "error", "error": "high demand"}}},
+                {"providers": {"gemini": {"status": "error", "error": "Gratis-/Ratenlimit erreicht (429)"}}},
                 "prompt",
                 "gem-key",
                 None,
@@ -34,7 +34,7 @@ class ProviderRetryTests(unittest.TestCase):
         self.assertEqual("ok", gemini["status"])
         self.assertEqual(provider_retry.GEMINI_FALLBACK_MODEL, gemini["model"])
         self.assertTrue(gemini["fallback"])
-        self.assertIn("high demand", gemini["primaryError"])
+        self.assertIn("429", gemini["primaryError"])
 
     def test_incomplete_primary_gemini_answer_is_retried(self):
         original_post = provider_review.post_json
