@@ -1,5 +1,6 @@
 name: VMAX Targeted 1505 Scan
 
+# charging-transition classifier v2: kurze Reconnects sind keine Ladeevidenz
 on:
   push:
     branches: [telemetry-data]
