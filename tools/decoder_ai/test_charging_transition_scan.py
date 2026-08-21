@@ -48,9 +48,22 @@ class ChargingTransitionScanTests(unittest.TestCase):
     def test_gap_without_charge_marker_does_not_claim_charging(self):
         before = scan.BatterySample(1000, 0, 0, 80, 50.0, 0.0, None, "x")
         after = scan.BatterySample(12000, 11000, 1, 80, 50.05, 0.0, None, "y")
-        status, reasons = scan.classify_gap(before, after, [])
+        status, reasons = scan.classify_gap(before, after, [], 11_000)
         self.assertEqual("BLE_GAP_NO_CLEAR_CHARGE_EVIDENCE", status)
         self.assertEqual([], reasons)
+
+    def test_short_reconnect_with_one_percent_soc_jump_is_not_charge_evidence(self):
+        before = scan.BatterySample(1000, 0, 0, 80, 50.0, 0.0, None, "x")
+        after = scan.BatterySample(9000, 8000, 1, 81, 50.0, 0.0, None, "y")
+        status, reasons = scan.classify_gap(before, after, [], 8_000)
+        self.assertEqual("BLE_GAP_NO_CLEAR_CHARGE_EVIDENCE", status)
+        self.assertTrue(any("kleiner SOC-Sprung" in reason for reason in reasons))
+
+    def test_long_unmarked_gap_needs_strong_battery_rise(self):
+        before = scan.BatterySample(1000, 0, 0, 70, 48.0, 0.0, None, "x")
+        after = scan.BatterySample(121000, 120000, 1, 73, 49.0, 0.0, None, "y")
+        status, _ = scan.classify_gap(before, after, [], 120_000)
+        self.assertEqual("BATTERY_RISE_DURING_BLE_GAP", status)
 
     def test_read_rows_are_not_used_as_live_battery_samples(self):
         row = {
