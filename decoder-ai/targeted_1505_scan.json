@@ -1,0 +1,239 @@
+{
+  "schema": "vmax-targeted-1505-scan-v1",
+  "rideCount": 13,
+  "packets1505": 1430,
+  "powerAB": {
+    "status": "DUPLICATED_ON_CURRENT_BT638_DATA",
+    "validPairs": 1430,
+    "equalPairs": 1429,
+    "equalPercent": 99.93,
+    "maxAbsDifferenceW": 1919.6,
+    "powerA": {
+      "samples": 1430,
+      "min": 0.0,
+      "max": 1053.0,
+      "mean": 62.034476,
+      "distinct": 126
+    },
+    "powerB": {
+      "samples": 1430,
+      "min": 0.0,
+      "max": 1926.9,
+      "mean": 63.376853,
+      "distinct": 126
+    },
+    "powerA_vs_absVI": {
+      "comparisons": 12,
+      "maeW": 0.0,
+      "medianAbsErrorW": 0.0,
+      "closePercent": 100.0,
+      "correlation": null
+    },
+    "powerB_vs_absVI": {
+      "comparisons": 12,
+      "maeW": 0.0,
+      "medianAbsErrorW": 0.0,
+      "closePercent": 100.0,
+      "correlation": null
+    },
+    "note": "A/B equality or correlation is observational evidence only; it does not assign motor/treadle semantics."
+  },
+  "rpm1505_8": {
+    "status": "RPM_VALUES_OBSERVED_NEEDS_VALIDATION",
+    "rawStates": {
+      "ffff": 1428,
+      "valid": 2
+    },
+    "values": {
+      "samples": 2,
+      "min": 13108.0,
+      "max": 13108.0,
+      "mean": 13108.0,
+      "distinct": 1
+    },
+    "speedCorrelation": null
+  },
+  "remainingDistance1505_10": {
+    "status": "RANGE_VALUES_OBSERVED_NEEDS_VALIDATION",
+    "rawStates": {
+      "ffff": 1428,
+      "valid": 2
+    },
+    "values": {
+      "samples": 2,
+      "min": 13622.0,
+      "max": 13622.0,
+      "mean": 13622.0,
+      "distinct": 1
+    },
+    "socCorrelation": null
+  },
+  "batteryTargetReadiness": {
+    "knownCallbacksStillUnmapped": [
+      "batteryCapacityMwh",
+      "chargingRemainSeconds",
+      "charging",
+      "stateOfHealthPercent",
+      "stateOfHealthMwh"
+    ],
+    "interestingChannelPresence": {
+      "1502": {
+        "packets": 1449,
+        "lengths": {
+          "16": 1449
+        }
+      },
+      "1508": {
+        "packets": 1445,
+        "lengths": {
+          "16": 6,
+          "17": 1439
+        }
+      },
+      "1509": {
+        "packets": 1444,
+        "lengths": {
+          "11": 1444
+        }
+      },
+      "150A": {
+        "packets": 1443,
+        "lengths": {
+          "10": 1443
+        }
+      },
+      "150C": {
+        "packets": 6,
+        "lengths": {
+          "13": 6
+        }
+      },
+      "150D": {
+        "packets": 1441,
+        "lengths": {
+          "20": 1441
+        }
+      }
+    },
+    "note": "No semantic byte mapping is invented from presence alone. A long ride helps dynamic fields; charging/SOH may require charging-state or diagnostic READ evidence."
+  },
+  "rides": [
+    {
+      "ride": "Messfahrt_2026-08-13_19-17-14",
+      "packets1505": 397,
+      "powerAValid": 397,
+      "powerBValid": 397,
+      "powerABEqual": 396,
+      "rpmValid": 1,
+      "remainingRangeValid": 1
+    },
+    {
+      "ride": "Messfahrt_2026-08-13_20-26-18",
+      "packets1505": 4,
+      "powerAValid": 4,
+      "powerBValid": 4,
+      "powerABEqual": 4,
+      "rpmValid": 0,
+      "remainingRangeValid": 0
+    },
+    {
+      "ride": "Messfahrt_2026-08-15_21-09-05",
+      "packets1505": 64,
+      "powerAValid": 64,
+      "powerBValid": 64,
+      "powerABEqual": 64,
+      "rpmValid": 1,
+      "remainingRangeValid": 1
+    },
+    {
+      "ride": "Messfahrt_2026-08-15_21-12-46",
+      "packets1505": 10,
+      "powerAValid": 10,
+      "powerBValid": 10,
+      "powerABEqual": 10,
+      "rpmValid": 0,
+      "remainingRangeValid": 0
+    },
+    {
+      "ride": "Messfahrt_2026-08-16_00-09-26",
+      "packets1505": 32,
+      "powerAValid": 32,
+      "powerBValid": 32,
+      "powerABEqual": 32,
+      "rpmValid": 0,
+      "remainingRangeValid": 0
+    },
+    {
+      "ride": "Messfahrt_2026-08-16_18-46-03",
+      "packets1505": 107,
+      "powerAValid": 107,
+      "powerBValid": 107,
+      "powerABEqual": 107,
+      "rpmValid": 0,
+      "remainingRangeValid": 0
+    },
+    {
+      "ride": "Messfahrt_2026-08-16_22-12-43",
+      "packets1505": 129,
+      "powerAValid": 129,
+      "powerBValid": 129,
+      "powerABEqual": 129,
+      "rpmValid": 0,
+      "remainingRangeValid": 0
+    },
+    {
+      "ride": "Messfahrt_2026-08-17_17-05-47",
+      "packets1505": 112,
+      "powerAValid": 112,
+      "powerBValid": 112,
+      "powerABEqual": 112,
+      "rpmValid": 0,
+      "remainingRangeValid": 0
+    },
+    {
+      "ride": "Messfahrt_2026-08-17_20-24-15",
+      "packets1505": 235,
+      "powerAValid": 235,
+      "powerBValid": 235,
+      "powerABEqual": 235,
+      "rpmValid": 0,
+      "remainingRangeValid": 0
+    },
+    {
+      "ride": "Messfahrt_2026-08-18_18-19-38",
+      "packets1505": 82,
+      "powerAValid": 82,
+      "powerBValid": 82,
+      "powerABEqual": 82,
+      "rpmValid": 0,
+      "remainingRangeValid": 0
+    },
+    {
+      "ride": "Messfahrt_2026-08-20_12-26-55",
+      "packets1505": 98,
+      "powerAValid": 98,
+      "powerBValid": 98,
+      "powerABEqual": 98,
+      "rpmValid": 0,
+      "remainingRangeValid": 0
+    },
+    {
+      "ride": "Messfahrt_2026-08-20_14-45-15",
+      "packets1505": 81,
+      "powerAValid": 81,
+      "powerBValid": 81,
+      "powerABEqual": 81,
+      "rpmValid": 0,
+      "remainingRangeValid": 0
+    },
+    {
+      "ride": "Messfahrt_2026-08-20_18-42-34",
+      "packets1505": 79,
+      "powerAValid": 79,
+      "powerBValid": 79,
+      "powerABEqual": 79,
+      "rpmValid": 0,
+      "remainingRangeValid": 0
+    }
+  ]
+}
