@@ -13,9 +13,29 @@ import json
 from pathlib import Path
 from typing import Any
 
-from provider_review import render_markdown
+from provider_review import MAX_PROVIDER_TEXT, render_markdown
 
 REQUIRED_FOOTER = "Freigabe: keine automatische Änderung."
+REQUIRED_SECTIONS = (
+    "Belastbare Evidenz",
+    "Konflikte / mögliche Bugs",
+    "Hypothesen (nicht bestätigt)",
+    "Nächste sichere READ-ONLY-Tests",
+    "Automatische Änderungen: KEINE",
+)
+MIN_REVIEW_CHARS = 240
+
+
+def is_complete_review(text: str) -> bool:
+    clean = str(text or "").strip()
+    if (
+        len(clean) < MIN_REVIEW_CHARS
+        or len(clean) > MAX_PROVIDER_TEXT
+        or not clean.endswith(REQUIRED_FOOTER)
+    ):
+        return False
+    lowered = clean.casefold()
+    return all(section.casefold() in lowered for section in REQUIRED_SECTIONS)
 
 
 def validate(result: dict[str, Any]) -> dict[str, Any]:
@@ -30,7 +50,7 @@ def validate(result: dict[str, Any]) -> dict[str, Any]:
             continue
 
         text = str(item.get("text") or "").strip()
-        complete = text.endswith(REQUIRED_FOOTER)
+        complete = is_complete_review(text)
         item["outputComplete"] = complete
         if complete:
             continue
@@ -41,7 +61,7 @@ def validate(result: dict[str, Any]) -> dict[str, Any]:
         item["status"] = "error"
         item["text"] = ""
         item["error"] = (
-            "Unvollständige Reviewer-Antwort verworfen: Abschlussmarker fehlt."
+            "Unvollständige Reviewer-Antwort verworfen: Pflichtabschnitt oder Abschlussmarker fehlt."
             + (f" Letzter Ausschnitt: {preview}" if preview else "")
         )[:600]
 

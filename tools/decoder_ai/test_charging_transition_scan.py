@@ -66,16 +66,18 @@ class ChargingTransitionScanTests(unittest.TestCase):
         status, _ = scan.classify_gap(before, after, [], 120_000)
         self.assertEqual("BATTERY_RISE_DURING_BLE_GAP", status)
 
-    def test_read_rows_are_not_used_as_live_battery_samples(self):
-        row = {
-            "relative_ms": "0",
-            "timestamp_ms": "1000",
-            "channel": "1509",
-            "hex": "00-00-FF-FF-50-C3-50-00-00-00-00",
-            "origin": "READ",
-            "connection_epoch": "0",
-        }
-        self.assertIsNone(scan.decode_1509(row))
+    def test_non_notification_rows_are_not_used_as_live_battery_samples(self):
+        for origin in ("READ", "NOTIFICATION_REJECTED_HYBRID", "DIAGNOSTIC_OBSERVATION", ""):
+            with self.subTest(origin=origin):
+                row = {
+                    "relative_ms": "0",
+                    "timestamp_ms": "1000",
+                    "channel": "1509",
+                    "hex": "00-00-FF-FF-50-C3-50-00-00-00-00",
+                    "origin": origin,
+                    "connection_epoch": "0",
+                }
+                self.assertIsNone(scan.decode_1509(row))
 
 
 if __name__ == "__main__":

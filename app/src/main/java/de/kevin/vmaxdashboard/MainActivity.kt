@@ -11,12 +11,14 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -27,44 +29,49 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
-    private lateinit var bleManager: BleScooterManager
+    private val dashboardViewModel: MainDashboardViewModel by viewModels()
+
+    /** Explicit lifecycle bridge; avoids reflection and preserves the retained GATT owner. */
+    internal val bleManagerForReconnectSupervisor: BleScooterManager
+        get() = dashboardViewModel.bleManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        bleManager = BleScooterManager(applicationContext)
-        setContent { MaterialTheme { VmaxApp(bleManager) } }
-    }
-
-    override fun onDestroy() {
-        bleManager.disconnect()
-        super.onDestroy()
+        setContent {
+            MaterialTheme {
+                VmaxApp(
+                    manager = dashboardViewModel.bleManager,
+                    gattScanner = dashboardViewModel.gattReadScanner
+                )
+            }
+        }
     }
 }
 
 @Composable
-private fun VmaxApp(manager: BleScooterManager) {
+private fun VmaxApp(manager: BleScooterManager, gattScanner: GattReadScanner) {
     val state by manager.state.collectAsStateWithLifecycle()
-    val gattScanner = remember(manager) { GattReadScanner(manager) }
     val gattState by gattScanner.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val githubSync = remember(context) { GitHubTelemetrySync.get(context.applicationContext) }
     var githubSnapshot by remember { mutableStateOf(githubSync.snapshot()) }
     var aiProfile by remember { mutableStateOf(AdaptiveDecoderRuntime.snapshot()) }
-    var expertMode by remember { mutableStateOf(true) }
-    var selectedAction by remember { mutableStateOf("Bremse") }
-    var chargeMode by remember { mutableStateOf(false) }
-    var chargeStartedAt by remember { mutableLongStateOf(0L) }
-    var lastRealBattery by remember { mutableStateOf<Int?>(null) }
-    var lastRealVoltage by remember { mutableStateOf<Double?>(null) }
-    var lastRealValueAt by remember { mutableLongStateOf(0L) }
-    var previousConnected by remember { mutableStateOf(false) }
+    var expertMode by rememberSaveable { mutableStateOf(true) }
+    var selectedAction by rememberSaveable { mutableStateOf("Bremse") }
+    var chargeMode by rememberSaveable { mutableStateOf(false) }
+    var chargeStartedAt by rememberSaveable { mutableLongStateOf(0L) }
+    var lastRealBattery by rememberSaveable { mutableStateOf<Int?>(null) }
+    var lastRealVoltage by rememberSaveable { mutableStateOf<Double?>(null) }
+    var lastRealValueAt by rememberSaveable { mutableLongStateOf(0L) }
+    var previousConnected by rememberSaveable { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results -> if (results.values.all { it }) manager.startScan() }
 
-    fun connect() {
+    fun connect(readBeforeNotifications: Boolean = false) {
+        gattScanner.armForNextConnection(readBeforeNotifications)
         if (manager.hasRequiredPermissions()) manager.startScan()
         else {
             val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -94,26 +101,28 @@ private fun VmaxApp(manager: BleScooterManager) {
         }
     }
 
-    LaunchedEffect(state.batteryPercent, state.voltageV, state.lastPacketAt) {
-        if (state.connected && state.lastPacketAt > 0L) {
+    LaunchedEffect(state.lastBatteryTelemetryAt) {
+        if (state.connected && state.lastBatteryTelemetryAt > 0L) {
             state.batteryPercent?.let { lastRealBattery = it }
             state.voltageV?.let { lastRealVoltage = it }
-            lastRealValueAt = state.lastPacketAt
+            lastRealValueAt = state.lastBatteryTelemetryAt
         }
     }
 
     LaunchedEffect(state.connected) {
         if (state.connected) {
-            delay(700)
             if (!manager.state.value.recordingActive) manager.startMeasurement()
-            delay(1_400)
-            for (attempt in 0 until 8) {
-                if (gattScanner.scanAndRead()) break
-                if (attempt < 7) delay(750)
+            if (chargeMode && !previousConnected) {
+                marker("BLE beim Laden wieder verbunden – Kurzfenster", false)
             }
-            if (chargeMode && !previousConnected) marker("BLE beim Laden wieder verbunden", false)
+            // The manager starts exactly one Deep READ as soon as the known BT638
+            // notification setup releases GATT. UI retries could otherwise start
+            // duplicate scans after a fast first pass.
         } else {
-            gattScanner.reset()
+            // If the controller disappears while charging, its GATT callback owns
+            // finalization and archives the partial READ answers. Reset only when
+            // no diagnostic scan is active, so the UI cannot erase that evidence.
+            gattScanner.resetIfIdle()
             if (chargeMode && previousConnected && manager.state.value.recordingActive) {
                 manager.addMeasurementMarker("BLE beim Laden getrennt")
             }
@@ -123,8 +132,14 @@ private fun VmaxApp(manager: BleScooterManager) {
 
     LaunchedEffect(chargeMode, state.connected) {
         while (chargeMode && !manager.state.value.connected) {
-            if (!manager.state.value.scanning && manager.hasRequiredPermissions()) manager.startScan()
-            delay(15_000)
+            if (!manager.state.value.scanning && manager.hasRequiredPermissions()) {
+                gattScanner.armForNextConnection(
+                    readBeforeNotifications = true,
+                    archiveIfNoDevice = false
+                )
+                manager.startScan()
+            }
+            delay(3_000)
         }
     }
 
@@ -135,7 +150,7 @@ private fun VmaxApp(manager: BleScooterManager) {
                     Column {
                         Text("VMAX Dashboard • ${BuildConfig.VERSION_NAME}")
                         Text(
-                            "Original SDK Live + Adaptive Decoder AI • Build ${BuildConfig.VERSION_NAME}",
+                            "Original SDK Live + evidenzgeprüfter Decoder • Build ${BuildConfig.VERSION_NAME}",
                             style = MaterialTheme.typography.labelSmall
                         )
                     }
@@ -153,10 +168,11 @@ private fun VmaxApp(manager: BleScooterManager) {
             item { SectionTitle("Bestätigte Fahrdaten") }
             item { MetricRow("Akku", state.batteryPercent?.let { "$it %" } ?: "–", "Kilometer", state.odometerKm?.let { "%.1f km".format(it) } ?: "–") }
             item { MetricRow("Spannung", state.voltageV?.let { "%.2f V".format(it) } ?: "–", "Strom", state.currentA?.let { "%.2f A".format(it) } ?: "–") }
-            item { MetricRow("Leistung direkt", state.sdkDirectPowerW?.let { "%.0f W".format(it) } ?: state.motorLoadRaw?.let { "$it W" } ?: "–", "Leistung V×A", state.currentPowerW?.let { "%.0f W".format(it) } ?: "–") }
+            item { SectionTitle("Kandidaten / unabhängiger Vergleich") }
+            item { MetricRow("Direktfeld 1509/9 (Kandidat)", state.sdkDirectPowerW?.let { "%.0f W".format(it) } ?: state.motorLoadRaw?.let { "$it W" } ?: "–", "Elektrisch |V×A|", state.currentPowerW?.let { "%.0f W".format(it) } ?: "–") }
             item {
                 MetricRow(
-                    "Restreichweite (SDK)",
+                    "Restreichweite 1505/10 (offen)",
                     state.sdkRemainingRangeKm?.let { "%.0f km".format(it) } ?: "–",
                     "Startmodus",
                     VmaxStartMode.fromRaw(state.startModeRaw)?.label ?: "–"
@@ -169,10 +185,17 @@ private fun VmaxApp(manager: BleScooterManager) {
 
             item {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(onClick = ::connect, enabled = !state.scanning && !state.connected, modifier = Modifier.weight(1f)) {
+                    Button(onClick = { connect() }, enabled = !state.scanning && !state.connected, modifier = Modifier.weight(1f)) {
                         Text(if (state.scanning) "Suche …" else "Verbinden")
                     }
-                    OutlinedButton(onClick = manager::disconnect, enabled = state.connected || state.scanning, modifier = Modifier.weight(1f)) {
+                    OutlinedButton(
+                        onClick = {
+                            chargeMode = false
+                            manager.disconnect()
+                        },
+                        enabled = state.connected || state.scanning,
+                        modifier = Modifier.weight(1f)
+                    ) {
                         Text("Trennen")
                     }
                 }
@@ -189,13 +212,25 @@ private fun VmaxApp(manager: BleScooterManager) {
                     onPlugIn = {
                         chargeMode = true
                         chargeStartedAt = System.currentTimeMillis()
+                        gattScanner.armForNextConnection(readBeforeNotifications = true)
                         marker("Ladegerät einstecken", false)
+                        if (state.connected) gattScanner.scanAndRead()
                     },
-                    onPower = { marker("Power beim Laden", false) },
+                    onPower = {
+                        gattScanner.armForNextConnection(readBeforeNotifications = true)
+                        marker("Power beim Laden – Kurzfenster", false)
+                        // Arm discovery immediately; a brief advertisement must not
+                        // wait for the periodic reconnect loop.
+                        if (!state.connected && !state.scanning) {
+                            if (manager.hasRequiredPermissions()) manager.startScan()
+                            else connect(readBeforeNotifications = true)
+                        }
+                        if (state.connected) gattScanner.scanAndRead()
+                    },
                     onUnplug = {
                         marker("Ladegerät abziehen", false)
                         chargeMode = false
-                        if (!state.connected && !state.scanning) connect()
+                        if (!state.connected && !state.scanning) connect(readBeforeNotifications = false)
                     }
                 )
             }
@@ -263,7 +298,7 @@ private fun VmaxApp(manager: BleScooterManager) {
 
             item { SectionTitle("Automatische Lernanalyse") }
             if (state.autoAnalysisFindings.isEmpty()) {
-                item { InfoCard("Decoder AI läuft", "Fahrt, Stillstand, Ladeabbrüche und Marker werden dauerhaft aufgezeichnet.") }
+                item { InfoCard("Automatische Datenanalyse läuft", "Fahrt, Stillstand, Ladeabbrüche und Marker werden dauerhaft aufgezeichnet.") }
             } else {
                 items(state.autoAnalysisFindings.take(20)) { InfoCard(it.marker, it.description) }
             }
@@ -311,7 +346,7 @@ private fun AdaptiveConfidenceCard(state: ScooterState, aiProfile: AdaptiveProfi
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                "KI-Vertrauen & Herkunft",
+                "Decoder-Vertrauen & Herkunft",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
             )
@@ -320,7 +355,7 @@ private fun AdaptiveConfidenceCard(state: ScooterState, aiProfile: AdaptiveProfi
                 style = MaterialTheme.typography.bodySmall
             )
             if (signalRows.isEmpty()) {
-                Text("Noch keine vertrauensbewerteten KI-Signale sichtbar.")
+                Text("Noch keine evidenzgeprüften Decoder-Signale sichtbar.")
             } else {
                 signalRows.forEach { (label, confidence, origin) ->
                     ConfidenceRow(label = label, confidence = confidence, origin = origin)
@@ -376,7 +411,7 @@ private fun ChargeDiagnosticCard(
             if (age != null) Text("Letzte echte Messung vor ${age}s")
             if (!active) {
                 Button(onClick = onPlugIn, enabled = state.connected, modifier = Modifier.fillMaxWidth()) {
-                    Text("1. LADEGERÄT EINSTECKEN")
+                    Text("1. VOR EINSTECKEN ANTIPPEN")
                 }
             } else {
                 Button(onClick = onPower, modifier = Modifier.fillMaxWidth()) {
@@ -387,7 +422,7 @@ private fun ChargeDiagnosticCard(
                 }
             }
             Text(
-                "Offline-Werte werden nicht geschätzt. Die Aufnahme und Marker bleiben auch bei BLE-Abschaltung aktiv.",
+                "Erst Schritt 1 antippen, dann das Ladegerät einstecken. Offline-Werte werden nicht geschätzt. Beim POWER-Versuch startet die Suche sofort; auch ein abgebrochener Kurz-Dump wird gesichert. Ein Reconnect allein beweist keinen Ladezustand.",
                 style = MaterialTheme.typography.bodySmall
             )
         }
@@ -416,9 +451,9 @@ private fun StatusCard(
                     else -> "○ Bluetooth nicht verbunden"
                 }
             )
-            Text(if (state.recordingActive) "● Auto-KI-Aufnahme läuft" else "○ Aufnahme wartet")
+            Text(if (state.recordingActive) "● Automatische Datenaufnahme läuft" else "○ Aufnahme wartet")
             Text(
-                "Original-SDK live: ${state.sdkLiveFieldCount} Felder • Decoder AI: " +
+                "Original-SDK live: ${state.sdkLiveFieldCount} Felder • Evidence Guard: " +
                     "${aiProfile.confirmedRuleCount}/${aiProfile.ruleCount} bestätigt",
                 style = MaterialTheme.typography.bodySmall
             )
@@ -427,7 +462,7 @@ private fun StatusCard(
                     aiProfile.confidenceSummary,
                 style = MaterialTheme.typography.bodySmall
             )
-            if (chargeMode) Text("🔌 Lademodus aktiv – Auto-Reconnect alle 15 Sekunden")
+            if (chargeMode) Text("🔌 Lademodus aktiv – Sofortsuche bei POWER + erneuter Scan-Check alle 3 Sekunden")
             Text(
                 "%.1f Pakete/s • ${state.packetTotal} Pakete • ${state.channels.size} Live-Kanäle"
                     .format(state.packetsPerSecond)
@@ -575,46 +610,46 @@ private fun OriginalSdkRealtimeCard(state: ScooterState) {
 
     Card(shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("⚡ Original-SDK Echtzeit", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("⚡ Original-SDK Layout/Kandidaten", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(
-                "libble Ground Truth • ${state.sdkLiveFieldCount} aktuell dekodierbare Felder",
+                "Natives Parserlayout • ${state.sdkLiveFieldCount} aktuell dekodierbare Felder; offene Rollen bleiben Kandidaten",
                 style = MaterialTheme.typography.bodySmall
             )
             Text(
-                "1505 Leistung A/B: ${d(state.sdkPerformancePowerAW, "W", 1)} • " +
+                "1505 Power A/B (Rolle offen): ${d(state.sdkPerformancePowerAW, "W", 1)} • " +
                     d(state.sdkPerformancePowerBW, "W", 1)
             )
             Text(
-                "1505 Drehmoment: ${d(state.sdkPerformanceTorqueNm, "Nm", 2)} • " +
-                    "RPM: ${i(state.sdkPerformanceRpm)}"
+                "1505 Drehmoment (SDK-Layout, BT638 offen): ${d(state.sdkPerformanceTorqueNm, "Nm", 2)} • " +
+                    "RPM (offen): ${i(state.sdkPerformanceRpm)}"
             )
             Text(
-                "1505 Restreichweite: ${d(state.sdkRemainingRangeKm, "km", 0)} • " +
+                "1505 Restreichweite (SDK-Layout, BT638 offen): ${d(state.sdkRemainingRangeKm, "km", 0)} • " +
                     "1506 Zähler RAW: ${state.sdkOperatingCounterRaw ?: "–"}"
             )
             Text(
-                "1509 Akku-Temp: ${d(state.resolvedBatteryTemperatureC, "°C", 1)} • " +
-                    "2. Strom: ${d(state.sdkSecondaryBatteryCurrentA, "A", 3)}"
+                "1509 Akku-Temp (SDK-Layout, BT638 offen): ${d(state.resolvedBatteryTemperatureC, "°C", 1)} • " +
+                    "2. Strom (offen): ${d(state.sdkSecondaryBatteryCurrentA, "A", 3)}"
             )
-            Text("1509 direkte Leistung: ${d(state.sdkDirectPowerW, "W", 0)}")
+            Text("1509 Direktfeld (Kandidat): ${d(state.sdkDirectPowerW, "W", 0)}")
             Text(
-                "150A Motorstrom: ${d(state.sdkMotorCurrentA, "A", 3)} • " +
+                "150A SDK-Layout/BT638 offen – Motorstrom: ${d(state.sdkMotorCurrentA, "A", 3)} • " +
                     "Motorspannung: ${d(state.sdkMotorVoltageV, "V", 3)}"
             )
             Text(
-                "150A Motor-RPM: ${i(state.sdkMotorRpm)} • " +
+                "150A SDK-Layout/BT638 offen – Motor-RPM: ${i(state.sdkMotorRpm)} • " +
                     "Drehmoment: ${d(state.sdkMotorTorqueNm, "Nm", 2)}"
             )
-            Text("150A Motortemperatur: ${d(state.resolvedMotorTemperatureC, "°C", 1)}")
+            Text("150A SDK-Layout/BT638 offen – Motortemperatur: ${d(state.resolvedMotorTemperatureC, "°C", 1)}")
             Text("Assistenz/Fahrstufe RAW: ${i(state.sdkAssistanceLevelRaw)}")
             Text(
                 when {
                     state.sdkRemainingRangeKm != null ->
-                        "Restreichweite ist der direkte Controllerwert aus 1505/10–11 in km – keine App-Schätzung."
+                        "1505/10–11 liefert einen numerischen SDK-Layoutkandidaten in km; die Restreichweitenrolle ist am BT638 noch nicht unabhängig bestätigt."
                     state.connected && state.telemetryReady ->
                         "1505/10–11 liefert aktuell 0xFFFF; deshalb zeigt die App korrekt „–“ statt einer erfundenen Schätzung."
                     else ->
-                        "Der direkte Restreichweitenwert aus 1505/10–11 erscheint, sobald der Controller einen gültigen Wert liefert."
+                        "Ein numerischer Wert aus 1505/10–11 wird nur als Restreichweitenkandidat angezeigt."
                 },
                 style = MaterialTheme.typography.bodySmall
             )
@@ -664,23 +699,23 @@ private fun GitHubSyncCard(
     Card(shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
-                "☁ GitHub Fahrdaten & Decoder AI",
+                "☁ GitHub Fahrdaten & Decoderprüfung",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
             )
             Text(status)
             Text(
-                "KI: ${aiProfile.confirmedRuleCount}/${aiProfile.ruleCount} Regeln bestätigt • ${aiProfile.source}"
+                "Evidence Guard: ${aiProfile.confirmedRuleCount}/${aiProfile.ruleCount} Regeln aktivierbar • ${aiProfile.source}"
             )
             if (snapshot.lastStatus.isNotBlank()) {
                 Text(snapshot.lastStatus, style = MaterialTheme.typography.bodySmall)
             }
             Button(onClick = onOpen, modifier = Modifier.fillMaxWidth()) {
-                Text(if (snapshot.tokenConfigured) "GITHUB SYNC & DECODER AI" else "GITHUB SYNC EINRICHTEN")
+                Text(if (snapshot.tokenConfigured) "GITHUB SYNC & DECODER" else "GITHUB SYNC EINRICHTEN")
             }
             Text(
                 "Kein Scooter und keine Bluetooth-Verbindung für die Einstellungen nötig. " +
-                    "Bestätigte KI-Regeln werden read-only in die Live-Auswertung übernommen.",
+                    "Nur deterministisch geprüfte Regeln werden read-only in die Live-Auswertung übernommen; Gemini/GLM bleiben Beratung.",
                 style = MaterialTheme.typography.bodySmall
             )
         }
@@ -695,14 +730,14 @@ private fun AdaptiveLiveCard(state: ScooterState, aiProfile: AdaptiveProfileSnap
     Card(shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
-                "🧠 KI-gelernte Live-Signale",
+                "🧠 Evidenzgeprüfte Live-Signale",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
             )
             if ("brakeActive" in aiProfile.signals) Text("🛑 Bremse: ${binary(state.brakeActive)}")
             if ("leftIndicator" in aiProfile.signals) Text("⬅ Blinker links: ${binary(state.leftIndicator)}")
             if ("rightIndicator" in aiProfile.signals) Text("➡ Blinker rechts: ${binary(state.rightIndicator)}")
-            if ("lightOn" in aiProfile.signals) Text("💡 Licht KI: ${binary(state.lightOn)}")
+            if ("lightOn" in aiProfile.signals) Text("💡 Licht (Decoder): ${binary(state.lightOn)}")
             if ("charging" in aiProfile.signals) {
                 Text("🔌 Laden: ${state.charging?.let { binary(it) } ?: "–"}")
             }
@@ -726,7 +761,7 @@ private fun AdaptiveLiveCard(state: ScooterState, aiProfile: AdaptiveProfileSnap
                 )
             }
             Text(
-                "Nur bestätigte Regeln werden angezeigt; unsichere Treffer bleiben Lernkandidaten.",
+                "Nur vom Evidence Guard freigegebene Regeln werden angezeigt; Gemini/GLM können nichts aktivieren.",
                 style = MaterialTheme.typography.bodySmall
             )
         }
@@ -805,7 +840,12 @@ private fun GattSummaryCard(state: GattScanState, onScan: () -> Unit, enabled: B
 @Composable
 private fun GattEntryCard(entry: GattCharacteristicInfo) {
     val readState = when {
-        entry.lastReadStarted -> "✓ READ gestartet"
+        entry.lastReadStatus == 0 -> "✓ READ-Callback erfolgreich (${entry.lastReadLength ?: 0} B)"
+        entry.lastReadStatus == -1001 -> "READ konnte nicht gestartet werden"
+        entry.lastReadStatus == -1002 -> "READ-Timeout – Reconnect erforderlich"
+        entry.lastReadStatus == -1003 -> "Verbindung während READ beendet"
+        entry.lastReadStatus != null -> "READ-Callback mit GATT-Status ${entry.lastReadStatus}"
+        entry.lastReadStarted -> "READ angefordert – Callback ausstehend"
         entry.readable -> "READ verfügbar"
         else -> "Live/statisch"
     }
@@ -826,8 +866,13 @@ private fun GattEntryCard(entry: GattCharacteristicInfo) {
                 )
             }
             if (entry.confirmedDetails.isNotEmpty()) {
+                val detailLabel = if (entry.evidence == CapabilityEvidence.BT638_CONFIRMED.label) {
+                    "BT638 bestätigt"
+                } else {
+                    "Quellenbeleg (keine BT638-Funktion bestätigt)"
+                }
                 Text(
-                    "Bestätigt: ${entry.confirmedDetails.joinToString("; ")}",
+                    "$detailLabel: ${entry.confirmedDetails.joinToString("; ")}",
                     style = MaterialTheme.typography.bodySmall
                 )
             }
@@ -855,12 +900,12 @@ private fun ConfirmedRawCard(state: ScooterState) {
     val c = parseHex(state.rawPackets["150A"])
     val d = parseHex(state.rawPackets["150D"])
     InfoCard(
-        "Bestätigte & starke RAW-Felder",
-        "1505 A/B: ${u16be(a, 0) ?: "–"} / ${u16be(a, 2) ?: "–"}\n" +
-            "1505 Tempo: ${u16be(a, 6) ?: "–"}\n" +
-            "150D Max/Ø RAW: ${u16be(d, 0) ?: "–"} / ${u16be(d, 2) ?: "–"}\n" +
-            "150A Last: ${u16be(c, 0) ?: "–"}\n" +
-            "1502 A/B: ${u16be(b, 0) ?: "–"} / ${u16be(b, 6) ?: "–"}"
+        "RAW-Vergleichsfelder (Rollen teils offen)",
+        "1505 A/B (Rolle offen): ${u16be(a, 0) ?: "–"} / ${u16be(a, 2) ?: "–"}\n" +
+            "1505 Tempo (bestätigt): ${u16be(a, 6) ?: "–"}\n" +
+            "150D Max/Ø Fahrstatistik: ${u16be(d, 0) ?: "–"} / ${u16be(d, 2) ?: "–"}\n" +
+            "150A Byte 0 (Rolle offen): ${u16be(c, 0) ?: "–"}\n" +
+            "1502 Offset 0/6 (Bedeutung offen): ${u16be(b, 0) ?: "–"} / ${u16be(b, 6) ?: "–"}"
     )
 }
 

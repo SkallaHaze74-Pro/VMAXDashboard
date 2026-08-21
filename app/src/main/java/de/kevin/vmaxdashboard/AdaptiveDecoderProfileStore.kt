@@ -286,7 +286,7 @@ class AdaptiveDecoderProfileStore private constructor(context: Context) {
                 cloudAll.isNotEmpty() && localAll.isNotEmpty() -> "GitHub-Konsens + lokal"
                 cloudAll.isNotEmpty() -> "GitHub-Konsens"
                 localAll.isNotEmpty() -> "Lokales Lernen"
-                else -> "Noch kein KI-Profil"
+                else -> "Noch kein Decoderprofil"
             },
             signals = confirmed.map { it.signal }.toSet(),
             cloudRuleCount = cloudAll.size,
@@ -331,9 +331,9 @@ class AdaptiveDecoderProfileStore private constructor(context: Context) {
     }
 
     private fun isSemanticallyUsableAdaptiveRule(rule: AdaptiveRule): Boolean =
-        isActivatableAdaptiveRule(rule.status, rule.confidence) &&
-            isSemanticallyUsableAdaptiveRule(
+        isSafeAdaptiveRuleForActivation(
                 signal = rule.signal,
+                channel = rule.channel,
                 status = rule.status,
                 confidence = rule.confidence,
                 observations = rule.observations,

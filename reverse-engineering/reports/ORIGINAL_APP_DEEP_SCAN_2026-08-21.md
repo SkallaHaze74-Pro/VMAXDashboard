@@ -70,7 +70,7 @@ Beim **ExtenderBatteryPartImpl** sind u. a. vorhanden:
 
 Die Battery-Aggregator-Strings unterscheiden ausdrücklich Main-/Extender-Batterie bei Kapazität und `StateOfHealthInmwh`.
 
-**Bewertung:** Das ist ein starker neuer Ansatz für die noch offenen Akku-/SOH-Werte. Die Werte sollten nicht aus unseren heutigen 1502/150C-Paketen geraten werden, sondern über die Original-Hyena-READ-Pfade/Callbacks gesucht und anschließend gegen BT638-Rohdaten verifiziert werden. Insbesondere **Charge Cycles, Produktionsdatum, Kapazitätsdurchsatz in Ah und SOH** sind echte SDK-Ziele – aber ihre BT638-Verfügbarkeit ist noch offen.
+**Bewertung:** Das ist ein starker Ansatz für die **Offline-Inventarisierung** möglicher Akku-/SOH-Semantik. Die Hyena-Getter/Callbacks dürfen jedoch nicht am BT638 aufgerufen werden, solange keine Hyena→BT638/GPST-DA1A-Aufrufkette belegt ist. Laufzeitseitig werden ausschließlich tatsächlich entdeckte Android-Characteristics mit `PROPERTY_READ` gelesen. **Charge Cycles, Produktionsdatum, Kapazitätsdurchsatz in Ah und SOH** bleiben Vendor-SDK-Ziele; ihre BT638-Verfügbarkeit ist offen.
 
 ## 2. Neue Hyena-spezifische Diagnose-/Komfortpfade
 
@@ -88,7 +88,7 @@ Die Battery-Aggregator-Strings unterscheiden ausdrücklich Main-/Extender-Batter
 
 Motor-Tuning war bereits bekannt, ist aber im Manager klar als eigenes Profil-/Readback-System implementiert (`getMotorTuningValues`, `setMotorTuning`, `setMotorTuningDefault`). Die Base enthält außerdem konkrete Motor-Tuning-UI-/Analytics-Begriffe für Assist, Max Power, Max Assist Speed und Pedal Response sowie `MAX_PEDAL_RESPONSE_HYENA`.
 
-**Bewertung:** Für den BT638 sind `PedalResponse`, Throttle-Capability, BatteryArticle14, ExtendedSettings und MCU-Bootloaderstatus neue interessante READ-ONLY-Ziele. Vorhandensein in Hyena-Code ist noch kein BT638-Nachweis. Motor-Tuning-UI belegt eine Produktfunktion im App-Baukasten, aber keine Freigabe für automatische Änderungen.
+**Bewertung:** `PedalResponse`, Throttle-Capability, BatteryArticle14, ExtendedSettings und MCU-Bootloaderstatus sind zunächst nur Hyena-Offline-Capabilities, keine BT638-Laufzeitziele. Ein SDK-Getter ist nicht gleichbedeutend mit Android-`PROPERTY_READ`. Ohne belegte Hyena→BT638/DA1A-Aufrufkette wird keiner dieser Vendor-Aufrufe am Scooter ausgeführt. Motor-Tuning-UI belegt eine Produktfunktion im App-Baukasten, aber keine Freigabe für automatische Änderungen.
 
 ## 3. Native libble-Funktionen mit hohem Read-only-Wert
 
@@ -151,7 +151,7 @@ In der Base liegen Strings wie:
 
 Zusätzlich existieren generische/Sachs-nahe `WalkAssist`-/Auto-Off-Pfade. Auch diese werden **nicht** als Hyena-Funktion gewertet, solange kein Hyena-spezifischer Manager-/Part-Pfad oder BT638-Nachweis existiert.
 
-Diese Multi-Vendor-Funde dürfen nicht auf 15xx-Hyena-Kanäle übertragen werden, solange kein Hyena-/BT638-spezifischer Pfad oder Live-Beweis existiert.
+Diese Multi-Vendor-Funde dürfen nicht auf BT638/GPST-DA1A-15xx-Kanäle übertragen werden, solange kein geräte- und laufzeitspezifischer Pfad oder Live-Beweis existiert.
 
 ## 5. IoT/Cloud-Funktionen in der Base
 
@@ -182,7 +182,7 @@ Dazu kommen Ressourcen-/UI-Schlüssel wie:
 
 Im Gesamt-SDK sind außerdem Getter/Setter-Namen für Cruise-Control vorhanden. Ein expliziter Logpfad `HobbywingSDK: SetCruiseControl` zeigt jedoch, dass mindestens ein Teil davon provider-/herstellerabhängig ist.
 
-**Bewertung:** Cruise-Control und Lock/Unlock sind echte VMAX-Dashboard-UI-Funktionen im ausgelieferten App-Code. Das beweist noch nicht, dass der BT638/Hyena-Stack sie unterstützt oder auf welchen Kanal sie gehören. Für unser Dashboard zuerst nur Capability-/Status-Erkennung; keine Cruise-/Lock-Schreibfunktion aus Strings ableiten.
+**Bewertung:** Cruise-Control und Lock/Unlock sind echte VMAX-Dashboard-UI-Funktionen im ausgelieferten App-Code. Das beweist noch nicht, dass der BT638/GPST-DA1A-Livepfad sie unterstützt oder auf welchen Kanal sie gehören. Für unser Dashboard zuerst nur Capability-/Status-Erkennung; keine Cruise-/Lock-Schreibfunktion aus Strings ableiten.
 
 ## 7. Bereits bekannte Start-/Fahrmodi werden erneut gestützt
 
@@ -196,11 +196,11 @@ Das passt zu dem bereits live beobachteten Startmodus. Kein neuer Schreibpfad wi
 
 ## 8. Priorisierte sichere nächste Schritte
 
-1. Hyena ELM/Charging Capability **nur lesen**: Supported, OptimizedChargingStatus, LongStorageMode, ExtendedLifeMode, ExtenderBattery presence/settings.
-2. Hyena Battery/Health **nur lesen**: BatteryArticle14, BatteryInfo, BatteryCellUpdate, BatteryChange, ChargeCycles, ProductionDate, CapacityThroughputInAh, SOH und MaxCapacity-bezogene Felder.
-3. Diagnose **nur lesen**: SerialNumbers, Error, ErrorString, Firmware-/Hardwaredetails, MCU bootloader status.
-4. Komfort **nur lesen**: PedalResponse current values, throttle capability flag, wireless remote presence/actions, lock status sowie Cruise-/Lock-Capability ohne Write.
-5. Ergebnisse immer gegen BT638-Live-/READ-Daten validieren; keine Multi-Vendor-EBox-/Brose-/Sachs-Felder als Hyena-Semantik übernehmen.
+1. Hyena ELM/Charging und Battery/Health ausschließlich **offline inventarisieren**; keine Vendor-Getter am BT638 aufrufen.
+2. Auf dem BT638 nur die tatsächlich entdeckten Android-Characteristics mit `PROPERTY_READ` sequenziell lesen und Service-/Characteristic-UUID, Status und exakte Callbackbytes sichern.
+3. Diagnosekandidaten wie SerialNumbers, Error, ErrorString und Firmware-/Hardwaredetails nur dann lesen, wenn der BT638 selbst die entsprechende READ-Eigenschaft anbietet.
+4. PedalResponse, Throttle, Wireless Remote, Lock und Cruise nur als getrennte Vendor-/SDK-Capabilities führen; kein Runtime-Aufruf ohne belegte BT638/DA1A-Callchain.
+5. Ergebnisse immer gegen BT638-Live-/READ-Daten validieren; keine Multi-Vendor-Hyena-/EBox-/Brose-/Sachs-Semantik übertragen.
 
 ## Evidenz- und Sicherheitsregel
 

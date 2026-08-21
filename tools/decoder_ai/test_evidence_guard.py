@@ -91,7 +91,7 @@ class EvidenceGuardTests(unittest.TestCase):
         self.assertEqual(76.4, power["evidenceGuard"]["crossFieldClosePercent"])
         self.assertFalse(power["evidenceGuard"]["independentExternalConfirmation"])
 
-    def test_independently_confirmed_direct_power_stays_confirmed(self):
+    def test_boolean_independent_flag_without_provenance_cannot_bypass_guard(self):
         profile = {
             "revision": "old",
             "rideCount": 2,
@@ -111,8 +111,39 @@ class EvidenceGuardTests(unittest.TestCase):
             }
         }
         guarded = evidence_guard.apply_evidence_guard(profile, libble)
-        self.assertEqual("confirmed", guarded["rules"][0]["status"])
-        self.assertEqual(1, guarded["confirmedRuleCount"])
+        self.assertEqual("candidate", guarded["rules"][0]["status"])
+        self.assertEqual(0, guarded["confirmedRuleCount"])
+
+    def test_syntactic_hash_cannot_bypass_guard_without_locally_hashed_artifact(self):
+        profile = {
+            "revision": "old",
+            "rideCount": 2,
+            "rules": [{
+                "signal": "powerW", "channel": "1509", "offset": 9,
+                "encoding": "u16be", "status": "confirmed", "confidence": 99,
+            }],
+        }
+        libble = {
+            "aggregate_fields": {
+                "1509.direct_power_W": {
+                    "independent_semantic_confirmation": True,
+                    "verdict": "BT638_INDEPENDENTLY_CONFIRMED",
+                    "independent_evidence_type": "external_power_meter",
+                    "independent_evidence_artifact_sha256": "a" * 64,
+                }
+            }
+        }
+
+        guarded = evidence_guard.apply_evidence_guard(profile, libble)
+
+        power = guarded["rules"][0]
+        self.assertEqual("candidate", power["status"])
+        self.assertEqual(0, guarded["confirmedRuleCount"])
+        self.assertFalse(power["evidenceGuard"]["independentExternalConfirmation"])
+        self.assertEqual(
+            "disabled-until-artifact-is-locally-hashed",
+            power["evidenceGuard"]["independentArtifactBinding"],
+        )
 
     def test_report_does_not_call_direct_power_ground_truth_and_shows_crosscheck(self):
         profile = {

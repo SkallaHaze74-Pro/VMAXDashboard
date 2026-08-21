@@ -32,11 +32,11 @@ object VmaxSdkCapabilityCatalog {
             family = family("1505"),
             meaning = "Live-Fahrdatenkanal mit bestätigter Geschwindigkeitssemantik.",
             sources = listOf("Original SDK", "Original APK", "BT638 bestätigt", "Live beobachtet"),
-            confirmedDetails = listOf(
-                "Geschwindigkeit Byte 6-7 bestätigt",
-                "SDK-Restreichweite Byte 10-11 in km; FFFF=nicht verfügbar"
+            confirmedDetails = listOf("Geschwindigkeit Byte 6-7 bestätigt"),
+            unknownDetails = listOf(
+                "SDK-Layoutkandidat Restreichweite Byte 10-11 in km; FFFF=nicht verfügbar",
+                "BT638 lieferte noch keinen unabhängig bestätigten numerischen Restreichweitenwert"
             ),
-            unknownDetails = listOf("BT638 lieferte noch keinen numerischen Restreichweitenwert"),
             uiHint = "prominent als Live-Fahrdaten anzeigen"
         ),
         "1506" to VmaxGattKnowledge(
@@ -64,10 +64,15 @@ object VmaxSdkCapabilityCatalog {
         "1509" to VmaxGattKnowledge(
             evidence = CapabilityEvidence.BT638_CONFIRMED,
             family = family("1509"),
-            meaning = "Zentraler Akku-Livekanal mit bestätigten Strom-, Spannungs- und Leistungswerten.",
+            meaning = "Zentraler Akku-Livekanal mit bestätigtem SOC, Strom und Spannung; direkte Leistung bleibt Kandidat.",
             sources = listOf("Original SDK", "Original APK", "BT638 bestätigt", "Sicherheitsregel"),
-            confirmedDetails = listOf("Akku, Spannung, Strom und direkte Leistung bestätigt"),
-            uiHint = "als Ground-Truth-Akkukanal hervorheben",
+            confirmedDetails = listOf("SOC, Spannung und Hauptstrom am BT638 bestätigt/belastbar"),
+            unknownDetails = listOf(
+                "Temperaturfeld und zweiter Stromwert folgen dem nativen Parserlayout, benötigen aber unabhängige BT638-Bestätigung",
+                "Byte 9-10 direkte Leistung nur per unabhängigem Cross-Field-Abgleich plausibilisiert",
+                "BMS-Direktquelle gegenüber V-Core-Weiterleitung offen"
+            ),
+            uiHint = "bestätigte Akkuwerte und Leistungskandidat getrennt darstellen",
             safetyNote = "nicht als Licht-, Blinker- oder Schalterkanal uminterpretieren"
         ),
         "150D" to VmaxGattKnowledge(
@@ -87,7 +92,7 @@ object VmaxSdkCapabilityCatalog {
         "1503" to VmaxGattKnowledge(CapabilityEvidence.BT638_OBSERVED, family("1503"), "Statischer Motor-/Controllerblock mit offener BT638-Zuordnung.", listOf("BT638 beobachtet", "Original SDK", "Original APK"), unknownDetails = listOf("Offsets gegen READ-Antworten prüfen"), uiHint = "als Referenzkanal behandeln"),
         "1504" to VmaxGattKnowledge(CapabilityEvidence.BT638_OBSERVED, family("1504"), "Firmware- und Komponentenkennung im BT638 beobachtet.", listOf("BT638 beobachtet", "Original SDK", "Original APK"), uiHint = "für Versionsabgleich nutzen"),
         "1507" to VmaxGattKnowledge(CapabilityEvidence.BT638_OBSERVED, family("1507"), "Statistikblock im BT638 beobachtet, Bedeutung im Detail noch offen.", listOf("BT638 beobachtet", "Original SDK"), unknownDetails = listOf("Offsets mit RX-/READ-Vergleich schärfen"), uiHint = "defensiv anzeigen"),
-        "150A" to VmaxGattKnowledge(CapabilityEvidence.BT638_OBSERVED, family("150A"), "Dynamischer Motor-/Lastkanal beobachtet.", listOf("BT638 beobachtet", "Original SDK", "Original APK"), confirmedDetails = listOf("Motor- und Lastbezug aus Referenz bekannt"), unknownDetails = listOf("modellabhängige Feldverfügbarkeit beachten"), uiHint = "verfügbare Live-Felder priorisieren"),
+        "150A" to VmaxGattKnowledge(CapabilityEvidence.BT638_OBSERVED, family("150A"), "Dynamischer Block beobachtet; die Motor-Feldrollen stammen bislang nur aus dem nativen SDK-Layout.", listOf("BT638 beobachtet", "Original SDK", "Original APK"), confirmedDetails = listOf("Characteristic 150A wurde am BT638 beobachtet"), unknownDetails = listOf("Strom, Spannung, RPM, Drehmoment und Temperatur am BT638 unabhängig bestätigen"), uiHint = "Werte nur als SDK-Layout/Kandidaten anzeigen"),
         "150B" to VmaxGattKnowledge(CapabilityEvidence.BT638_OBSERVED, family("150B"), "Bisher überwiegend Platzhalterdaten.", listOf("BT638 beobachtet"), confirmedDetails = listOf("bisher überwiegend FF-Platzhalter"), unknownDetails = listOf("erst bei echten Daten neu bewerten"), uiHint = "als kaum nutzbar markieren"),
         "150C" to VmaxGattKnowledge(CapabilityEvidence.BT638_OBSERVED, family("150C"), "Zell- und Temperaturbezug im SDK plausibel, BT638-Details offen.", listOf("BT638 beobachtet", "Original SDK", "Original APK"), unknownDetails = listOf("exakte Byte-Offsets erst nach neuer Verifikation"), uiHint = "als erweiterten Diagnosekanal führen"),
         "150E" to VmaxGattKnowledge(CapabilityEvidence.BT638_OBSERVED, family("150E"), "Am BT638 entdeckt; Bedeutung offen.", listOf("BT638 beobachtet"), unknownDetails = listOf("noch keine belastbare Zuordnung"), uiHint = "neutral anzeigen"),
@@ -108,13 +113,26 @@ object VmaxSdkCapabilityCatalog {
         "2A02" to "Peripheral Privacy Flag",
         "2A04" to "Peripheral Preferred Connection Parameters",
         "2A05" to "Service Changed",
+        "2A25" to "Serial Number String",
         "2A28" to "Software Revision String"
     )
 
-    fun classify(service: String, characteristic: String): VmaxGattKnowledge {
-        bt638Confirmed[characteristic]?.let { return it }
-        bt638Observed[characteristic]?.let { return it }
-        standardBluetooth[characteristic]?.let {
+    fun classify(serviceUuid: String, characteristicUuid: String): VmaxGattKnowledge {
+        val service = normalizeGattShortUuid(serviceUuid)
+        val characteristic = normalizeGattShortUuid(characteristicUuid)
+        val da1aPair = isDa1aPair(serviceUuid, characteristicUuid, service, characteristic)
+        val bt638Pair = da1aPair && when (service) {
+            "1500" -> characteristic.startsWith("15")
+            "1600" -> characteristic.startsWith("16")
+            "1800" -> characteristic.startsWith("18")
+            "1E00" -> characteristic.startsWith("1E")
+            else -> false
+        }
+        if (bt638Pair) {
+            bt638Confirmed[characteristic]?.let { return it }
+            bt638Observed[characteristic]?.let { return it }
+        }
+        if (isBluetoothBaseUuid(characteristicUuid, characteristic)) standardBluetooth[characteristic]?.let {
             return VmaxGattKnowledge(
                 evidence = CapabilityEvidence.BLUETOOTH_STANDARD,
                 family = "Standard-GATT",
@@ -123,7 +141,7 @@ object VmaxSdkCapabilityCatalog {
                 uiHint = "als Standarddienst kennzeichnen"
             )
         }
-        standardBluetooth[service]?.let {
+        if (isBluetoothBaseUuid(serviceUuid, service)) standardBluetooth[service]?.let {
             return VmaxGattKnowledge(
                 evidence = CapabilityEvidence.BLUETOOTH_STANDARD,
                 family = "Standard-GATT",
@@ -133,7 +151,7 @@ object VmaxSdkCapabilityCatalog {
             )
         }
 
-        val sdkMeaning = when {
+        val sdkMeaning = if (!da1aPair) null else when {
             characteristic in setOf("1514", "1516", "1517", "1518") ->
                 "Im nativen GPST-SDK vorhanden; BT638-Unterstützung noch nicht bestätigt."
             characteristic.startsWith("16") ->
@@ -144,8 +162,12 @@ object VmaxSdkCapabilityCatalog {
                 "SDK-Familie für Batterie-/Ladeinformationen."
             characteristic == "1C00" ->
                 "SDK-Zusatzdienst; Bedeutung modellabhängig."
+            characteristic == "1E03" ->
+                "ReadCharacteristicWirelessRemote ist im nativen GPST-SDK vorhanden; BT638-Unterstützung ist offen."
+            characteristic == "1E04" ->
+                "ReadCharacteristicWirelessRemoteAction ist im nativen GPST-SDK vorhanden; BT638-Unterstützung ist offen."
             characteristic.startsWith("1E") ->
-                "SDK-Familie für erweiterte Batterie-/Lade- oder Speichermodi."
+                "GPST-SDK-Zusatzfamilie; konkrete BT638-Bedeutung ist offen."
             characteristic.startsWith("1F") ->
                 "SDK-Zusatzfamilie; Bedeutung modellabhängig."
             service.startsWith("15") || characteristic.startsWith("15") ->
@@ -173,12 +195,26 @@ object VmaxSdkCapabilityCatalog {
         }
     }
 
+    private fun isDa1aPair(
+        serviceUuid: String,
+        characteristicUuid: String,
+        serviceShort: String,
+        characteristicShort: String
+    ): Boolean {
+        val suffix = "-d532-4285-be94-b07a3e11a098"
+        return serviceUuid.lowercase() == "da1a${serviceShort.lowercase()}$suffix" &&
+            characteristicUuid.lowercase() == "da1a${characteristicShort.lowercase()}$suffix"
+    }
+
+    private fun isBluetoothBaseUuid(uuid: String, shortId: String): Boolean =
+        uuid.lowercase() == "0000${shortId.lowercase()}-0000-1000-8000-00805f9b34fb"
+
     private fun family(uuid: String): String = when {
         uuid.startsWith("15") -> "Telemetrie 15xx"
         uuid.startsWith("16") -> "Motor-Tuning/Firmware 16xx"
         uuid.startsWith("18") -> "Firmware/Hardware 18xx"
         uuid.startsWith("1A") -> "Batterie/Laden 1Axx"
-        uuid.startsWith("1E") -> "Erweiterte Batterie/Laden 1Exx"
+        uuid.startsWith("1E") -> "Remote/Zusatzdienst 1Exx"
         uuid.startsWith("1F") -> "Zusatzdienst 1Fxx"
         else -> "GATT"
     }

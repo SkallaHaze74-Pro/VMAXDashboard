@@ -7,6 +7,8 @@ import json
 from collections import Counter, defaultdict
 from pathlib import Path
 
+from raw_origin_guard import is_accepted_live_notification
+
 SENTINELS = {0xFFFF, 0x8000}
 
 
@@ -74,7 +76,7 @@ def analyze(root: Path) -> dict:
     for ride in ride_dirs(root):
         local = defaultdict(list)
         for row in raw_rows(ride / "BLE_Rohdaten.csv"):
-            if str(row.get("origin") or "NOTIFICATION").upper() == "READ":
+            if not is_accepted_live_notification(row):
                 continue
             channel = str(row.get("channel") or "").strip().upper()
             if channel not in {"1502", "150C"}:

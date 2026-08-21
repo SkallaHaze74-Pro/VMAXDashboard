@@ -16,27 +16,42 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.security.KeyStore
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.crypto.Cipher
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-/** One exact GATT READ response. It is diagnostic evidence, never live telemetry. */
-internal data class DiagnosticReadRecord(
-    val timestampMs: Long,
-    val serviceUuid: String,
-    val characteristicUuid: String,
-    val shortId: String,
-    val status: Int,
-    val length: Int,
-    val hex: String,
-    val evidence: String,
-    val meaning: String
+internal val REQUIRED_STANDALONE_DIAGNOSTIC_FILES = setOf(
+    DIAGNOSTIC_READ_CSV_FILE,
+    DIAGNOSTIC_READ_SUMMARY_FILE,
+    "manifest.json",
+    ".meta.json"
 )
+
+internal fun isCompleteStandaloneDiagnosticQueue(fileNames: Set<String>): Boolean =
+    REQUIRED_STANDALONE_DIAGNOSTIC_FILES.all(fileNames::contains)
+
+private const val STAGED_LOCAL_CSV = "local_read.csv"
+private const val STAGED_LOCAL_SUMMARY = "local_summary.txt"
+private const val STAGED_LOCAL_MANIFEST = "local_manifest.json"
+private const val STAGED_PUBLIC_CSV = "public_read.csv"
+private const val STAGED_PUBLIC_SUMMARY = "public_summary.txt"
+private const val STAGED_PUBLIC_MANIFEST = "public_manifest.json"
+private const val STAGED_META = ".stage.json"
+
+internal val REQUIRED_DURABLE_DIAGNOSTIC_STAGE_FILES = setOf(
+    STAGED_LOCAL_CSV,
+    STAGED_LOCAL_SUMMARY,
+    STAGED_LOCAL_MANIFEST,
+    STAGED_PUBLIC_CSV,
+    STAGED_PUBLIC_SUMMARY,
+    STAGED_PUBLIC_MANIFEST,
+    STAGED_META
+)
+
+internal fun isCompleteDurableDiagnosticStage(fileNames: Set<String>): Boolean =
+    REQUIRED_DURABLE_DIAGNOSTIC_STAGE_FILES.all(fileNames::contains)
 
 /**
  * Persists a complete read-only GATT inventory independently from measurement telemetry.
@@ -63,66 +78,68 @@ internal class DiagnosticReadArchive private constructor(context: Context) {
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val queueRoot = File(appContext.filesDir, "diagnostic_read_queue").apply { mkdirs() }
+    private val durableStageRoot = File(appContext.filesDir, "diagnostic_read_exact_staging").apply { mkdirs() }
     private val executor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val started = AtomicBoolean(false)
 
     fun start() {
         if (!started.compareAndSet(false, true)) return
-        executor.execute { flushPending() }
+        executor.execute {
+            promoteCompleteHiddenStages()
+            recoverDurableStages()
+            flushPending()
+        }
     }
 
+    fun retryPending() {
+        executor.execute {
+            promoteCompleteHiddenStages()
+            recoverDurableStages()
+            flushPending()
+        }
+    }
+
+    fun pendingCount(): Int =
+        (queueRoot.listFiles()?.count { it.isDirectory && !it.name.startsWith(".") } ?: 0) +
+            (durableStageRoot.listFiles()?.count { it.isDirectory && !it.name.startsWith(".") } ?: 0)
+
     fun saveAndPublish(
-        records: List<DiagnosticReadRecord>,
-        deviceName: String,
-        scanStartedAt: Long,
-        scanFinishedAt: Long,
+        bundle: DiagnosticReadBundle,
         onStatus: (String) -> Unit = {}
     ) {
-        if (records.isEmpty()) {
+        if (bundle.records.isEmpty()) {
             mainHandler.post { onStatus("READ-Scan fertig • keine READ-Antworten gespeichert") }
             return
         }
-        val frozen = records.toList()
-        executor.execute {
-            val stamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.GERMANY)
-                .format(Date(scanStartedAt))
-            val folderName = "DeepRead_$stamp"
-            val localFolder = "VMAXDashboard/$folderName"
-            val csv = buildCsv(frozen)
-            val summary = buildSummary(frozen, deviceName, scanStartedAt, scanFinishedAt)
-            val manifest = buildManifest(frozen, deviceName, folderName, scanStartedAt, scanFinishedAt)
-
-            try {
-                writeDownloadFile(localFolder, "Gatt_READ_Diagnose.csv", "text/csv", csv)
-                writeDownloadFile(localFolder, "Gatt_READ_Summary.txt", "text/plain", summary)
-                writeDownloadFile(localFolder, "manifest.json", "application/json", manifest.toString(2))
-            } catch (error: Throwable) {
+        val frozen = bundle.copy(records = bundle.records.toList())
+        val durableStage = runCatching { stageBundleDurably(frozen) }
+            .getOrElse { error ->
                 mainHandler.post {
-                    onStatus("READ-Dump konnte lokal nicht gespeichert werden: ${safeMessage(error)}")
+                    onStatus("READ-Dump konnte nicht atomar vorgemerkt werden: ${safeMessage(error)}")
+                }
+                return
+            }
+        executor.execute {
+            val callbacks = runCatching {
+                JSONObject(File(durableStage, STAGED_META).readText()).optInt("callbacks")
+            }.getOrDefault(diagnosticReadCounts(frozen.records).callbacks)
+            val processed = runCatching { processDurableStage(durableStage) }
+            if (processed.isFailure) {
+                val error = processed.exceptionOrNull() ?: IllegalStateException("Unbekannter Stage-Fehler")
+                mainHandler.post {
+                    onStatus(
+                        "READ-Dump bleibt atomar vorgemerkt; Export wartet: ${safeMessage(error)}"
+                    )
                 }
                 return@execute
             }
-
-            val queueFolder = File(queueRoot, folderName)
-            queueFolder.deleteRecursively()
-            queueFolder.mkdirs()
-            File(queueFolder, "Gatt_READ_Diagnose.csv").writeText(csv)
-            File(queueFolder, "Gatt_READ_Summary.txt").writeText(summary)
-            File(queueFolder, "manifest.json").writeText(manifest.toString(2))
-            val remoteDate = stamp.take(10)
-            File(queueFolder, ".meta.json").writeText(
-                JSONObject()
-                    .put("remoteFolder", "$REMOTE_ROOT/$remoteDate/$folderName")
-                    .toString()
-            )
-
             val uploadResult = flushPending()
             mainHandler.post {
                 onStatus(
                     when (uploadResult) {
-                        UploadResult.UPLOADED -> "✓ Deep READ gespeichert + GitHub • ${frozen.size} Antworten"
-                        UploadResult.LOCAL_ONLY -> "✓ Deep READ lokal gespeichert • ${frozen.size} Antworten"
+                        UploadResult.UPLOADED -> "✓ Deep READ gespeichert + GitHub • $callbacks Callbacks"
+                        UploadResult.LOCAL_ONLY -> "✓ Deep READ lokal gespeichert • $callbacks Callbacks"
                         UploadResult.PENDING -> "✓ Deep READ lokal gespeichert • GitHub-Upload wartet"
                     }
                 )
@@ -130,94 +147,251 @@ internal class DiagnosticReadArchive private constructor(context: Context) {
         }
     }
 
-    private fun buildCsv(records: List<DiagnosticReadRecord>): String = buildString {
-        appendLine("timestamp_ms;service_uuid;characteristic_uuid;short_id;status;length;hex;evidence;meaning")
-        records.forEach { record ->
-            appendLine(
-                listOf(
-                    record.timestampMs.toString(),
-                    record.serviceUuid,
-                    record.characteristicUuid,
-                    record.shortId,
-                    record.status.toString(),
-                    record.length.toString(),
-                    record.hex,
-                    record.evidence,
-                    record.meaning
-                ).joinToString(";") { csvCell(it) }
+    @Synchronized
+    private fun stageBundleDurably(bundle: DiagnosticReadBundle): File {
+        val folderName = diagnosticReadFolderName(bundle)
+        val target = File(durableStageRoot, folderName)
+        if (target.isDirectory && isCompleteDurableStage(target)) return target
+        check(!target.exists()) { "Durables Diagnoseziel existiert unvollständig: $folderName" }
+        val staging = File(durableStageRoot, ".$folderName.staging-${System.nanoTime()}")
+        check(staging.mkdirs()) { "Durables Diagnose-Staging konnte nicht angelegt werden" }
+        val records = diagnosticRecordsForBundles(listOf(bundle))
+        val remoteDate = folderName.removePrefix("DeepRead_").take(10)
+        try {
+            File(staging, STAGED_LOCAL_CSV).writeText(
+                buildDiagnosticReadCsv(records, DiagnosticReadRepresentation.LOCAL_EXACT)
             )
+            File(staging, STAGED_LOCAL_SUMMARY).writeText(
+                buildDiagnosticReadSummary(listOf(bundle), DiagnosticReadRepresentation.LOCAL_EXACT)
+            )
+            File(staging, STAGED_LOCAL_MANIFEST).writeText(
+                buildManifest(bundle, folderName, DiagnosticReadRepresentation.LOCAL_EXACT).toString(2)
+            )
+            File(staging, STAGED_PUBLIC_CSV).writeText(
+                buildDiagnosticReadCsv(records, DiagnosticReadRepresentation.PUBLIC_REDACTED)
+            )
+            File(staging, STAGED_PUBLIC_SUMMARY).writeText(
+                buildDiagnosticReadSummary(listOf(bundle), DiagnosticReadRepresentation.PUBLIC_REDACTED)
+            )
+            File(staging, STAGED_PUBLIC_MANIFEST).writeText(
+                buildManifest(bundle, folderName, DiagnosticReadRepresentation.PUBLIC_REDACTED).toString(2)
+            )
+            File(staging, STAGED_META).writeText(
+                JSONObject()
+                    .put("folderName", folderName)
+                    .put("localFolder", "VMAXDashboard/$folderName")
+                    .put("remoteDate", remoteDate)
+                    .put("scanId", bundle.scanId)
+                    .put("callbacks", diagnosticReadCounts(records).callbacks)
+                    .toString()
+            )
+            check(isCompleteDurableStage(staging)) { "Durables Diagnose-Staging ist unvollständig" }
+            check(staging.renameTo(target)) { "Durables Diagnose-Staging konnte nicht atomar übernommen werden" }
+            return target
+        } catch (error: Throwable) {
+            staging.deleteRecursively()
+            throw error
         }
     }
 
-    private fun buildSummary(
-        records: List<DiagnosticReadRecord>,
-        deviceName: String,
-        startedAt: Long,
-        finishedAt: Long
-    ): String {
-        val successful = records.count { it.status == android.bluetooth.BluetoothGatt.GATT_SUCCESS }
-        val nonEmpty = records.count { it.hex.isNotBlank() }
-        val uniqueCharacteristics = records.map { "${it.serviceUuid}/${it.characteristicUuid}" }.toSet().size
-        return buildString {
-            appendLine("VMAX BT638 Deep READ")
-            appendLine("Gerät: $deviceName")
-            appendLine("Start: $startedAt")
-            appendLine("Ende: $finishedAt")
-            appendLine("Dauer_ms: ${finishedAt - startedAt}")
-            appendLine("READ_Antworten: ${records.size}")
-            appendLine("READ_Erfolgreich: $successful")
-            appendLine("READ_Mit_Payload: $nonEmpty")
-            appendLine("Characteristics: $uniqueCharacteristics")
-            appendLine("Modus: STRICT_READ_ONLY")
-            appendLine("BluetoothAdresse: nicht gespeichert")
-            appendLine("Hinweis: READ-Daten werden niemals als Live-Telemetrie oder automatische Decoder-Bestätigung behandelt.")
-        }
+    private fun recoverDurableStages() {
+        durableStageRoot.listFiles()
+            ?.filter { it.isDirectory && !it.name.startsWith(".") }
+            ?.sortedBy(File::lastModified)
+            .orEmpty()
+            .forEach { stage -> runCatching { processDurableStage(stage) } }
     }
+
+    /** Recovers a process death after all files were written but before directory rename. */
+    private fun promoteCompleteHiddenStages() {
+        durableStageRoot.listFiles()
+            ?.filter { it.isDirectory && it.name.startsWith(".") && isCompleteDurableStage(it) }
+            .orEmpty()
+            .forEach { staging ->
+                runCatching {
+                    val meta = JSONObject(File(staging, STAGED_META).readText())
+                    val target = File(durableStageRoot, meta.getString("folderName"))
+                    when {
+                        target.isDirectory && isCompleteDurableStage(target) -> staging.deleteRecursively()
+                        !target.exists() -> check(staging.renameTo(target)) {
+                            "Vollständiges Diagnose-Staging konnte nicht wiederhergestellt werden"
+                        }
+                    }
+                }
+            }
+    }
+
+    private fun processDurableStage(stage: File) {
+        check(isCompleteDurableStage(stage)) { "Durables Diagnose-Staging ist unvollständig" }
+        val meta = JSONObject(File(stage, STAGED_META).readText())
+        val folderName = meta.getString("folderName")
+        val localFolder = meta.getString("localFolder")
+        val scanId = meta.getString("scanId")
+        val queueFolder = queueFolderFor(scanId, folderName)
+
+        // App-private exact staging remains the recovery source until all local
+        // files and the complete public queue directory exist.
+        writeDownloadFile(
+            localFolder,
+            DIAGNOSTIC_READ_CSV_FILE,
+            "text/csv",
+            File(stage, STAGED_LOCAL_CSV).readText()
+        )
+        writeDownloadFile(
+            localFolder,
+            DIAGNOSTIC_READ_SUMMARY_FILE,
+            "text/plain",
+            File(stage, STAGED_LOCAL_SUMMARY).readText()
+        )
+        writeDownloadFile(
+            localFolder,
+            "manifest.json",
+            "application/json",
+            File(stage, STAGED_LOCAL_MANIFEST).readText()
+        )
+        writeQueueAtomically(
+            target = queueFolder,
+            files = mapOf(
+                DIAGNOSTIC_READ_CSV_FILE to File(stage, STAGED_PUBLIC_CSV).readText(),
+                DIAGNOSTIC_READ_SUMMARY_FILE to File(stage, STAGED_PUBLIC_SUMMARY).readText(),
+                "manifest.json" to File(stage, STAGED_PUBLIC_MANIFEST).readText(),
+                ".meta.json" to JSONObject()
+                    .put(
+                        "remoteFolder",
+                        "$REMOTE_ROOT/${meta.getString("remoteDate")}/${queueFolder.name}"
+                    )
+                    .put("scanId", scanId)
+                    .toString()
+            )
+        )
+        check(isCompleteQueueFolder(queueFolder)) { "Öffentliche Diagnosequeue ist unvollständig" }
+        check(stage.deleteRecursively()) { "Durables Diagnose-Staging konnte nicht bereinigt werden" }
+    }
+
+    private fun isCompleteDurableStage(folder: File): Boolean =
+        isCompleteDurableDiagnosticStage(
+            folder.listFiles()?.filter(File::isFile)?.map(File::getName)?.toSet().orEmpty()
+        )
 
     private fun buildManifest(
-        records: List<DiagnosticReadRecord>,
-        deviceName: String,
+        bundle: DiagnosticReadBundle,
         folderName: String,
-        startedAt: Long,
-        finishedAt: Long
+        representation: DiagnosticReadRepresentation
     ): JSONObject {
         val packageInfo = appContext.packageManager.getPackageInfo(appContext.packageName, 0)
+        val records = diagnosticRecordsForBundles(listOf(bundle))
+        val counts = diagnosticReadCounts(records)
+        val public = representation == DiagnosticReadRepresentation.PUBLIC_REDACTED
+        val deviceIdentity = bundle.deviceName.ifBlank { "BT638" }
         return JSONObject()
-            .put("schema", "vmax-bt638-deep-read-v1")
+            .put("schema", "vmax-bt638-deep-read-v3")
             .put("diagnostic", folderName)
-            .put("device", deviceName)
-            .put("start_ms", startedAt)
-            .put("end_ms", finishedAt)
-            .put("read_responses", records.size)
-            .put("read_success", records.count { it.status == android.bluetooth.BluetoothGatt.GATT_SUCCESS })
-            .put("read_payloads", records.count { it.hex.isNotBlank() })
+            .put("scan_id", bundle.scanId)
+            .put(
+                "device",
+                if (public) diagnosticPublicDeviceLabel(deviceIdentity) else deviceIdentity
+            )
+            .put("start_ms", bundle.scanStartedAt)
+            .put("end_ms", bundle.scanFinishedAt)
+            .put("connection_epoch", bundle.connectionEpoch)
+            .put("completed", bundle.completed)
+            .put("completion_outcome", bundle.completionOutcome.name)
+            .put("read_attempts", counts.attempts)
+            .put("read_callbacks", counts.callbacks)
+            // Backwards-compatible alias now has the strict callback meaning.
+            .put("read_responses", counts.callbacks)
+            .put("read_success", counts.successes)
+            .put("read_payload_callbacks", counts.payloadCallbacks)
+            .put("read_valid_payloads", counts.validPayloads)
+            .put("advertisement_payloads", counts.observationPayloads)
+            .put("observations", counts.observations)
             .put("read_only", true)
             .put("bluetooth_address_included", false)
+            .put("public_identity_redacted", public)
+            .put("public_payload_redaction", "identity/free-form/advertisement SHA-256")
+            .put(
+                "public_hash_privacy",
+                "unsalted SHA-256 pseudonym; same payload is linkable across public uploads"
+            )
             .put("app_version", packageInfo.versionName.orEmpty())
             .put("created_at_ms", System.currentTimeMillis())
     }
 
+    /** Never delete an unrelated pending scan when a filename collision occurs. */
+    private fun queueFolderFor(scanId: String, preferredName: String): File {
+        val preferred = File(queueRoot, preferredName)
+        if (!preferred.exists()) return preferred
+        val existingScanId = runCatching {
+            File(preferred, ".meta.json").takeIf(File::isFile)
+                ?.let { JSONObject(it.readText()).optString("scanId") }
+        }.getOrNull()
+        if (existingScanId == scanId && isCompleteQueueFolder(preferred)) return preferred
+
+        val suffix = diagnosticPayloadSha256(scanId).take(12)
+        repeat(100) { index ->
+            val extra = if (index == 0) "" else "_$index"
+            val collisionSafe = File(queueRoot, "${preferredName}_${suffix}$extra")
+            if (!collisionSafe.exists()) return collisionSafe
+            val collisionScanId = runCatching {
+                File(collisionSafe, ".meta.json").takeIf(File::isFile)
+                    ?.let { JSONObject(it.readText()).optString("scanId") }
+            }.getOrNull()
+            if (collisionScanId == scanId && isCompleteQueueFolder(collisionSafe)) {
+                return collisionSafe
+            }
+        }
+        error("READ-Dump-Ordnerkollision für $scanId")
+    }
+
+    private fun writeQueueAtomically(target: File, files: Map<String, String>) {
+        if (target.isDirectory && isCompleteQueueFolder(target)) return
+        check(!target.exists()) { "Diagnose-Queue-Ziel existiert unvollständig: ${target.name}" }
+        val staging = File(queueRoot, ".${target.name}.staging-${System.nanoTime()}")
+        check(staging.mkdirs()) { "Diagnose-Staging konnte nicht angelegt werden" }
+        try {
+            files.forEach { (name, content) -> File(staging, name).writeText(content) }
+            check(isCompleteQueueFolder(staging)) { "Diagnose-Staging ist unvollständig" }
+            check(staging.renameTo(target)) { "Diagnose-Staging konnte nicht atomar übernommen werden" }
+        } catch (error: Throwable) {
+            staging.deleteRecursively()
+            throw error
+        }
+    }
+
+    private fun isCompleteQueueFolder(folder: File): Boolean =
+        isCompleteStandaloneDiagnosticQueue(
+            folder.listFiles()?.filter(File::isFile)?.map(File::getName)?.toSet().orEmpty()
+        )
+
     private fun flushPending(): UploadResult {
         if (!prefs.getBoolean("enabled", false)) return UploadResult.LOCAL_ONLY
         val token = tokenOrNull() ?: return UploadResult.LOCAL_ONLY
-        val pending = queueRoot.listFiles()?.filter { it.isDirectory }?.sortedBy(File::lastModified).orEmpty()
+        val pending = queueRoot.listFiles()
+            ?.filter { it.isDirectory && !it.name.startsWith(".") }
+            ?.sortedBy(File::lastModified)
+            .orEmpty()
         if (pending.isEmpty()) return UploadResult.UPLOADED
         val uploader = DiagnosticGitHubUploader(token, OWNER, REPO, DATA_BRANCH, BASE_BRANCH)
+        var incompleteFound = false
         return try {
             uploader.ensureDataBranch()
             pending.forEach { folder ->
+                if (!isCompleteQueueFolder(folder)) {
+                    incompleteFound = true
+                    return@forEach
+                }
                 val meta = File(folder, ".meta.json").takeIf(File::isFile)
                     ?.let { JSONObject(it.readText()) } ?: return@forEach
                 val remoteFolder = meta.getString("remoteFolder")
                 // Manifest goes last, so the workflow path filter sees only a complete bundle.
-                listOf("Gatt_READ_Diagnose.csv", "Gatt_READ_Summary.txt", "manifest.json")
+                listOf(DIAGNOSTIC_READ_CSV_FILE, DIAGNOSTIC_READ_SUMMARY_FILE, "manifest.json")
                     .forEach { name ->
                         val file = File(folder, name)
                         if (file.isFile) uploader.uploadIfMissing("$remoteFolder/$name", file.readBytes(), folder.name)
                     }
                 folder.deleteRecursively()
             }
-            UploadResult.UPLOADED
+            if (incompleteFound) UploadResult.PENDING else UploadResult.UPLOADED
         } catch (_: Throwable) {
             UploadResult.PENDING
         }
@@ -250,22 +424,24 @@ internal class DiagnosticReadArchive private constructor(context: Context) {
             val resolver = appContext.contentResolver
             val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
                 ?: error("Datei $fileName konnte nicht angelegt werden")
-            resolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(content) }
-                ?: error("Datei $fileName konnte nicht geschrieben werden")
-            values.clear()
-            values.put(MediaStore.Downloads.IS_PENDING, 0)
-            resolver.update(uri, values, null, null)
+            try {
+                resolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(content) }
+                    ?: error("Datei $fileName konnte nicht geschrieben werden")
+                values.clear()
+                values.put(MediaStore.Downloads.IS_PENDING, 0)
+                check(resolver.update(uri, values, null, null) == 1) {
+                    "Datei $fileName konnte nicht veröffentlicht werden"
+                }
+            } catch (error: Throwable) {
+                runCatching { resolver.delete(uri, null, null) }
+                throw error
+            }
         } else {
             val base = appContext.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS)
                 ?: error("Speicher nicht verfügbar")
             val folder = File(base, relativeFolder).apply { mkdirs() }
             File(folder, fileName).writeText(content)
         }
-    }
-
-    private fun csvCell(value: String): String {
-        if (';' !in value && '\n' !in value && '\r' !in value && '"' !in value) return value
-        return "\"${value.replace("\"", "\"\"")}\""
     }
 
     private fun safeMessage(error: Throwable): String =

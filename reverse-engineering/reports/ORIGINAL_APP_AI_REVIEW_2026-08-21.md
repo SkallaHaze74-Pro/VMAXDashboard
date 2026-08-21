@@ -3,6 +3,7 @@
 > Advisory only / READ-ONLY. KI-Aussagen sind keine Ground Truth und aktivieren nichts automatisch.
 > VMAX/V-Core, BT638/GPST-DA1A, Hyena/Hylink und andere Vendor-SDKs werden getrennt bewertet.
 > Fremde Vendor-Authentifizierung oder API-Key-Symbole gelten nicht als BT638-Secret-Key-Beweis.
+> Deterministischer Lade-Guard: Die unten noch enthaltenen Vorschläge für Live-Monitoring „während des Ladens“ sind ungültig. Der BT638 schaltet dabei nach Nutzerbeobachtung ab; zulässig sind Zustand davor, ein mögliches kurzes POWER-Fenster und der Zustand nach Abziehen/Reconnect. Ein Reconnect allein beweist keinen Ladezustand.
 
 ## Gemini
 

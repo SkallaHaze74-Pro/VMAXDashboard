@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from raw_origin_guard import is_accepted_live_notification
+
 PROFILE_SCHEMA = "vmax-adaptive-decoder-v1"
 
 TARGETS = {
@@ -44,6 +46,7 @@ SDK_CANONICAL = {
 # First real ride disproved the old interpretation of 150D/0 as a second live speed.
 # It behaves like a statistic/limit value and is therefore excluded from speed learning.
 FORBIDDEN_NUMERIC = {("speedKmh", "150D")}
+FORBIDDEN_DISCRETE_SIGNALS = {"charging"}
 BLOCKED_DISCRETE_CHANNELS = {
     "1505", "1506", "1509", "150A", "150C", "150D",
     "2A00", "2A01", "2A02", "2A04", "2A05", "2A28",
@@ -129,7 +132,7 @@ def candidate_allowed(signal: str, channel: str, offset: int, encoding: str) -> 
 
 def discrete_candidate_allowed(signal: str, channel: str, offset: int) -> bool:
     channel = channel.upper()
-    if offset < 0 or channel in BLOCKED_DISCRETE_CHANNELS:
+    if signal in FORBIDDEN_DISCRETE_SIGNALS or offset < 0 or channel in BLOCKED_DISCRETE_CHANNELS:
         return False
     if channel == "1508":
         return signal == "lightOn" and offset == 0
@@ -159,12 +162,11 @@ def read_raw_rows(path: Path) -> list[dict]:
         for row in csv.DictReader(handle, delimiter=";"):
             channel = (row.get("channel") or "").strip().upper()
             raw = hex_bytes(row.get("hex") or "")
-            origin = (row.get("origin") or "NOTIFICATION").strip().upper()
             try:
                 rel_ms = int(row.get("relative_ms") or "")
             except ValueError:
                 continue
-            if channel and raw and origin != "READ" and not suspicious_read_payload(channel, raw):
+            if channel and raw and is_accepted_live_notification(row) and not suspicious_read_payload(channel, raw):
                 rows.append({"relative_ms": rel_ms, "channel": channel, "bytes": raw})
     return rows
 

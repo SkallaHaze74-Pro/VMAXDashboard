@@ -97,19 +97,17 @@ object VmaxProtocolCatalog {
         ChannelKnowledge(
             channel = "1505",
             title = "BikePerformance / Fahrleistung",
-            summary = "Live-Fahrleistungsblock mit bestätigter Geschwindigkeits- und Leistungssemantik.",
+            summary = "Live-Fahrleistungsblock mit bestätigter Geschwindigkeit; weitere SDK-Slots bleiben BT638-Kandidaten.",
             level = KnowledgeLevel.CONFIRMED,
             sources = setOf(KnowledgeSource.ORIGINAL_SDK, KnowledgeSource.ORIGINAL_APK, KnowledgeSource.BT638_CONFIRMED, KnowledgeSource.LIVE_OBSERVED),
             confirmedDetails = listOf(
-                "Byte 0-1 Leistung A /10 W",
-                "Byte 2-3 Leistung B /10 W",
-                "Byte 4-5 Drehmoment /100 Nm",
-                "Byte 6-7 Geschwindigkeit /10 km/h",
-                "Byte 8-9 RPM/Cadence",
-                "Byte 10-11 SDK-Restreichweite in km; FFFF=nicht verfügbar",
-                "BT638-Tempo ist bestätigt"
+                "Byte 6-7 Geschwindigkeit /10 km/h am BT638 bestätigt"
             ),
-            unknownDetails = listOf("BT638 hat für die Restreichweite bisher nur FFFF geliefert"),
+            unknownDetails = listOf(
+                "Byte 0-1 und 2-3 sind im SDK als Power A/B vorgesehen, beim BT638 aber 1428/1428-mal identisch und semantisch offen",
+                "Byte 8-9 RPM/Cadence und Byte 10-11 Restreichweite lieferten bisher nur FFFF",
+                "Byte 4-5 Drehmomentrolle am BT638 nicht unabhängig bestätigt"
+            ),
             uiHint = "als zentralen Live-Fahrdatenkanal anzeigen"
         ),
         ChannelKnowledge(
@@ -145,39 +143,44 @@ object VmaxProtocolCatalog {
         ChannelKnowledge(
             channel = "1509",
             title = "BatteryChange / Akku-Livestand",
-            summary = "Zentraler Live-Akkukanal mit bestätigten Werten aus der nativen Referenzlogik.",
+            summary = "Zentraler BT638-Live-Akkukanal; direkte Leistung bleibt trotz starkem Cross-Field-Abgleich ein Kandidat.",
             level = KnowledgeLevel.CONFIRMED,
             sources = setOf(KnowledgeSource.ORIGINAL_SDK, KnowledgeSource.ORIGINAL_APK, KnowledgeSource.BT638_CONFIRMED, KnowledgeSource.SAFETY_RULE),
             confirmedDetails = listOf(
                 "Byte 0-1 Strom mA signed BE",
-                "Byte 2-3 Akkutemperatur /10 °C",
                 "Byte 4 SOC %",
-                "Byte 5-6 Spannung mV",
-                "Byte 7-8 zweiter Stromwert mA",
-                "Byte 9-10 direkte Leistung W"
+                "Byte 5-6 Spannung mV"
             ),
-            uiHint = "als Ground-Truth-Akku-Livekanal hervorheben",
+            unknownDetails = listOf(
+                "Byte 2-3 Temperatur und Byte 7-8 zweiter Stromwert folgen dem nativen Parserlayout, sind am BT638 aber noch nicht unabhängig bestätigt",
+                "Byte 9-10 direkte Leistung korreliert stark mit |Spannung × Strom|, ist aber nicht unabhängig physikalisch bestätigt",
+                "direkte BMS-Herkunft gegenüber Weiterleitung durch V-Core bleibt offen"
+            ),
+            uiHint = "bestätigte Akkuwerte zeigen und direkte Leistung ausdrücklich als Kandidat markieren",
             safetyNote = "Darf nicht als Licht-, Blinker- oder Schalterkanal umgedeutet werden"
         ),
         ChannelKnowledge(
             channel = "150A",
             title = "MotorUpdate / Motor-Livestand",
-            summary = "Live-Motorkanal mit bekannter Referenzsemantik und modellabhängiger Feldverfügbarkeit.",
+            summary = "Im nativen SDK benannter Motor-Liveblock; Feldrollen und Verfügbarkeit sind am BT638 noch offen.",
             level = KnowledgeLevel.SDK_KNOWN,
             sources = setOf(KnowledgeSource.ORIGINAL_SDK, KnowledgeSource.ORIGINAL_APK),
-            confirmedDetails = listOf("Motorstrom", "Motorspannung", "RPM", "Drehmoment /100 Nm", "Motortemperatur /10 °C"),
-            unknownDetails = listOf("0xFFFF-Felder je Modell als nicht unterstützt behandeln"),
-            uiHint = "verfügbare Live-Felder zeigen, Platzhalter ausblenden"
+            confirmedDetails = listOf("Das native Parserlayout benennt Slots für Motorstrom, Motorspannung, RPM, Drehmoment und Temperatur"),
+            unknownDetails = listOf(
+                "keine dieser 150A-Feldrollen ist am BT638 bislang unabhängig bestätigt",
+                "0xFFFF-Felder je Modell als nicht verfügbar behandeln"
+            ),
+            uiHint = "nur als SDK-Layout/Kandidaten zeigen und Platzhalter ausblenden"
         ),
         ChannelKnowledge(
             channel = "150B",
             title = "Motor-/Controllerblock",
-            summary = "Beim BT638 bisher überwiegend Platzhalterdaten und damit aktuell nicht belastbar nutzbar.",
-            level = KnowledgeLevel.UNSUPPORTED,
+            summary = "Beim BT638 beobachtet, bisher aber überwiegend Platzhalterdaten und semantisch offen.",
+            level = KnowledgeLevel.UNKNOWN,
             sources = setOf(KnowledgeSource.LIVE_OBSERVED),
             confirmedDetails = listOf("bisher häufig 0xFF-Platzhalter"),
             unknownDetails = listOf("erst bei echten Nicht-Platzhalterdaten neu bewerten"),
-            uiHint = "klar als nicht unterstützt kennzeichnen"
+            uiHint = "als beobachtet/offen markieren und Platzhalter ausblenden"
         ),
         ChannelKnowledge(
             channel = "150C",
@@ -214,8 +217,9 @@ object VmaxProtocolCatalog {
             summary = "Statischer Identifikationskanal für Serien- und Komponentenkennungen.",
             level = KnowledgeLevel.SDK_KNOWN,
             sources = setOf(KnowledgeSource.ORIGINAL_SDK, KnowledgeSource.ORIGINAL_APK),
-            confirmedDetails = listOf("bei READ-Berechtigung automatisch auslesbar"),
-            uiHint = "für Geräteidentität und Abgleich nutzen"
+            confirmedDetails = listOf("Das native GPST-SDK besitzt einen ReadCharacteristicSerialNumbers-Pfad"),
+            unknownDetails = listOf("Existenz, READ-Berechtigung und Payload auf dem BT638 müssen erst der echte Deep READ zeigen"),
+            uiHint = "exakt nur lokal sichern; bei öffentlichem Export redigieren"
         ),
         ChannelKnowledge(
             channel = "1517",

@@ -61,6 +61,7 @@ data class ScooterState(
     val packetTotal: Int = 0,
     val packetsPerSecond: Double = 0.0,
     val lastPacketAt: Long = 0L,
+    val lastBatteryTelemetryAt: Long = 0L,
     val currentPowerW: Double? = null,
     val maxSpeedKmh: Double? = null,
     val maxPowerW: Double? = null,
@@ -141,7 +142,8 @@ data class ScooterState(
     val aiDecoderSignals: Set<String>
         get() = aiSnapshot.signals
 
-    // Original VMAX/Hyena SDK semantics, decoded at the incoming BLE notification rate.
+    // Original GPST/VMAX SDK semantics, decoded at the incoming BLE notification rate.
+    // Bundled Hyena/Hylink classes are a separate vendor evidence source, not a BT638 identity.
     // Values are hidden until the current connection has delivered fresh live telemetry.
     val sdkLiveFieldCount: Int
         get() = if (connected && telemetryReady) originalSdkLive.availableFieldCount else 0
@@ -236,6 +238,7 @@ internal fun ScooterState.clearConnectionScopedTelemetry(nextConnectionEpoch: Lo
     packetTotal = 0,
     packetsPerSecond = 0.0,
     lastPacketAt = 0L,
+    lastBatteryTelemetryAt = 0L,
     currentPowerW = null,
     channels = emptyList()
 )

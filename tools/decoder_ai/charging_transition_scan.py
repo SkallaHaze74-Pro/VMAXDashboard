@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from raw_origin_guard import is_accepted_live_notification
+
 MIN_GAP_MS = 10_000
 UNMARKED_CHARGE_MIN_GAP_MS = 60_000
 UNMARKED_SOC_RISE_MIN = 2
@@ -53,8 +55,7 @@ def as_int(value: object) -> Optional[int]:
 
 def decode_1509(row: dict) -> Optional[BatterySample]:
     channel = str(row.get("channel") or "").strip().upper()
-    origin = str(row.get("origin") or "NOTIFICATION").strip().upper()
-    if channel != "1509" or origin == "READ":
+    if channel != "1509" or not is_accepted_live_notification(row):
         return None
     data = parse_hex(str(row.get("hex") or ""))
     if len(data) < 11:
@@ -178,7 +179,7 @@ def analyze_ride(ride: Path) -> dict:
         channel = str(row.get("channel") or "").strip().upper()
         if channel not in raw_by_channel:
             continue
-        if str(row.get("origin") or "NOTIFICATION").strip().upper() == "READ":
+        if not is_accepted_live_notification(row):
             continue
         ts = as_int(row.get("timestamp_ms"))
         raw = str(row.get("hex") or "").strip()

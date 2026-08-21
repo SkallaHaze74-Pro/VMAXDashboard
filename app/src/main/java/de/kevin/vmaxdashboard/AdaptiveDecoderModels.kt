@@ -108,6 +108,36 @@ internal fun isSemanticallyUsableAdaptiveRule(
     }
 }
 
+/** Final consumer gate for both cloud-consensus and local-learning rules. */
+internal fun isSafeAdaptiveRuleForActivation(
+    signal: String,
+    channel: String,
+    status: String,
+    confidence: Int,
+    observations: Int,
+    offset: Int,
+    width: Int,
+    encoding: String,
+    scale: Double,
+    bias: Double,
+    activeValue: Long?,
+    inactiveValue: Long?
+): Boolean =
+    VmaxDecoderPolicy.isAdaptiveRuleAllowed(signal, channel, offset, encoding) &&
+        isSemanticallyUsableAdaptiveRule(
+            signal = signal,
+            status = status,
+            confidence = confidence,
+            observations = observations,
+            offset = offset,
+            width = width,
+            encoding = encoding,
+            scale = scale,
+            bias = bias,
+            activeValue = activeValue,
+            inactiveValue = inactiveValue
+        )
+
 private fun rawValueFitsEncoding(value: Long, encoding: String): Boolean = when (encoding) {
     "u8" -> value in 0L..0xFFL
     "u16be", "u16le" -> value in 0L..0xFFFFL

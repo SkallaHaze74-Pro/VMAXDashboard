@@ -32,6 +32,19 @@ def _number(value: object) -> float | None:
     return float(value) if isinstance(value, (int, float)) else None
 
 
+def _trusted_independent_power_confirmation(evidence: dict[str, Any]) -> bool:
+    """Remain fail-closed until this process reads and hashes the actual artifact.
+
+    Metadata supplied inside the comparison JSON is not a trust boundary. A declared
+    SHA-256 value, evidence type or boolean confirmation can all be fabricated or
+    copied without the referenced bytes. Re-enable only when the artifact path is an
+    explicit input, its bytes are hashed locally, and provenance/measurement checks
+    are enforced here.
+    """
+    del evidence
+    return False
+
+
 def apply_evidence_guard(
     profile: dict[str, Any],
     libble: dict[str, Any],
@@ -43,7 +56,7 @@ def apply_evidence_guard(
     direct = direct if isinstance(direct, dict) else {}
     cross = power_crosscheck if isinstance(power_crosscheck, dict) else {}
 
-    independent = direct.get("independent_semantic_confirmation") is True
+    independent = _trusted_independent_power_confirmation(direct)
     verdict = str(direct.get("verdict") or "")
     layout_match_percent = _number(direct.get("match_percent"))
     layout_mae = _number(direct.get("mae_to_app_live"))
@@ -93,6 +106,7 @@ def apply_evidence_guard(
             "crossFieldCorrelation": cross_corr,
             "crossFieldReference": cross.get("reference") if cross else None,
             "independentExternalConfirmation": False,
+            "independentArtifactBinding": "disabled-until-artifact-is-locally-hashed",
         }
 
     guarded["confirmedRuleCount"] = sum(

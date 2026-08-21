@@ -14,13 +14,14 @@ class VmaxDecoderPolicyTest {
         assertFalse(VmaxDecoderPolicy.isAdaptiveRuleAllowed("speedKmh", "150D", 0, "u16be"))
         assertFalse(VmaxDecoderPolicy.isAdaptiveRuleAllowed("currentA", "150A", 0, "s16be"))
         assertFalse(VmaxDecoderPolicy.isAdaptiveRuleAllowed("speedKmh", "151D", 6, "u16be"))
-        assertTrue(VmaxDecoderPolicy.isAdaptiveRuleAllowed("powerW", "1509", 9, "u16be"))
+        assertFalse(VmaxDecoderPolicy.isAdaptiveRuleAllowed("powerW", "1509", 9, "u16be"))
         assertFalse(VmaxDecoderPolicy.isAdaptiveRuleAllowed("powerW", "1509", 7, "u16be"))
         assertFalse(VmaxDecoderPolicy.isAdaptiveRuleAllowed("powerW", "150A", 9, "u16be"))
         assertTrue(VmaxDecoderPolicy.isAdaptiveRuleAllowed("lightOn", "1508", 0, "u8"))
         assertFalse(VmaxDecoderPolicy.isAdaptiveRuleAllowed("lightOn", "1509", 0, "u8"))
         assertFalse(VmaxDecoderPolicy.isAdaptiveRuleAllowed("brakeActive", "150D", 8, "u8"))
         assertFalse(VmaxDecoderPolicy.isAdaptiveRuleAllowed("brakeActive", "1508", 3, "u8"))
+        assertFalse(VmaxDecoderPolicy.isAdaptiveRuleAllowed("charging", "151D", 2, "u8"))
     }
 
     @Test

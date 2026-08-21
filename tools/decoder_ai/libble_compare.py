@@ -7,6 +7,8 @@ import statistics
 from collections import defaultdict
 from pathlib import Path
 
+from raw_origin_guard import is_accepted_live_notification
+
 SDK_SOURCE = "libble-sdk-native-lib.so"
 
 FIELD_LAYOUTS = {
@@ -199,15 +201,19 @@ def analyze_ride(ride: Path):
     channel_nonplaceholder = defaultdict(int)
     observed_exported_read_rows = 0
     observed_exported_hybrid_rows = 0
+    observed_exported_quarantined_rows = 0
 
     for row in raw_rows:
         channel = str(row.get("channel") or "").upper()
         data = parse_hex(str(row.get("hex") or ""))
-        origin = str(row.get("origin") or "NOTIFICATION").upper()
+        origin = str(row.get("origin") or "").strip().upper()
         if not channel or not data:
             continue
-        if origin == "READ":
-            observed_exported_read_rows += 1
+        if not is_accepted_live_notification(row):
+            if origin == "READ":
+                observed_exported_read_rows += 1
+            else:
+                observed_exported_quarantined_rows += 1
             continue
         if suspicious_read_payload(channel, data):
             observed_exported_hybrid_rows += 1
@@ -285,6 +291,7 @@ def analyze_ride(ride: Path):
             "scope": "BLE_Rohdaten.csv rows only; these are not recorder rejection counters",
             "origin_column_available": "origin" in raw_columns,
             "observed_exported_read_rows": observed_exported_read_rows if "origin" in raw_columns else None,
+            "observed_exported_quarantined_rows": observed_exported_quarantined_rows,
             "observed_exported_hybrid_rows": observed_exported_hybrid_rows,
         },
         "quality_counters": quality_counters,

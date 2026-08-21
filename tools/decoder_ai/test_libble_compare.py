@@ -31,6 +31,8 @@ class LibbleComparisonTests(unittest.TestCase):
                 [
                     ["0", "1000", "1505", "Fahrleistung", "12", "1", "0", "03-E8-03-B6-00-7B-00-7B-01-2C-FF-FF", "NOTIFICATION", "0"],
                     ["10", "1010", "1509", "Akku-Livedaten", "11", "1", "0", "05-DC-00-FA-50-BD-74-05-78-00-48", "NOTIFICATION", "0"],
+                    ["20", "1020", "1509", "Rejected hybrid", "11", "2", "0", "05-DC-00-FA-50-BD-74-05-78-00-48", "NOTIFICATION_REJECTED_HYBRID", "0"],
+                    ["30", "1030", "1509", "Diagnostic observation", "11", "3", "0", "05-DC-00-FA-50-BD-74-05-78-00-48", "DIAGNOSTIC_OBSERVATION", "0"],
                 ],
             )
             write_rows(
@@ -69,10 +71,11 @@ class LibbleComparisonTests(unittest.TestCase):
             self.assertNotIn("1505.distance_raw", fields)
             self.assertIn(("remaining_range_km", 10, 2, "u16be", 1.0, None), FIELD_LAYOUTS["1505"])
             self.assertEqual((0, 1000), PLAUSIBLE["remaining_range_km"])
-            self.assertEqual(2, result["raw_export_rows"])
+            self.assertEqual(4, result["raw_export_rows"])
             self.assertEqual(2, result["accepted_export_rows"])
             self.assertEqual(0, result["export_observations"]["observed_exported_read_rows"])
             self.assertEqual(0, result["export_observations"]["observed_exported_hybrid_rows"])
+            self.assertEqual(2, result["export_observations"]["observed_exported_quarantined_rows"])
             self.assertEqual("Zusammenfassung.txt", result["quality_counters"]["source"])
             self.assertEqual(1, result["quality_counters"]["rejected_read_packets"])
             self.assertEqual(2, result["quality_counters"]["rejected_hybrid_packets"])

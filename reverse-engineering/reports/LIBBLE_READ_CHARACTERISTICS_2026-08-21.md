@@ -32,7 +32,7 @@ Direkt demangelte native Symbole des `GPSTProtocolHandler` zeigen folgende READ-
 - `ReadCharacteristicWirelessRemote`
 - `ReadCharacteristicWirelessRemoteAction`
 
-Im selben Binary sind die Hyena-/GPST-UUID-Familien `DA1A1500...`, `DA1A1600...`, `DA1A1800...`, `DA1A1A00...`, `DA1A1E00...` und `DA1A1F00...` vorhanden. Bereits deterministisch bekannte Zuordnungen wie `1514` Fehler, `1516` Seriennummern, `1517` Fehlertext, `1518` Debug sowie `1E03/1E04` Wireless Remote/Action bleiben die sicheren Startpunkte.
+Im selben Binary sind die GPST-/DA1A-UUID-Familien `DA1A1500...`, `DA1A1600...`, `DA1A1800...`, `DA1A1A00...`, `DA1A1E00...` und `DA1A1F00...` vorhanden. Das ist keine automatische Hyena/Hylink-Zuordnung. Bereits deterministisch bekannte Zuordnungen wie `1514` Fehler, `1516` Seriennummern, `1517` Fehlertext, `1518` Debug sowie `1E03/1E04` Wireless Remote/Action bleiben die sicheren Startpunkte.
 
 ## Evidenzgrenze
 

@@ -1,9 +1,10 @@
 {
   "schema": "vmax-original-app-live-semantics-v1",
   "source": {
-    "class": "com.gpstuner.mapviewer.androidbase.bluetooth.manager.HyenaSDKManager",
-    "sdk": "io.hylink.hbp / libble-sdk-native-lib.so",
-    "note": "Semantics are taken from the original app listeners and native parser mapping. Layout agreement with values exported by this app is not counted as independent live-semantic confirmation. First real ride on 2026-08-13 disproved 150D as a second current-speed source."
+    "class": "Original VMAX listener/callback inventory from a multi-vendor app; no single BT638 manager class is proven",
+    "nativeSdk": "GPSTProtocolHandler mappings and symbols in libble-sdk-native-lib.so",
+    "bundledHyenaSdk": "HyenaSDKManager plus io.hylink.hbp/io.hylink.hap are present separately in base.apk; use by BT638/DA1A is not proven",
+    "note": "Semantics are taken from original-app listeners and native GPST parser mappings. V-Core hardware facts, BT638/GPST-DA1A observations, Hyena/Hylink code and other vendor SDKs remain separate. Layout agreement with values exported by this app is not counted as independent live-semantic confirmation. First real ride on 2026-08-13 disproved 150D as a second current-speed source."
   },
   "signals": [
     {
