@@ -1,0 +1,425 @@
+{
+  "schema": "vmax-battery-static-scan-v1",
+  "rideCount": 13,
+  "channel1502": {
+    "packets": 1449,
+    "lengths": {
+      "16": 1449
+    },
+    "distinctPackets": 1,
+    "topPacketPatterns": [
+      {
+        "hex": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+        "count": 1449
+      }
+    ],
+    "alignedU16be": [
+      {
+        "offset": 0,
+        "samples": 1449,
+        "valid": 1449,
+        "distinct": 1,
+        "min": 18200,
+        "max": 18200,
+        "topValues": [
+          {
+            "value": 18200,
+            "count": 1449
+          }
+        ],
+        "sentinels": {}
+      },
+      {
+        "offset": 2,
+        "samples": 1449,
+        "valid": 0,
+        "distinct": 0,
+        "min": null,
+        "max": null,
+        "topValues": [],
+        "sentinels": {
+          "ffff": 1449
+        }
+      },
+      {
+        "offset": 4,
+        "samples": 1449,
+        "valid": 0,
+        "distinct": 0,
+        "min": null,
+        "max": null,
+        "topValues": [],
+        "sentinels": {
+          "ffff": 1449
+        }
+      },
+      {
+        "offset": 6,
+        "samples": 1449,
+        "valid": 1449,
+        "distinct": 1,
+        "min": 18200,
+        "max": 18200,
+        "topValues": [
+          {
+            "value": 18200,
+            "count": 1449
+          }
+        ],
+        "sentinels": {}
+      },
+      {
+        "offset": 8,
+        "samples": 1449,
+        "valid": 0,
+        "distinct": 0,
+        "min": null,
+        "max": null,
+        "topValues": [],
+        "sentinels": {
+          "ffff": 1449
+        }
+      },
+      {
+        "offset": 10,
+        "samples": 1449,
+        "valid": 0,
+        "distinct": 0,
+        "min": null,
+        "max": null,
+        "topValues": [],
+        "sentinels": {
+          "ffff": 1449
+        }
+      },
+      {
+        "offset": 12,
+        "samples": 1449,
+        "valid": 0,
+        "distinct": 0,
+        "min": null,
+        "max": null,
+        "topValues": [],
+        "sentinels": {
+          "ffff": 1449
+        }
+      },
+      {
+        "offset": 14,
+        "samples": 1449,
+        "valid": 1449,
+        "distinct": 1,
+        "min": 0,
+        "max": 0,
+        "topValues": [
+          {
+            "value": 0,
+            "count": 1449
+          }
+        ],
+        "sentinels": {}
+      }
+    ],
+    "highEqualityWordPairs": [
+      {
+        "offsetA": 0,
+        "offsetB": 6,
+        "pairs": 1449,
+        "equalPercent": 100.0
+      }
+    ],
+    "interpretation": "Static battery metadata candidate only. No capacity/SOH meaning is assigned without independent evidence."
+  },
+  "channel150C": {
+    "packets": 6,
+    "lengths": {
+      "13": 6
+    },
+    "distinctPackets": 1,
+    "topPacketPatterns": [
+      {
+        "hex": "FF-FF-FF-80-00-80-00-80-00-00-00-00-00",
+        "count": 6
+      }
+    ],
+    "bytes": [
+      {
+        "offset": 0,
+        "samples": 6,
+        "distinct": 1,
+        "topValuesHex": [
+          {
+            "value": "FF",
+            "count": 6
+          }
+        ]
+      },
+      {
+        "offset": 1,
+        "samples": 6,
+        "distinct": 1,
+        "topValuesHex": [
+          {
+            "value": "FF",
+            "count": 6
+          }
+        ]
+      },
+      {
+        "offset": 2,
+        "samples": 6,
+        "distinct": 1,
+        "topValuesHex": [
+          {
+            "value": "FF",
+            "count": 6
+          }
+        ]
+      },
+      {
+        "offset": 3,
+        "samples": 6,
+        "distinct": 1,
+        "topValuesHex": [
+          {
+            "value": "80",
+            "count": 6
+          }
+        ]
+      },
+      {
+        "offset": 4,
+        "samples": 6,
+        "distinct": 1,
+        "topValuesHex": [
+          {
+            "value": "00",
+            "count": 6
+          }
+        ]
+      },
+      {
+        "offset": 5,
+        "samples": 6,
+        "distinct": 1,
+        "topValuesHex": [
+          {
+            "value": "80",
+            "count": 6
+          }
+        ]
+      },
+      {
+        "offset": 6,
+        "samples": 6,
+        "distinct": 1,
+        "topValuesHex": [
+          {
+            "value": "00",
+            "count": 6
+          }
+        ]
+      },
+      {
+        "offset": 7,
+        "samples": 6,
+        "distinct": 1,
+        "topValuesHex": [
+          {
+            "value": "80",
+            "count": 6
+          }
+        ]
+      },
+      {
+        "offset": 8,
+        "samples": 6,
+        "distinct": 1,
+        "topValuesHex": [
+          {
+            "value": "00",
+            "count": 6
+          }
+        ]
+      },
+      {
+        "offset": 9,
+        "samples": 6,
+        "distinct": 1,
+        "topValuesHex": [
+          {
+            "value": "00",
+            "count": 6
+          }
+        ]
+      },
+      {
+        "offset": 10,
+        "samples": 6,
+        "distinct": 1,
+        "topValuesHex": [
+          {
+            "value": "00",
+            "count": 6
+          }
+        ]
+      },
+      {
+        "offset": 11,
+        "samples": 6,
+        "distinct": 1,
+        "topValuesHex": [
+          {
+            "value": "00",
+            "count": 6
+          }
+        ]
+      },
+      {
+        "offset": 12,
+        "samples": 6,
+        "distinct": 1,
+        "topValuesHex": [
+          {
+            "value": "00",
+            "count": 6
+          }
+        ]
+      }
+    ],
+    "interpretation": "BatteryCellUpdate presence only; exact cellVoltage/cellTemp/cellIndex offsets remain unassigned."
+  },
+  "openCallbacks": [
+    "batteryCapacityMwh",
+    "chargingRemainSeconds",
+    "charging",
+    "stateOfHealthPercent",
+    "stateOfHealthMwh"
+  ],
+  "perRide": [
+    {
+      "ride": "Messfahrt_2026-08-13_19-17-14",
+      "1502Packets": 397,
+      "1502First": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+      "1502Last": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+      "150CPackets": 3,
+      "150CPatterns": [
+        {
+          "hex": "FF-FF-FF-80-00-80-00-80-00-00-00-00-00",
+          "count": 3
+        }
+      ]
+    },
+    {
+      "ride": "Messfahrt_2026-08-13_20-26-18",
+      "1502Packets": 4,
+      "1502First": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+      "1502Last": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+      "150CPackets": 1,
+      "150CPatterns": [
+        {
+          "hex": "FF-FF-FF-80-00-80-00-80-00-00-00-00-00",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "ride": "Messfahrt_2026-08-15_21-09-05",
+      "1502Packets": 64,
+      "1502First": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+      "1502Last": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+      "150CPackets": 1,
+      "150CPatterns": [
+        {
+          "hex": "FF-FF-FF-80-00-80-00-80-00-00-00-00-00",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "ride": "Messfahrt_2026-08-15_21-12-46",
+      "1502Packets": 11,
+      "1502First": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+      "1502Last": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+      "150CPackets": 1,
+      "150CPatterns": [
+        {
+          "hex": "FF-FF-FF-80-00-80-00-80-00-00-00-00-00",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "ride": "Messfahrt_2026-08-16_00-09-26",
+      "1502Packets": 32,
+      "1502First": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+      "1502Last": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+      "150CPackets": 0,
+      "150CPatterns": []
+    },
+    {
+      "ride": "Messfahrt_2026-08-16_18-46-03",
+      "1502Packets": 109,
+      "1502First": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+      "1502Last": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+      "150CPackets": 0,
+      "150CPatterns": []
+    },
+    {
+      "ride": "Messfahrt_2026-08-16_22-12-43",
+      "1502Packets": 134,
+      "1502First": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+      "1502Last": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+      "150CPackets": 0,
+      "150CPatterns": []
+    },
+    {
+      "ride": "Messfahrt_2026-08-17_17-05-47",
+      "1502Packets": 118,
+      "1502First": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+      "1502Last": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+      "150CPackets": 0,
+      "150CPatterns": []
+    },
+    {
+      "ride": "Messfahrt_2026-08-17_20-24-15",
+      "1502Packets": 236,
+      "1502First": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+      "1502Last": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+      "150CPackets": 0,
+      "150CPatterns": []
+    },
+    {
+      "ride": "Messfahrt_2026-08-18_18-19-38",
+      "1502Packets": 83,
+      "1502First": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+      "1502Last": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+      "150CPackets": 0,
+      "150CPatterns": []
+    },
+    {
+      "ride": "Messfahrt_2026-08-20_12-26-55",
+      "1502Packets": 101,
+      "1502First": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+      "1502Last": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+      "150CPackets": 0,
+      "150CPatterns": []
+    },
+    {
+      "ride": "Messfahrt_2026-08-20_14-45-15",
+      "1502Packets": 81,
+      "1502First": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+      "1502Last": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+      "150CPackets": 0,
+      "150CPatterns": []
+    },
+    {
+      "ride": "Messfahrt_2026-08-20_18-42-34",
+      "1502Packets": 79,
+      "1502First": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+      "1502Last": "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00",
+      "150CPackets": 0,
+      "150CPatterns": []
+    }
+  ]
+}
