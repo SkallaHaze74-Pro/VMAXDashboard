@@ -66,10 +66,11 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
     var autoReview by remember { mutableStateOf(autoReviewCoordinator.snapshot()) }
 
     LaunchedEffect(Unit) {
-        autoReviewCoordinator.start()
         if (snapshot.enabled) {
             sync.start()
             aiSync.start()
+        } else {
+            autoReviewCoordinator.start()
         }
         while (true) {
             snapshot = sync.snapshot()
@@ -132,13 +133,21 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
 
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Gemini + GLM READ-ONLY-Prüfung", fontWeight = FontWeight.Bold)
+                Text("READ-ONLY-KI ohne Mehrfachläufe", fontWeight = FontWeight.Bold)
                 Text(
-                    "Die App prüft Profil-/Sync-Metadaten; mit beiden Keys als Duo. Nach dem Upload prüft der GitHub-Lauf zusätzlich die deterministischen RAW-, Power- und Deep-READ-Berichte mit beiden Modellen.",
+                    "Die App nutzt pro neuem Decoder-Evidenzstand genau einen Provider; GLM ist im Auto-Modus der Ausweichweg, falls Gemini ausfällt. Reine Sync-/Reconnect-Statusänderungen starten keine neue KI-Runde.",
                     style = MaterialTheme.typography.bodySmall
                 )
                 Text(
-                    "Fallbacks: Gemini 3.7 → 3.6 → 3.5; GLM 5.3 → kostenlose 4.7/4.5. Nur vollständige, strukturell geprüfte Antworten werden gespeichert.",
+                    "Nach dem Upload prüfen Gemini und GLM den vollständigen RAW-/Power-/Deep-READ-Bericht je einmal unabhängig. GPT-5.6 Luna darf in GitHub optional nur diese zwei Entwürfe kurz ordnen – keine dritte Vollanalyse und kein drittes Evidenzvotum.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    "Fallbacks: Gemini 3.7 → 3.6 → 3.5; GLM 5.3 → kostenlose 4.7/4.5. Nur vollständige, fingerprintgebundene Antworten werden gespeichert.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    "OpenAI ist kostenpflichtig und läuft nur über das optionale GitHub-Secret OPENAI_API_KEY; ein bezahlter OpenAI-Key wird nicht in der APK gespeichert.",
                     style = MaterialTheme.typography.bodySmall
                 )
                 Text(
@@ -198,8 +207,8 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
                                 .onSuccess {
                                     geminiKey = ""
                                     externalAiStatus = externalAiSecrets.status()
-                                    autoReviewCoordinator.requestNow("Gemini-Key gespeichert")
-                                    localMessage = "✓ Gemini-Key gespeichert • automatische Prüfung gestartet"
+                                    autoReviewCoordinator.requestIfEvidenceChanged("Gemini-Key gespeichert")
+                                    localMessage = "✓ Gemini-Key gespeichert • Prüfung nur bei ungeprüfter Evidenz"
                                 }
                                 .onFailure { localMessage = it.message ?: "Gemini-Key konnte nicht gespeichert werden" }
                         },
@@ -233,8 +242,8 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
                                 .onSuccess {
                                     glmKey = ""
                                     externalAiStatus = externalAiSecrets.status()
-                                    autoReviewCoordinator.requestNow("GLM-Key gespeichert")
-                                    localMessage = "✓ GLM-Key gespeichert • automatische Prüfung gestartet"
+                                    autoReviewCoordinator.requestIfEvidenceChanged("GLM-Key gespeichert")
+                                    localMessage = "✓ GLM-Key gespeichert • Prüfung nur bei ungeprüfter Evidenz"
                                 }
                                 .onFailure { localMessage = it.message ?: "GLM-Key konnte nicht gespeichert werden" }
                         },
@@ -259,13 +268,18 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
 
                 OutlinedButton(
                     onClick = {
-                        autoReviewCoordinator.requestNow("Optionale Sofortprüfung")
-                        localMessage = "Automatische KI-Zweitprüfung sofort angestoßen"
+                        val accepted = autoReviewCoordinator.requestNow("Optionale Sofortprüfung")
+                        autoReview = autoReviewCoordinator.snapshot()
+                        localMessage = if (accepted) {
+                            "Einmalige KI-Prüfung für den aktuellen Stand angestoßen"
+                        } else {
+                            "KI-Prüfung läuft oder wartet bereits • kein weiterer Lauf eingereiht"
+                        }
                     },
-                    enabled = !autoReview.running &&
+                    enabled = autoReview.enabled && !autoReview.running &&
                         (externalAiStatus.geminiConfigured || externalAiStatus.glmConfigured),
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("OPTIONAL: JETZT SOFORT NOCHMAL PRÜFEN") }
+                ) { Text("OPTIONAL: EINMAL ERNEUT PRÜFEN") }
             }
         }
 
@@ -294,9 +308,7 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
                             sync.setEnabled(it)
                             if (it) {
                                 sync.start()
-                                aiSync.start()
                                 aiSync.refreshNow()
-                                autoReviewCoordinator.requestNow("GitHub-Sync aktiviert")
                             }
                             snapshot = sync.snapshot()
                         }
@@ -322,9 +334,7 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
                         runCatching { sync.saveToken(token) }
                             .onSuccess {
                                 sync.start()
-                                aiSync.start()
                                 aiSync.refreshNow()
-                                autoReviewCoordinator.requestNow("GitHub-Token gespeichert")
                                 token = ""
                                 localMessage = "✓ Token verschlüsselt gespeichert"
                             }
@@ -362,8 +372,7 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
                         sync.start()
                         sync.retryNow()
                         aiSync.refreshNow()
-                        autoReviewCoordinator.requestNow("Alles synchronisieren")
-                        localMessage = "Upload, Decoder AI und externe KI erneut angestoßen"
+                        localMessage = "Upload und Decoder AI erneut angestoßen • externe KI nur bei neuer Evidenz"
                     },
                     enabled = snapshot.enabled && snapshot.tokenConfigured,
                     modifier = Modifier.fillMaxWidth()
@@ -379,7 +388,8 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
                 Text("• Ereignisse.csv – Bremse, Blinker, Licht, Laden usw.")
                 Text("• Lernprofil.json – lokale Kandidaten über mehrere Fahrten")
                 Text("• Numerische Korrelationen für weitere Speed/Akku/Volt/Strom/Temperatur/Weg-Felder")
-                Text("• Gemini/GLM – automatische unabhängige Zweitprüfung bei neuer Evidenz")
+                Text("• App: ein Provider pro Decoder-Evidenzstand, zweiter nur als Fallback")
+                Text("• GitHub: Gemini + GLM je einmal; GPT optional nur als kurze Synthese")
                 Spacer(Modifier.height(2.dp))
                 Text(
                     "Neue Regeln werden erst nach hoher Konfidenz live verwendet. Unsichere Treffer bleiben Kandidaten.",

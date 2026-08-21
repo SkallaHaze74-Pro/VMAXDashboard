@@ -50,14 +50,14 @@ def _require_complete_text(text: str) -> str:
 
 
 def _provider_needs_retry(item: dict[str, Any]) -> bool:
-    if item.get("status") != "ok":
+    if item.get("status") not in {"ok", "cached_ok"}:
         return True
     text = str(item.get("text") or "").strip()
     return not review_output_guard.is_complete_review(text)
 
 
 def _primary_problem(item: dict[str, Any]) -> str:
-    if item.get("status") != "ok":
+    if item.get("status") not in {"ok", "cached_ok"}:
         return str(item.get("error") or "Providerfehler")
     return "Unvollständige Primärantwort: Pflichtabschnitt oder Abschlussmarker fehlt"
 
@@ -215,6 +215,8 @@ def retry_failed_providers(
     prompt: str,
     gemini_key: str | None,
     glm_key: str | None,
+    openai_key: str | None = None,
+    synthesis_ask: Callable[[str, str], str] | None = None,
 ) -> dict[str, Any]:
     retried = json.loads(json.dumps(result))
     providers = retried.setdefault("providers", {})
@@ -245,7 +247,23 @@ def retry_failed_providers(
     retried["advisoryOnly"] = True
     retried["readOnlyReviewerContract"] = True
     retried["automaticChangeAuthority"] = False
-    return retried
+    retried["independentReviewerCount"] = sum(
+        1
+        for item in providers.values()
+        if isinstance(item, dict)
+        and item.get("status") in {"ok", "cached_ok"}
+        and review_output_guard.is_complete_review(str(item.get("text") or ""))
+    )
+    retried["modelConsensusCountsAsEvidence"] = False
+    if openai_key is None and "teamSynthesis" not in retried:
+        return retried
+    if synthesis_ask is None:
+        return provider_review.refresh_team_synthesis(retried, openai_key)
+    return provider_review.refresh_team_synthesis(
+        retried,
+        openai_key,
+        ask=synthesis_ask,
+    )
 
 
 def bind_result_to_prompt(result: dict[str, Any], prompt: str) -> dict[str, Any]:
@@ -266,6 +284,19 @@ def bind_result_to_prompt(result: dict[str, Any], prompt: str) -> dict[str, Any]
             "text": "",
             "error": "Evidenzstand geändert; vorhandene Antwort gehört zu einem anderen Input-Fingerprint",
         }
+    old_synthesis = bound.get("teamSynthesis") if isinstance(bound.get("teamSynthesis"), dict) else {}
+    bound["teamSynthesis"] = {
+        "status": "stale_input",
+        "role": "synthesis_only",
+        "provider": str(old_synthesis.get("provider") or "OpenAI"),
+        "model": str(old_synthesis.get("model") or provider_review.OPENAI_MODEL),
+        "countsAsIndependentEvidence": False,
+        "automaticChangeAuthority": False,
+        "text": "",
+        "error": "Evidenzstand geändert; vorhandene Synthese gehört zu einem anderen Input-Fingerprint",
+    }
+    bound["independentReviewerCount"] = 0
+    bound["modelConsensusCountsAsEvidence"] = False
     bound["inputFingerprint"] = expected
     bound["inputChanged"] = True
     return bound
@@ -317,6 +348,49 @@ def preserve_last_success(
 
     merged["freshProviderCount"] = fresh_count
     merged["cachedProviderCount"] = cached_count
+    merged["independentReviewerCount"] = fresh_count + cached_count
+    merged["modelConsensusCountsAsEvidence"] = False
+
+    synthesis = merged.get("teamSynthesis") if isinstance(merged.get("teamSynthesis"), dict) else {}
+    old_synthesis = previous.get("teamSynthesis") if isinstance(previous.get("teamSynthesis"), dict) else {}
+    synthesis_text = str(synthesis.get("text") or "").strip()
+    expected_synthesis_fingerprint = provider_review.team_synthesis_fingerprint(providers)
+    if (
+        synthesis.get("status") == "ok"
+        and synthesis.get("inputFingerprint") == expected_synthesis_fingerprint
+        and review_output_guard.is_complete_review(synthesis_text)
+    ):
+        synthesis["fresh"] = True
+        synthesis["outputComplete"] = True
+    else:
+        old_text = str(old_synthesis.get("text") or "").strip()
+        can_cache_old = (
+            same_input
+            and bool(expected_synthesis_fingerprint)
+            and old_synthesis.get("inputFingerprint") == expected_synthesis_fingerprint
+            and old_synthesis.get("status") in {"ok", "cached_ok"}
+            and review_output_guard.is_complete_review(old_text)
+        )
+        if can_cache_old:
+            cached_synthesis = json.loads(json.dumps(old_synthesis))
+            cached_synthesis["status"] = "cached_ok"
+            cached_synthesis["fresh"] = False
+            cached_synthesis["cachedFromPreviousRun"] = True
+            cached_synthesis["outputComplete"] = True
+            cached_synthesis["lastAttempt"] = {
+                "status": synthesis.get("status", "error"),
+                "model": synthesis.get("model", provider_review.OPENAI_MODEL),
+                "error": str(synthesis.get("error") or synthesis.get("reason") or "")[:300],
+            }
+            synthesis = cached_synthesis
+        else:
+            synthesis["fresh"] = False
+    if synthesis:
+        synthesis["role"] = "synthesis_only"
+        synthesis["countsAsIndependentEvidence"] = False
+        synthesis["automaticChangeAuthority"] = False
+        merged["teamSynthesis"] = synthesis
+
     merged["advisoryOnly"] = True
     merged["readOnlyReviewerContract"] = True
     merged["automaticChangeAuthority"] = False
@@ -353,6 +427,7 @@ def main() -> int:
         prompt,
         os.environ.get("GEMINI_API_KEY", "").strip() or None,
         os.environ.get("ZHIPU_API_KEY", "").strip() or None,
+        os.environ.get("OPENAI_API_KEY", "").strip() or None,
     )
 
     output = Path(args.output)

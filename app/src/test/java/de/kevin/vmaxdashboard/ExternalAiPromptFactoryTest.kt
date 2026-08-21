@@ -24,74 +24,79 @@ class ExternalAiPromptFactoryTest {
     )
 
     @Test
-    fun fingerprintIsSha256OfExactPromptContextModeAndContract() {
-        val context = ExternalAiPromptFactory.decoderContext(sync, profile)
-        val first = ExternalAiPromptFactory.reviewInputFingerprint(
+    fun fingerprintIsSha256OfEvidenceModeAndContract() {
+        val first = ExternalAiPromptFactory.reviewEvidenceFingerprint(
             prompt = "Prüfe exakt",
-            context = context,
+            profile = profile,
             mode = ExternalAiMode.PRO_DUO
         )
 
         assertEquals(64, first.length)
         assertEquals(
             first,
-            ExternalAiPromptFactory.reviewInputFingerprint(
+            ExternalAiPromptFactory.reviewEvidenceFingerprint(
                 prompt = "Prüfe exakt",
-                context = context,
+                profile = profile,
                 mode = ExternalAiMode.PRO_DUO
             )
         )
         assertNotEquals(
             first,
-            ExternalAiPromptFactory.reviewInputFingerprint(
+            ExternalAiPromptFactory.reviewEvidenceFingerprint(
                 prompt = "Prüfe exakt geändert",
-                context = context,
+                profile = profile,
                 mode = ExternalAiMode.PRO_DUO
             )
         )
         assertNotEquals(
             first,
-            ExternalAiPromptFactory.reviewInputFingerprint(
+            ExternalAiPromptFactory.reviewEvidenceFingerprint(
                 prompt = "Prüfe exakt",
-                context = context,
+                profile = profile,
                 mode = ExternalAiMode.AUTO
             )
         )
     }
 
     @Test
-    fun everyPromptContextChangeInvalidatesFingerprint() {
+    fun transportStatusChangesDoNotTriggerAnotherProviderRun() {
         val baseContext = ExternalAiPromptFactory.decoderContext(sync, profile)
-        val base = ExternalAiPromptFactory.reviewInputFingerprint(
-            "Prüfe exakt",
-            baseContext,
-            ExternalAiMode.PRO_DUO
-        )
         val changedPending = sync.copy(pendingBundles = 1)
         val changedStatus = sync.copy(lastStatus = "temporärer Fehler")
+        val changedPendingContext = ExternalAiPromptFactory.decoderContext(changedPending, profile)
+        val changedStatusContext = ExternalAiPromptFactory.decoderContext(changedStatus, profile)
+        val base = ExternalAiPromptFactory.reviewEvidenceFingerprint(
+            "Prüfe exakt",
+            profile,
+            ExternalAiMode.PRO_DUO
+        )
+
+        assertNotEquals(baseContext, changedPendingContext)
+        assertNotEquals(baseContext, changedStatusContext)
+        assertEquals(
+            base,
+            ExternalAiPromptFactory.reviewEvidenceFingerprint(
+                "Prüfe exakt",
+                profile,
+                ExternalAiMode.PRO_DUO
+            )
+        )
+    }
+
+    @Test
+    fun decoderEvidenceChangeInvalidatesFingerprint() {
+        val base = ExternalAiPromptFactory.reviewEvidenceFingerprint(
+            "Prüfe exakt",
+            profile,
+            ExternalAiMode.PRO_DUO
+        )
         val changedSignals = profile.copy(signals = profile.signals + "currentA")
 
         assertNotEquals(
             base,
-            ExternalAiPromptFactory.reviewInputFingerprint(
+            ExternalAiPromptFactory.reviewEvidenceFingerprint(
                 "Prüfe exakt",
-                ExternalAiPromptFactory.decoderContext(changedPending, profile),
-                ExternalAiMode.PRO_DUO
-            )
-        )
-        assertNotEquals(
-            base,
-            ExternalAiPromptFactory.reviewInputFingerprint(
-                "Prüfe exakt",
-                ExternalAiPromptFactory.decoderContext(changedStatus, profile),
-                ExternalAiMode.PRO_DUO
-            )
-        )
-        assertNotEquals(
-            base,
-            ExternalAiPromptFactory.reviewInputFingerprint(
-                "Prüfe exakt",
-                ExternalAiPromptFactory.decoderContext(sync, changedSignals),
+                changedSignals,
                 ExternalAiMode.PRO_DUO
             )
         )

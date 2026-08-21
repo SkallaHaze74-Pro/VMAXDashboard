@@ -93,6 +93,29 @@ class ReviewOutputGuardTests(unittest.TestCase):
         self.assertEqual("error", guarded["providers"]["gemini"]["status"])
         self.assertFalse(guarded["providers"]["gemini"]["outputComplete"])
 
+    def test_team_synthesis_is_validated_separately_from_reviewers(self):
+        result = {
+            "providers": {
+                "gemini": {"status": "ok", "text": complete_review("Gemini")},
+                "glm": {"status": "ok", "text": complete_review("GLM")},
+            },
+            "teamSynthesis": {
+                "status": "ok",
+                "role": "synthesis_only",
+                "countsAsIndependentEvidence": False,
+                "text": "abgeschnitten",
+            },
+        }
+
+        guarded = review_output_guard.validate(result)
+
+        self.assertEqual("ok", guarded["providers"]["gemini"]["status"])
+        self.assertEqual("ok", guarded["providers"]["glm"]["status"])
+        self.assertEqual("error", guarded["teamSynthesis"]["status"])
+        self.assertEqual("", guarded["teamSynthesis"]["text"])
+        self.assertFalse(guarded["teamSynthesis"]["outputComplete"])
+        self.assertFalse(guarded["teamSynthesis"]["countsAsIndependentEvidence"])
+
 
 if __name__ == "__main__":
     unittest.main()

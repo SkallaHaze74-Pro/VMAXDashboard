@@ -163,18 +163,20 @@ jobs:
             --power-crosscheck decoder-ai/power_crosscheck.json \
             --report decoder-ai/analysis_report.md
 
-      - name: Gemini und GLM als unabhängige Zweitprüfung
+      - name: Gemini und GLM prüfen, GPT synthetisiert optional
         if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data')
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          FORCE_SYNTHESIS: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
           set -euo pipefail
           if [ -f decoder-ai/provider_review.json ]; then
             cp decoder-ai/provider_review.json /tmp/provider_review_previous.json
           fi
-          if [ -z "${GEMINI_API_KEY}${ZHIPU_API_KEY}" ]; then
-            echo 'Gemini/GLM Secrets noch nicht gesetzt – neue Auswertung wird als nicht konfiguriert markiert; eine passende letzte vollständige Antwort darf nur inputgebunden als Cache bleiben.'
+          if [ -z "${GEMINI_API_KEY}${ZHIPU_API_KEY}${OPENAI_API_KEY}" ]; then
+            echo 'Keine KI-Secrets gesetzt – neue Auswertung wird als nicht konfiguriert markiert; eine passende letzte vollständige Antwort darf nur inputgebunden als Cache bleiben.'
           fi
           provider_context=/tmp/original-app-plus-deep-read.md
           cat decoder-ai/original_app_comparison.md > "$provider_context"
@@ -182,11 +184,17 @@ jobs:
           cat decoder-ai/gatt_read_comparison.md >> "$provider_context"
           printf '\n\n===== BT638 GATT DEEP READ (PUBLIC REDACTED JSON) =====\n\n' >> "$provider_context"
           cat decoder-ai/gatt_read_comparison.json >> "$provider_context"
+          synthesis_args=()
+          if [ "$FORCE_SYNTHESIS" = "true" ]; then
+            synthesis_args+=(--force-synthesis)
+          fi
           python "$ANALYZER_ROOT/tools/decoder_ai/provider_review.py" \
             --analysis-report decoder-ai/analysis_report.md \
             --decoder-profile decoder-ai/decoder_profile.json \
             --libble decoder-ai/libble_comparison.md \
             --original-app "$provider_context" \
+            --previous /tmp/provider_review_previous.json \
+            "${synthesis_args[@]}" \
             --output decoder-ai/provider_review.json \
             --report decoder-ai/provider_review.md
 
@@ -195,6 +203,7 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           if [ -f decoder-ai/provider_review.json ]; then
             provider_context=/tmp/original-app-plus-deep-read.md

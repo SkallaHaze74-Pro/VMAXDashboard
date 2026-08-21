@@ -13,29 +13,37 @@ import json
 from pathlib import Path
 from typing import Any
 
-from provider_review import MAX_PROVIDER_TEXT, render_markdown
-
-REQUIRED_FOOTER = "Freigabe: keine automatische Änderung."
-REQUIRED_SECTIONS = (
-    "Belastbare Evidenz",
-    "Konflikte / mögliche Bugs",
-    "Hypothesen (nicht bestätigt)",
-    "Nächste sichere READ-ONLY-Tests",
-    "Automatische Änderungen: KEINE",
+from provider_review import (
+    MAX_PROVIDER_TEXT,
+    MIN_REVIEW_CHARS,
+    REQUIRED_FOOTER,
+    REQUIRED_SECTIONS,
+    is_complete_review_text,
+    render_markdown,
 )
-MIN_REVIEW_CHARS = 240
-
 
 def is_complete_review(text: str) -> bool:
-    clean = str(text or "").strip()
-    if (
-        len(clean) < MIN_REVIEW_CHARS
-        or len(clean) > MAX_PROVIDER_TEXT
-        or not clean.endswith(REQUIRED_FOOTER)
-    ):
-        return False
-    lowered = clean.casefold()
-    return all(section.casefold() in lowered for section in REQUIRED_SECTIONS)
+    return is_complete_review_text(text)
+
+
+def _guard_completed_item(item: dict[str, Any], label: str) -> None:
+    if item.get("status") not in {"ok", "cached_ok"}:
+        item["outputComplete"] = False
+        return
+
+    text = str(item.get("text") or "").strip()
+    complete = is_complete_review(text)
+    item["outputComplete"] = complete
+    if complete:
+        return
+
+    preview = text[-240:] if text else ""
+    item["status"] = "error"
+    item["text"] = ""
+    item["error"] = (
+        f"Unvollständige {label}-Antwort verworfen: Pflichtabschnitt oder Abschlussmarker fehlt."
+        + (f" Letzter Ausschnitt: {preview}" if preview else "")
+    )[:600]
 
 
 def validate(result: dict[str, Any]) -> dict[str, Any]:
@@ -45,26 +53,23 @@ def validate(result: dict[str, Any]) -> dict[str, Any]:
     for key, item in providers.items():
         if not isinstance(item, dict):
             continue
-        if item.get("status") != "ok":
-            item["outputComplete"] = False
-            continue
+        _guard_completed_item(item, "Reviewer")
 
-        text = str(item.get("text") or "").strip()
-        complete = is_complete_review(text)
-        item["outputComplete"] = complete
-        if complete:
-            continue
+    synthesis = guarded.get("teamSynthesis")
+    if isinstance(synthesis, dict):
+        _guard_completed_item(synthesis, "OpenAI-Synthese")
+        synthesis["role"] = "synthesis_only"
+        synthesis["countsAsIndependentEvidence"] = False
+        synthesis["automaticChangeAuthority"] = False
 
-        # Preserve only a short diagnostic hint, not a partial analysis that could
-        # later be mistaken for a complete technical conclusion.
-        preview = text[-240:] if text else ""
-        item["status"] = "error"
-        item["text"] = ""
-        item["error"] = (
-            "Unvollständige Reviewer-Antwort verworfen: Pflichtabschnitt oder Abschlussmarker fehlt."
-            + (f" Letzter Ausschnitt: {preview}" if preview else "")
-        )[:600]
-
+    guarded["independentReviewerCount"] = sum(
+        1
+        for item in providers.values()
+        if isinstance(item, dict)
+        and item.get("status") in {"ok", "cached_ok"}
+        and item.get("outputComplete") is True
+    )
+    guarded["modelConsensusCountsAsEvidence"] = False
     guarded["outputContractValidated"] = True
     guarded["automaticChangeAuthority"] = False
     guarded["readOnlyReviewerContract"] = True

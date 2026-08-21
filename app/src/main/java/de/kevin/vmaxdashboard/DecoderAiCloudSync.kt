@@ -41,14 +41,18 @@ class DecoderAiCloudSync private constructor(context: Context) {
     private val started = AtomicBoolean(false)
 
     fun start() {
-        if (!started.compareAndSet(false, true)) return
+        startIfNeeded()
+    }
+
+    private fun startIfNeeded(): Boolean {
+        if (!started.compareAndSet(false, true)) return false
         executor.execute(::refreshInternal)
         executor.scheduleWithFixedDelay(::refreshInternal, 60L, 60L, TimeUnit.SECONDS)
+        return true
     }
 
     fun refreshNow() {
-        start()
-        executor.execute(::refreshInternal)
+        if (!startIfNeeded()) executor.execute(::refreshInternal)
     }
 
     fun status(): DecoderAiCloudStatus = DecoderAiCloudStatus(
@@ -57,21 +61,26 @@ class DecoderAiCloudSync private constructor(context: Context) {
     )
 
     private fun refreshInternal() {
-        if (!prefs.getBoolean("enabled", false)) return
-        val token = tokenOrNull() ?: run {
-            setStatus("Decoder AI wartet auf GitHub-Token")
+        if (!prefs.getBoolean("enabled", false)) {
+            ExternalAiAutoReviewCoordinator.get(appContext).start()
             return
         }
-        val connection = (URL(PROFILE_URL).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 15_000
-            readTimeout = 30_000
-            setRequestProperty("Authorization", "Bearer $token")
-            setRequestProperty("Accept", "application/vnd.github+json")
-            setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
-            setRequestProperty("User-Agent", "VMAXDashboard-DecoderAI")
+        val token = tokenOrNull() ?: run {
+            setStatus("Decoder AI wartet auf GitHub-Token")
+            ExternalAiAutoReviewCoordinator.get(appContext).start()
+            return
         }
+        var connection: HttpURLConnection? = null
         try {
+            connection = (URL(PROFILE_URL).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 15_000
+                readTimeout = 30_000
+                setRequestProperty("Authorization", "Bearer $token")
+                setRequestProperty("Accept", "application/vnd.github+json")
+                setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
+                setRequestProperty("User-Agent", "VMAXDashboard-DecoderAI")
+            }
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
@@ -94,7 +103,7 @@ class DecoderAiCloudSync private constructor(context: Context) {
                         snapshot.ruleCount != before.ruleCount
                     ) {
                         ExternalAiAutoReviewCoordinator.get(appContext)
-                            .requestNow("Decoder-Profil aktualisiert")
+                            .requestIfEvidenceChanged("Decoder-Profil aktualisiert")
                     }
                 }
                 404 -> setStatus("Decoder AI wartet auf die erste abgeschlossene GitHub-Auswertung")
@@ -103,7 +112,8 @@ class DecoderAiCloudSync private constructor(context: Context) {
         } catch (error: Exception) {
             setStatus("Decoder AI wartet: ${safeMessage(error)}")
         } finally {
-            connection.disconnect()
+            connection?.disconnect()
+            ExternalAiAutoReviewCoordinator.get(appContext).start()
         }
     }
 

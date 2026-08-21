@@ -96,6 +96,19 @@ class ExternalAiReviewContractTest {
     }
 
     @Test
+    fun automaticAppReviewUsesOneProviderWithFailoverEvenWhenBothKeysExist() {
+        assertEquals(
+            ExternalAiMode.AUTO,
+            selectAutomaticExternalAiMode(
+                ExternalAiSecretStatus(
+                    geminiConfigured = true,
+                    glmConfigured = true
+                )
+            )
+        )
+    }
+
+    @Test
     fun geminiFallbackOrderIsStableAcrossAutoAndDuo() {
         assertEquals(
             listOf("gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite"),
