@@ -4,6 +4,9 @@ import provider_retry
 import provider_review
 
 
+FOOTER = "Freigabe: keine automatische Änderung."
+
+
 class ProviderRetryTests(unittest.TestCase):
     def test_gemini_error_uses_36_fallback(self):
         original_post = provider_review.post_json
@@ -13,7 +16,7 @@ class ProviderRetryTests(unittest.TestCase):
                 "type": "model_output",
                 "content": [{
                     "type": "text",
-                    "text": "Gemini fallback ok\nFreigabe: keine automatische Änderung.",
+                    "text": "Gemini fallback ok\n" + FOOTER,
                 }],
             }],
         }
@@ -33,12 +36,36 @@ class ProviderRetryTests(unittest.TestCase):
         self.assertTrue(gemini["fallback"])
         self.assertIn("high demand", gemini["primaryError"])
 
+    def test_incomplete_primary_gemini_answer_is_retried(self):
+        original_post = provider_review.post_json
+        provider_review.post_json = lambda url, headers, payload: {
+            "status": "completed",
+            "steps": [{
+                "type": "model_output",
+                "content": [{"type": "text", "text": "complete fallback\n" + FOOTER}],
+            }],
+        }
+        try:
+            result = provider_retry.retry_failed_providers(
+                {"providers": {"gemini": {"status": "ok", "model": "gemini-3.7-flash", "text": "abgeschnitten"}}},
+                "prompt",
+                "gem-key",
+                None,
+            )
+        finally:
+            provider_review.post_json = original_post
+
+        gemini = result["providers"]["gemini"]
+        self.assertEqual("ok", gemini["status"])
+        self.assertTrue(gemini["text"].endswith(FOOTER))
+        self.assertIn("Unvollständige Primärantwort", gemini["primaryError"])
+
     def test_glm_timeout_uses_free_fallback(self):
         original_call = provider_review.call_glm_model
 
         def fake_call(api_key, prompt, model, allow_bigmodel_fallback):
             self.assertEqual(provider_review.GLM_FREE_MODEL, model)
-            return "Z.ai", "GLM fallback ok\nFreigabe: keine automatische Änderung."
+            return "Z.ai", "GLM fallback ok\n" + FOOTER
 
         provider_review.call_glm_model = fake_call
         try:
@@ -59,7 +86,7 @@ class ProviderRetryTests(unittest.TestCase):
 
     def test_successful_provider_is_not_retried(self):
         result = provider_retry.retry_failed_providers(
-            {"providers": {"glm": {"status": "ok", "model": "existing", "text": "done"}}},
+            {"providers": {"glm": {"status": "ok", "model": "existing", "text": "done\n" + FOOTER}}},
             "prompt",
             None,
             "glm-key",
