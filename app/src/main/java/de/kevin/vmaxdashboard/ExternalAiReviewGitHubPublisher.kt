@@ -73,6 +73,11 @@ class ExternalAiReviewGitHubPublisher private constructor(context: Context) {
         generatedAtMs: Long
     ) {
         executor.execute {
+            // Prevent a new GitHub commit on every app start / 60-second poll for
+            // exactly the same completed local review.
+            if (generatedAtMs > 0L && reviewPrefs.getLong("github_published_review_run_at", 0L) == generatedAtMs) {
+                return@execute
+            }
             if (!githubPrefs.getBoolean("enabled", false)) {
                 setPublishStatus("KI-Review lokal gespeichert • GitHub-Sync ist aus")
                 return@execute
@@ -94,6 +99,7 @@ class ExternalAiReviewGitHubPublisher private constructor(context: Context) {
                     reviewPrefs.edit()
                         .putString("github_publish_status", "✓ KI-Review mit GitHub geteilt")
                         .putLong("github_publish_at", System.currentTimeMillis())
+                        .putLong("github_published_review_run_at", generatedAtMs)
                         .apply()
                 }
                 .onFailure { error ->
