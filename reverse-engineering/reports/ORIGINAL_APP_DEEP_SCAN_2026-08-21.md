@@ -9,7 +9,7 @@ Erneute READ-ONLY-Auswertung der bereits vom Nutzer bereitgestellten Originaldat
 - `libMapViewerDll.so` — SHA-256 `f4c97c1a7260a1b3109f9953d00d5c6f70faaf1a4f433ce1a25491d3d1db4198`
 - `libnative-lib.so` — SHA-256 `be2e8af6cbe518e5b77928620ce6a3fba2318d437a878ab2b4e74e06d74d559d`
 
-Die Hashes stimmen mit `SOURCE_INVENTORY_2026-08-05.md` überein. Die Funde unten stammen aus DEX-Strings, Klassendeskriptoren und exportierten/demangelten nativen Symbolen. Ein String oder SDK-Symbol belegt Implementierung im ausgelieferten App-/SDK-Paket, aber **nicht automatisch Verfügbarkeit auf dem BT638**.
+Die Hashes stimmen mit `SOURCE_INVENTORY_2026-08-05.md` überein. Die Funde unten stammen aus DEX-Strings, Klassendeskriptoren, Ressourcen-Strings und exportierten/demangelten nativen Symbolen. Ein String oder SDK-Symbol belegt Implementierung im ausgelieferten App-/SDK-Paket, aber **nicht automatisch Verfügbarkeit auf dem BT638**.
 
 ## 1. Neue Hyena-spezifische Batterie-/Ladefunktionen
 
@@ -60,9 +60,9 @@ Passende Hyena-Logtexte nennen ausdrücklich:
 - RTC/Zeit auf dem Bike setzen/lesen
 - Fehlercode-Listener
 
-Motor-Tuning war bereits bekannt, ist aber im Manager klar als eigenes Profil-/Readback-System implementiert (`getMotorTuningValues`, `setMotorTuning`, `setMotorTuningDefault`).
+Motor-Tuning war bereits bekannt, ist aber im Manager klar als eigenes Profil-/Readback-System implementiert (`getMotorTuningValues`, `setMotorTuning`, `setMotorTuningDefault`). Die Base enthält außerdem konkrete Motor-Tuning-UI-/Analytics-Begriffe für Assist, Max Power, Max Assist Speed und Pedal Response sowie `MAX_PEDAL_RESPONSE_HYENA`.
 
-**Bewertung:** Für den BT638 sind `PedalResponse`, Throttle-Capability, BatteryArticle14, ExtendedSettings und MCU-Bootloaderstatus neue interessante READ-ONLY-Ziele. Vorhandensein in Hyena-Code ist noch kein BT638-Nachweis.
+**Bewertung:** Für den BT638 sind `PedalResponse`, Throttle-Capability, BatteryArticle14, ExtendedSettings und MCU-Bootloaderstatus neue interessante READ-ONLY-Ziele. Vorhandensein in Hyena-Code ist noch kein BT638-Nachweis. Motor-Tuning-UI belegt eine Produktfunktion im App-Baukasten, aber keine Freigabe für automatische Änderungen.
 
 ## 3. Native libble-Funktionen mit hohem Read-only-Wert
 
@@ -138,7 +138,25 @@ Die App enthält GPSTuner-IoT-Typen wie:
 
 **Bewertung:** Das belegt Cloud-/IoT-Unterstützung in der Gesamt-App, aber nicht, dass der BT638 selbst diese Daten lokal per BLE liefert. Diese Schicht getrennt von BLE-Dekodierung halten.
 
-## 6. Bereits bekannte Start-/Fahrmodi werden erneut gestützt
+## 6. VMAX-UI enthält Cruise-Control- und Lock/Unlock-Pfade
+
+Im VMAX-eigenen `com.gpstuner.rangerapp.fragment.DashboardContentFragment` existieren konkrete Klassenpfade:
+
+- `startCruiseControlTimeOut`
+- `startLockUnlockTimeOut`
+
+Dazu kommen Ressourcen-/UI-Schlüssel wie:
+
+- `cruise_control_switch`
+- `tv_cruise_control`
+- `lockUnlockSwitch`
+- `tvLockUnlock`
+
+Im Gesamt-SDK sind außerdem Getter/Setter-Namen für Cruise-Control vorhanden. Ein expliziter Logpfad `HobbywingSDK: SetCruiseControl` zeigt jedoch, dass mindestens ein Teil davon provider-/herstellerabhängig ist.
+
+**Bewertung:** Cruise-Control und Lock/Unlock sind echte VMAX-Dashboard-UI-Funktionen im ausgelieferten App-Code. Das beweist noch nicht, dass der BT638/Hyena-Stack sie unterstützt oder auf welchen Kanal sie gehören. Für unser Dashboard zuerst nur Capability-/Status-Erkennung; keine Cruise-/Lock-Schreibfunktion aus Strings ableiten.
+
+## 7. Bereits bekannte Start-/Fahrmodi werden erneut gestützt
 
 Die Base enthält explizit:
 
@@ -148,12 +166,12 @@ Die Base enthält explizit:
 
 Das passt zu dem bereits live beobachteten Startmodus. Kein neuer Schreibpfad wird aus diesem Scan abgeleitet.
 
-## 7. Priorisierte sichere nächste Schritte
+## 8. Priorisierte sichere nächste Schritte
 
 1. Hyena ELM/Charging Capability **nur lesen**: Supported, OptimizedChargingStatus, LongStorageMode, ExtendedLifeMode, ExtenderBattery presence/settings.
 2. Hyena Battery/Health **nur lesen**: BatteryArticle14, BatteryInfo, BatteryCellUpdate, BatteryChange, MaxCapacity-bezogene Felder.
 3. Diagnose **nur lesen**: SerialNumbers, Error, ErrorString, Firmware-/Hardwaredetails, MCU bootloader status.
-4. Komfort **nur lesen**: PedalResponse current values, throttle capability flag, wireless remote presence/actions, lock status.
+4. Komfort **nur lesen**: PedalResponse current values, throttle capability flag, wireless remote presence/actions, lock status sowie Cruise-/Lock-Capability ohne Write.
 5. Ergebnisse immer gegen BT638-Live-/READ-Daten validieren; keine Multi-Vendor-EBox-/Brose-Felder als Hyena-Semantik übernehmen.
 
 ## Evidenz- und Sicherheitsregel
