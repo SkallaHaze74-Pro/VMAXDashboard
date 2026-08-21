@@ -155,8 +155,11 @@ jobs:
             echo 'Gemini/GLM Secrets noch nicht gesetzt – deterministische Decoder-AI läuft ohne externe Zweitprüfung weiter.'
             exit 0
           fi
-          # Die kompakten Markdown-Berichte enthalten den Gesamt-/Aggregate-Stand.
-          # So sehen externe Prüfer nicht nur den Anfang eines großen JSONs bzw. eine einzelne Fahrt.
+          # Eine vorhandene vollständige Zweitprüfung wird vor dem neuen Versuch
+          # gesichert. Temporäre Provider-Ausfälle dürfen sie nicht vernichten.
+          if [ -f decoder-ai/provider_review.json ]; then
+            cp decoder-ai/provider_review.json /tmp/provider_review_previous.json
+          fi
           python "$ANALYZER_ROOT/tools/decoder_ai/provider_review.py" \
             --analysis-report decoder-ai/analysis_report.md \
             --decoder-profile decoder-ai/decoder_profile.json \
@@ -165,7 +168,7 @@ jobs:
             --output decoder-ai/provider_review.json \
             --report decoder-ai/provider_review.md
 
-      - name: Transiente Provider-Fehler günstig auffangen
+      - name: Transiente Provider-Fehler intern auffangen
         if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data')
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -188,6 +191,17 @@ jobs:
           if [ -f decoder-ai/provider_review.json ]; then
             python "$ANALYZER_ROOT/tools/decoder_ai/review_output_guard.py" \
               --input decoder-ai/provider_review.json \
+              --output decoder-ai/provider_review.json \
+              --report decoder-ai/provider_review.md
+          fi
+
+      - name: Letzte vollständige Provider-Antwort bei Ausfall bewahren
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data')
+        run: |
+          if [ -f decoder-ai/provider_review.json ]; then
+            python "$ANALYZER_ROOT/tools/decoder_ai/provider_last_good.py" \
+              --current decoder-ai/provider_review.json \
+              --previous /tmp/provider_review_previous.json \
               --output decoder-ai/provider_review.json \
               --report decoder-ai/provider_review.md
           fi

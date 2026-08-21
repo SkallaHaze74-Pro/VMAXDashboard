@@ -23,6 +23,20 @@ def load(path: Path):
         return {}
 
 
+def normalized_source(semantics):
+    legacy = semantics.get("source") if isinstance(semantics.get("source"), dict) else {}
+    return {
+        "hardwareModel": "VMAX New VX2 Gear",
+        "hardwareControllerBranding": "VMAX V-Core Gear (official product naming)",
+        "liveDevice": "BT638",
+        "liveProtocolEvidence": "BT638/GPST-DA1A GATT observations and native GPSTProtocolHandler parser",
+        "bundledHyenaSdk": "io.hylink.hbp / io.hylink.hap and HyenaSDKManager are present in base.apk, but use by this BT638 is not proven",
+        "otherBundledVendorSdks": "Brose, Hobbywing and additional multi-vendor code are also present in base.apk",
+        "legacyMetadata": legacy,
+        "policy": "Do not label DA1A/15xx or the VX2 Gear hardware as Hyena without direct runtime/model evidence.",
+    }
+
+
 def build_comparison(semantics, libble):
     evidence = libble.get("aggregate_fields") if isinstance(libble.get("aggregate_fields"), dict) else {}
 
@@ -89,8 +103,8 @@ def build_comparison(semantics, libble):
         })
 
     return {
-        "schema": "vmax-original-app-vs-bt638-v2",
-        "source": semantics.get("source", {}),
+        "schema": "vmax-original-app-vs-bt638-v3",
+        "source": normalized_source(semantics),
         "signals": rows,
         "unresolvedTargets": unresolved,
         "summary": {
@@ -110,8 +124,8 @@ def write_report(payload, path: Path):
     lines = [
         "# Original VMAX-App ↔ BT638 Echtzeit-Abgleich",
         "",
-        "Die Original-App-Callbacks definieren die Soll-Semantik. libble definiert bekannte Parserfelder. BT638-Fahrdaten entscheiden, ob die Zuordnung auf diesem Modell wirklich gilt.",
-        "Ein Treffer `APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT` vergleicht zwei Extraktionen desselben RAW-Pakets. Er belegt Layoutkonsistenz, ist aber kein unabhängiger Live-Sensornachweis und erhöht `confirmedByLiveEvidence` nicht.",
+        "Quellen werden getrennt: VMAX/V-Core beschreibt die konkrete VX2-Gear-Hardware; BT638/GPST-DA1A beschreibt die live beobachtete BLE-/Native-Evidenz; Hyena/Hylink, Brose und Hobbywing sind zunächst nur in der Multi-Vendor-APK gebündelte SDK-Pfade.",
+        "Ein SDK-/Klassenfund ist kein BT638-Nachweis. Ein Treffer `APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT` vergleicht zwei Extraktionen desselben RAW-Pakets und ist ebenfalls kein unabhängiger Live-Sensornachweis.",
         "",
         "| Original-Livewert | Callback | Mapping | Status |",
         "|---|---|---|---|",

@@ -5,7 +5,10 @@ on:
     branches: [main]
     paths:
       - 'reverse-engineering/reports/ORIGINAL_APP_DEEP_SCAN_2026-08-21.md'
+      - 'reverse-engineering/reports/VMAX_VCORE_HYENA_SEPARATION_2026-08-21.md'
       - 'tools/decoder_ai/original_app_provider_review.py'
+      - 'tools/decoder_ai/provider_retry.py'
+      - 'tools/decoder_ai/test_provider_retry_stability.py'
       - '.github/workflows/original-app-ai-review.yml'
   workflow_dispatch:
 
@@ -36,7 +39,10 @@ jobs:
             tools/decoder_ai/provider_review.py \
             tools/decoder_ai/provider_retry.py \
             tools/decoder_ai/review_output_guard.py \
-            tools/decoder_ai/original_app_provider_review.py
+            tools/decoder_ai/original_app_provider_review.py \
+            tools/decoder_ai/test_provider_retry_stability.py
+          PYTHONPATH=tools/decoder_ai \
+            python -m unittest tools.decoder_ai.test_provider_retry_stability
 
       - name: Gemini und GLM auf Original-App-Funde ansetzen
         env:
@@ -56,9 +62,10 @@ jobs:
           cp reverse-engineering/reports/ORIGINAL_APP_AI_REVIEW_2026-08-21.json "$tmp_dir/review.json"
           cp reverse-engineering/reports/ORIGINAL_APP_AI_REVIEW_2026-08-21.md "$tmp_dir/review.md"
 
-          # Der Provider-Aufruf kann mehrere Minuten dauern. In dieser Zeit darf main
-          # durch andere Analysejobs weiterlaufen. Deshalb zuerst auf den aktuellen
-          # Remote-Stand wechseln und nur die frisch erzeugten Review-Artefakte darüberlegen.
+          # Provider-Aufrufe können mehrere Minuten dauern. Währenddessen darf main
+          # durch andere Analysejobs weiterlaufen. Darum auf den aktuellen Remote-
+          # Stand wechseln und ausschließlich die frisch erzeugten Review-Artefakte
+          # darüberlegen. Das verhindert Rebase-Konflikte in genau diesen Dateien.
           git fetch origin main
           git reset --hard origin/main
           cp "$tmp_dir/review.json" reverse-engineering/reports/ORIGINAL_APP_AI_REVIEW_2026-08-21.json

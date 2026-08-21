@@ -3,10 +3,11 @@ package de.kevin.vmaxdashboard
 import kotlin.math.round
 
 /**
- * Read-only decoder for fields whose byte layout is known from the original VMAX/Hyena
- * libble native parser. This layer never writes to GATT. It is intentionally separate
- * from the adaptive decoder: SDK-known bytes are ground truth and must not be relearned
- * as switches or accessories.
+ * Read-only decoder for byte layouts recovered from the original VMAX native
+ * GPST/DA1A parser and then checked against BT638 live data. The original APK also
+ * bundles Hyena/Hylink HBP/HAP code, but that is a separate vendor SDK and is not
+ * treated as proof that the VX2 Gear hardware itself is Hyena-powered. This layer
+ * never writes to GATT and remains separate from the adaptive decoder.
  */
 data class OriginalSdkRealtimeSnapshot(
     val performancePowerAW: Double? = null,
