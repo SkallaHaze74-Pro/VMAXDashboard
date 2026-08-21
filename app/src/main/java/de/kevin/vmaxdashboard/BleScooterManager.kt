@@ -806,7 +806,7 @@ class BleScooterManager(private val context: Context) {
         val device = result.device
         val observedAt = System.currentTimeMillis()
         val observedName = device.name ?: result.scanRecord?.deviceName ?: TARGET_NAME
-        val advertisement = result.scanRecord?.bytes?.copyOf().orEmpty()
+        val advertisement = result.scanRecord?.bytes?.copyOf() ?: byteArrayOf()
         synchronized(gattOperationLock) {
             if (!shouldAcceptBleScanResult(_state.value.scanning, activeScanIntent, scanIntent)) return
             // Several matching scan callbacks may already be queued when stopScan()
