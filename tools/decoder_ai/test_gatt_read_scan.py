@@ -1,3 +1,4 @@
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -18,6 +19,112 @@ V3_HEADER = (
 
 
 class GattReadScanTests(unittest.TestCase):
+    def test_exact_hex_and_its_stored_hash_are_one_payload_variant(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "diagnostics"
+            first = root / "DeepRead_1"
+            second = root / "DeepRead_2"
+            first.mkdir(parents=True)
+            second.mkdir(parents=True)
+            payload_hex = "47-18-FF-FF-FF-FF-47-18-FF-FF-FF-FF-FF-FF-00-00"
+            payload_hash = hashlib.sha256(bytes.fromhex(payload_hex.replace("-", ""))).hexdigest()
+            first_row = (
+                "1;scan-a;GATT_READ_CALLBACK;CALLBACK_SUCCESS;true;1500;1502;1502;READ;2;0;16;"
+                f"{payload_hex};true;{payload_hash};;7;;;BT638;Static block\n"
+            )
+            second_row = first_row.replace("1;scan-a", "2;scan-b")
+            (first / "Gatt_READ_Diagnose.csv").write_text(V3_HEADER + "\n" + first_row, encoding="utf-8")
+            (second / "Gatt_READ_Diagnose.csv").write_text(V3_HEADER + "\n" + second_row, encoding="utf-8")
+
+            payload = gatt_read_scan.build_report(root)
+            field = payload["fields"][0]
+
+            self.assertEqual(1, field["uniquePayloadCount"])
+            self.assertFalse(field["dynamicAcrossScans"])
+            self.assertEqual([], field["variableByteIndexes"])
+            self.assertEqual([payload_hex], field["samplePayloads"])
+            self.assertEqual([payload_hash], field["samplePayloadHashes"])
+
+    def test_exact_and_redacted_hash_only_rows_share_one_payload_variant(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "diagnostics"
+            exact = root / "DeepRead_exact"
+            redacted = root / "DeepRead_redacted"
+            exact.mkdir(parents=True)
+            redacted.mkdir(parents=True)
+            payload_hex = "FF-56-4D-41-58-00"
+            payload_hash = hashlib.sha256(bytes.fromhex(payload_hex.replace("-", ""))).hexdigest()
+            exact_row = (
+                "1;scan-a;GATT_READ_CALLBACK;CALLBACK_SUCCESS;true;1500;1511;1511;READ;2;0;6;"
+                f"{payload_hex};true;{payload_hash};;7;;;BT638;Unknown field\n"
+            )
+            redacted_row = (
+                "2;scan-b;GATT_READ_CALLBACK;CALLBACK_SUCCESS;true;1500;1511;1511;READ;2;0;6;;"
+                f"true;{payload_hash};identity_or_free_form;7;;;BT638;REDACTED_IDENTITY_OR_FREE_FORM\n"
+            )
+            (exact / "Gatt_READ_Diagnose.csv").write_text(V3_HEADER + "\n" + exact_row, encoding="utf-8")
+            (redacted / "Gatt_READ_Diagnose.csv").write_text(V3_HEADER + "\n" + redacted_row, encoding="utf-8")
+
+            payload = gatt_read_scan.build_report(root)
+            field = payload["fields"][0]
+
+            self.assertEqual(2, field["validPayloadCount"])
+            self.assertEqual(1, field["uniquePayloadCount"])
+            self.assertFalse(field["dynamicAcrossScans"])
+            self.assertEqual([], field["samplePayloads"])
+            self.assertEqual([payload_hash], field["samplePayloadHashes"])
+            self.assertTrue(field["sensitivePayloadRedacted"])
+
+    def test_invalid_callback_hash_does_not_create_a_valid_payload_variant(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / "diagnostics" / "DeepRead"
+            folder.mkdir(parents=True)
+            valid_hex = "01-02-03"
+            invalid_hex = "09-09-09"
+            valid_hash = hashlib.sha256(bytes.fromhex(valid_hex.replace("-", ""))).hexdigest()
+            invalid_hash = hashlib.sha256(bytes.fromhex(invalid_hex.replace("-", ""))).hexdigest()
+            valid_row = (
+                "1;scan-a;GATT_READ_CALLBACK;CALLBACK_SUCCESS;true;1500;1509;1509;READ;2;0;3;"
+                f"{valid_hex};true;{valid_hash};;7;;;BT638;Battery\n"
+            )
+            invalid_row = (
+                "2;scan-b;GATT_READ_CALLBACK;CALLBACK_ERROR;true;1500;1509;1509;READ;2;133;3;"
+                f"{invalid_hex};false;{invalid_hash};;7;;;BT638;Battery\n"
+            )
+            (folder / "Gatt_READ_Diagnose.csv").write_text(
+                V3_HEADER + "\n" + valid_row + invalid_row,
+                encoding="utf-8",
+            )
+
+            field = gatt_read_scan.build_report(Path(tmp) / "diagnostics")["fields"][0]
+
+            self.assertEqual(1, field["uniquePayloadCount"])
+            self.assertFalse(field["dynamicAcrossScans"])
+            self.assertEqual([invalid_hash], field["invalidPayloadHashes"])
+
+    def test_different_exact_plus_hash_payloads_remain_dynamic(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / "diagnostics" / "DeepRead"
+            folder.mkdir(parents=True)
+            payloads = ["01-02-03-04", "01-02-09-04"]
+            rows = []
+            for index, payload_hex in enumerate(payloads, start=1):
+                payload_hash = hashlib.sha256(bytes.fromhex(payload_hex.replace("-", ""))).hexdigest()
+                rows.append(
+                    f"{index};scan-{index};GATT_READ_CALLBACK;CALLBACK_SUCCESS;true;1500;1509;1509;"
+                    f"READ;2;0;4;{payload_hex};true;{payload_hash};;7;;;BT638;Battery\n"
+                )
+            (folder / "Gatt_READ_Diagnose.csv").write_text(
+                V3_HEADER + "\n" + "".join(rows),
+                encoding="utf-8",
+            )
+
+            field = gatt_read_scan.build_report(Path(tmp) / "diagnostics")["fields"][0]
+
+            self.assertEqual(2, field["uniquePayloadCount"])
+            self.assertTrue(field["dynamicAcrossScans"])
+            self.assertEqual([2], field["variableByteIndexes"])
+
     def test_read_payloads_are_aggregated_without_semantic_confirmation(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "diagnostics"

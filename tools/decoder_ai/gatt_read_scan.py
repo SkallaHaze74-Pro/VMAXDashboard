@@ -31,7 +31,7 @@ KNOWN_READ_TARGETS = {
     "1E04": "WirelessRemoteAction",
 }
 SENTINEL_BYTES = {0x00, 0x80, 0xFF}
-SENSITIVE_IDENTITY_TARGETS = {"1516", "1517", "1518", "2A00", "2A25"}
+SENSITIVE_IDENTITY_TARGETS = {"1511", "1513", "1516", "1517", "1518", "2A00", "2A25"}
 GATT_RECORD_KINDS = {"GATT_READ_CALLBACK", "GATT_READ_EVENT"}
 SENSITIVE_MEANING_TERMS = ("serial", "debug", "errorstring", "device name", "identity", "identität")
 
@@ -219,6 +219,18 @@ def _preferred_uuid(forms: set[str], short: str) -> str:
     return full[0] if full else (sorted(forms)[0] if forms else short.lower())
 
 
+def _payload_identity(row: dict[str, str]) -> str:
+    """Canonical content identity for exact and public-redacted payload rows."""
+    payload_text = str(row.get("hex") or "").strip().upper()
+    payload = parse_hex(payload_text)
+    if payload:
+        return "sha256:" + hashlib.sha256(payload).hexdigest()
+    stored_hash = str(row.get("payload_sha256") or "").strip().lower()
+    if stored_hash:
+        return "sha256:" + stored_hash
+    return "raw:" + payload_text if payload_text else ""
+
+
 def build_report(root: Path | Iterable[Path]) -> dict[str, Any]:
     rows, bundles, source_bundle_count = load_rows(root)
     gatt_rows = [row for row in rows if _is_gatt_attempt(row)]
@@ -266,7 +278,11 @@ def build_report(root: Path | Iterable[Path]) -> dict[str, Any]:
         invalid_payload_hashes = sorted(set(invalid_payload_hashes))
         unique_texts = sorted(set(non_empty_texts))
         unique_hashes = sorted(set(public_hashes))
-        payload_identities = set(unique_texts) | {f"sha256:{value}" for value in unique_hashes}
+        payload_identities = {
+            identity
+            for item in valid_payload_callbacks
+            if (identity := _payload_identity(item))
+        }
         payload_bytes = [parse_hex(text) for text in unique_texts]
         payload_bytes = [payload for payload in payload_bytes if payload]
         lengths = Counter(len(parse_hex(text)) for text in all_payload_texts if parse_hex(text))

@@ -387,7 +387,10 @@ internal class DiagnosticReadArchive private constructor(context: Context) {
                 listOf(DIAGNOSTIC_READ_CSV_FILE, DIAGNOSTIC_READ_SUMMARY_FILE, "manifest.json")
                     .forEach { name ->
                         val file = File(folder, name)
-                        if (file.isFile) uploader.uploadIfMissing("$remoteFolder/$name", file.readBytes(), folder.name)
+                        if (file.isFile) {
+                            val publicBytes = publicGitHubUploadBytes(name, file.readBytes())
+                            uploader.uploadIfMissing("$remoteFolder/$name", publicBytes, folder.name)
+                        }
                     }
                 folder.deleteRecursively()
             }

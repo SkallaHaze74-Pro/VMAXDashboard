@@ -10,7 +10,7 @@ object ExternalAiPromptFactory {
     ): String = buildString {
         appendLine("VMAXDashboard Decoder-Status")
         appendLine("Sync aktiviert: ${sync.enabled}")
-        appendLine("Offene Messfahrten: ${sync.pendingBundles}")
+        appendLine("Offene Uploadobjekte (Messfahrten + Deep READ): ${sync.pendingBundles}")
         appendLine("Hochgeladene Messfahrten: ${sync.uploadedBundles}")
         appendLine("Letzter Sync-Status: ${sync.lastStatus.ifBlank { "unbekannt" }.take(300)}")
         appendLine("Decoder-Quelle: ${profile.source}")

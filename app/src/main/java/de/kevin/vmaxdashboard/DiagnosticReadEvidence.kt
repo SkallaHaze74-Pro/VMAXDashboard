@@ -212,14 +212,24 @@ private fun diagnosticSha256(bytes: ByteArray): String = MessageDigest.getInstan
 internal fun diagnosticTextSha256(text: String): String =
     diagnosticSha256(text.toByteArray(Charsets.UTF_8))
 
+private val publicIdentityDigest = Regex("^redacted_sha256:([0-9a-fA-F]{64})$")
+
+internal fun diagnosticPublicIdentityLabel(identity: String): String {
+    val clean = identity.trim()
+    val existingDigest = publicIdentityDigest.matchEntire(clean)?.groupValues?.get(1)
+    return when {
+        clean.isBlank() || clean.equals("redacted", ignoreCase = true) -> "redacted"
+        existingDigest != null -> "redacted_sha256:${existingDigest.lowercase()}"
+        else -> "redacted_sha256:${diagnosticTextSha256(clean)}"
+    }
+}
+
 internal fun diagnosticPublicDeviceLabel(identity: String): String {
     val clean = identity.trim()
     return if (clean.equals("BT638", ignoreCase = true)) {
         "BT638"
-    } else if (clean.isBlank()) {
-        "redacted"
     } else {
-        "redacted_sha256:${diagnosticTextSha256(clean)}"
+        diagnosticPublicIdentityLabel(clean)
     }
 }
 
@@ -233,7 +243,7 @@ internal fun diagnosticPayloadSha256(hex: String): String {
     return diagnosticSha256(bytes)
 }
 
-private val publicSensitiveShortIds = setOf("1516", "1517", "1518", "2A00", "2A25")
+private val publicSensitiveShortIds = setOf("1511", "1513", "1516", "1517", "1518", "2A00", "2A25")
 private val publicSensitiveMeaningTerms = listOf(
     "serial", "debug", "errorstring", "device name", "identity", "identität", "advertisement"
 )
@@ -244,15 +254,16 @@ private fun diagnosticHexBytes(hex: String): ByteArray = hex.replace(':', '-').s
         .map(Int::toByte)
         .toByteArray()
 
-private fun looksLikeHumanText(value: String): Boolean {
+private fun looksLikeHumanText(value: String, minimumCodePoints: Int = 1): Boolean {
     val clean = value.trim('\u0000', '\uFEFF', ' ', '\t', '\r', '\n')
-    if (clean.codePointCount(0, clean.length) < 1) return false
+    if (clean.codePointCount(0, clean.length) < minimumCodePoints) return false
     val codePoints = clean.codePoints().toArray()
     val readable = codePoints.count { codePoint ->
         Character.isLetterOrDigit(codePoint) || Character.isSpaceChar(codePoint) ||
             codePoint in listOf('-'.code, '_'.code, '.'.code, ':'.code, '/'.code, '@'.code)
     }
     return codePoints.any { Character.isLetterOrDigit(it) } &&
+        readable >= minimumCodePoints &&
         readable.toDouble() / codePoints.size >= 0.80
 }
 
@@ -265,23 +276,79 @@ private fun decodeStrict(bytes: ByteArray, charset: java.nio.charset.Charset): S
             .toString()
     }.getOrNull()
 
-private fun looksLikeFreeFormText(hex: String): Boolean {
-    val bytes = diagnosticHexBytes(hex)
-    if (bytes.isEmpty()) return false
-    if (decodeStrict(bytes, Charsets.UTF_8)?.let(::looksLikeHumanText) == true) return true
-    if (bytes.size >= 4 && bytes.size % 2 == 0) {
-        val alternatingNulls = bytes.indices.count { index -> bytes[index] == 0.toByte() && index % 2 == 0 }
-            .coerceAtLeast(bytes.indices.count { index -> bytes[index] == 0.toByte() && index % 2 == 1 })
-        val hasUtf16Shape = alternatingNulls >= bytes.size / 4 ||
-            (bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte()) ||
+private fun hasUtf16Bom(bytes: ByteArray): Boolean =
+    bytes.size >= 2 && (
+        (bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte()) ||
             (bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte())
+        )
+
+private fun looksLikeEncodedHumanText(bytes: ByteArray, minimumCodePoints: Int = 1): Boolean {
+    if (decodeStrict(bytes, Charsets.UTF_8)?.let { looksLikeHumanText(it, minimumCodePoints) } == true) return true
+    if (bytes.size >= 4 && bytes.size % 2 == 0) {
+        val hasUtf16Shape = hasStrongUtf16Shape(bytes, minimumBytes = 4) || hasUtf16Bom(bytes)
         if (hasUtf16Shape && (
-                decodeStrict(bytes, Charsets.UTF_16LE)?.let(::looksLikeHumanText) == true ||
-                    decodeStrict(bytes, Charsets.UTF_16BE)?.let(::looksLikeHumanText) == true
+                decodeStrict(bytes, Charsets.UTF_16LE)?.let {
+                    looksLikeHumanText(it, minimumCodePoints)
+                } == true ||
+                    decodeStrict(bytes, Charsets.UTF_16BE)?.let {
+                        looksLikeHumanText(it, minimumCodePoints)
+                    } == true
                 )
         ) return true
     }
     return false
+}
+
+private fun isProtocolFramingByte(byte: Byte): Boolean {
+    val value = byte.toInt() and 0xFF
+    return value < 0x20 || value >= 0x7F
+}
+
+private fun hasStrongUtf16Shape(bytes: ByteArray, minimumBytes: Int = 8): Boolean {
+    if (bytes.size < minimumBytes || bytes.size % 2 != 0) return false
+    val codeUnits = bytes.size / 2
+    val evenNulls = bytes.indices.count { index -> index % 2 == 0 && bytes[index] == 0.toByte() }
+    val oddNulls = bytes.indices.count { index -> index % 2 == 1 && bytes[index] == 0.toByte() }
+    val dominant = maxOf(evenNulls, oddNulls)
+    val other = minOf(evenNulls, oddNulls)
+    return dominant * 4 >= codeUnits * 3 && other * 4 <= codeUnits
+}
+
+private fun looksLikeProtocolFramedHumanText(bytes: ByteArray): Boolean {
+    if (bytes.size < 7) return false
+    val maxEdgeBytes = minOf(4, bytes.lastIndex)
+    for (trimmedStart in 0..maxEdgeBytes) {
+        for (trimmedEnd in 0..maxEdgeBytes) {
+            if (trimmedStart + trimmedEnd == 0 || trimmedStart + trimmedEnd >= bytes.size) continue
+            if (trimmedStart + trimmedEnd > 4) continue
+            if (!bytes.take(trimmedStart).all(::isProtocolFramingByte)) continue
+            if (!bytes.takeLast(trimmedEnd).all(::isProtocolFramingByte)) continue
+            val endExclusive = bytes.size - trimmedEnd
+            val candidate = bytes.copyOfRange(trimmedStart, endExclusive)
+            val utf8 = decodeStrict(candidate, Charsets.UTF_8)
+            if (utf8 != null && looksLikeHumanText(utf8, minimumCodePoints = 6)) return true
+            if ((hasStrongUtf16Shape(candidate) || hasUtf16Bom(candidate)) && (
+                    decodeStrict(candidate, Charsets.UTF_16LE)?.let {
+                        looksLikeHumanText(it, minimumCodePoints = 4)
+                    } == true ||
+                        decodeStrict(candidate, Charsets.UTF_16BE)?.let {
+                            looksLikeHumanText(it, minimumCodePoints = 4)
+                        } == true
+                    )
+            ) return true
+        }
+    }
+    return false
+}
+
+private fun looksLikeFreeFormText(hex: String): Boolean {
+    val bytes = diagnosticHexBytes(hex)
+    if (bytes.isEmpty()) return false
+    if (looksLikeEncodedHumanText(bytes)) return true
+
+    // GPST/BT638 fields can wrap UTF-8 or UTF-16 text in protocol bytes or a
+    // checksum. Try bounded edge slices without assuming a universal marker.
+    return looksLikeProtocolFramedHumanText(bytes)
 }
 
 private fun isPublicSensitiveDiagnosticRow(
@@ -290,7 +357,7 @@ private fun isPublicSensitiveDiagnosticRow(
     meaning: String,
     recordKind: String
 ): Boolean {
-    val canonicalShort = shortId.ifBlank { diagnosticShortUuid(characteristicUuid) }.uppercase()
+    val canonicalShort = diagnosticShortUuid(shortId.ifBlank { characteristicUuid })
     val lowerMeaning = meaning.lowercase()
     return canonicalShort in publicSensitiveShortIds ||
         recordKind.equals(DiagnosticRecordKind.BLE_OBSERVATION.name, ignoreCase = true) ||
@@ -378,7 +445,7 @@ internal fun redactRawTelemetryCsvForPublic(csv: String): String {
     rows.drop(1).forEach { source ->
         if (source.all(String::isBlank)) return@forEach
         val row = source.toMutableList().apply { while (size < header.size) add("") }
-        val channel = row.getOrElse(channelIndex) { "" }.uppercase()
+        val channel = diagnosticShortUuid(row.getOrElse(channelIndex) { "" })
         val exactHex = row.getOrElse(hexIndex) { "" }
         if (channel in publicSensitiveShortIds || looksLikeFreeFormText(exactHex)) {
             if (exactHex.isNotBlank()) row[hashIndex] = diagnosticPayloadSha256(exactHex)
@@ -446,10 +513,8 @@ internal fun redactDiagnosticReadSummaryForPublic(summary: String): String =
         val label = line.substringBefore(':').trim()
         val publicIdentity = if (key in setOf("gerät", "device", "device_name")) {
             diagnosticPublicDeviceLabel(identity)
-        } else if (identity.isBlank()) {
-            "redacted"
         } else {
-            "redacted_sha256:${diagnosticTextSha256(identity)}"
+            diagnosticPublicIdentityLabel(identity)
         }
         "$label: $publicIdentity"
     } + if (summary.endsWith('\n')) "\n" else ""
