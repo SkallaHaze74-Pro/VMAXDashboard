@@ -3,7 +3,7 @@
 > Advisory only / READ-ONLY. KI-Aussagen sind keine Ground Truth und aktivieren nichts automatisch.
 > VMAX/V-Core, BT638/GPST-DA1A, Hyena/Hylink und andere Vendor-SDKs werden getrennt bewertet.
 > Fremde Vendor-Authentifizierung oder API-Key-Symbole gelten nicht als BT638-Secret-Key-Beweis.
-> Deterministischer Lade-Guard: Die unten noch enthaltenen Vorschläge für Live-Monitoring „während des Ladens“ sind ungültig. Der BT638 schaltet dabei nach Nutzerbeobachtung ab; zulässig sind Zustand davor, ein mögliches kurzes POWER-Fenster und der Zustand nach Abziehen/Reconnect. Ein Reconnect allein beweist keinen Ladezustand.
+> Deterministischer Lade-Guard: Kein Live-BLE während des Ladens voraussetzen; nur Zustand davor, mögliches kurzes POWER-Fenster und Zustand nach Abziehen/Reconnect vergleichen. Ein Reconnect allein beweist keinen Ladezustand.
 
 ## Gemini
 
@@ -14,27 +14,28 @@ Fallback: `true`
 Frische: `aktuell`
 
 - Belastbare Evidenz:
-  * Der New VMAX VX2 Gear ist hardwareseitig als V-Core Gear / V-Torque ausgewiesen.
-  * Live-Telemetrie auf DA1A/15xx (z. B. Geschwindigkeit, Odometer, Spannung, Strom, Akkustand) ist auf dem BT638 ohne spezifischen Auth-Key bestätigt.
-  * Die Original-App enthält einen Multi-Vendor-Baukasten mit Hyena-, Brose- und Hobbywing-SDKs; Hyena-spezifische Code-Pfade sind darin implementiert, aber noch nicht als BT638-Hardwarefunktion bewiesen.
-  * Authentifizierungsroutinen im generischen SDK (wie `authSachsBike`) sind nachweislich Sachs-spezifisch und gelten nicht als BT638-Handshake.
+  - VMAX VX2 Gear verwendet laut Herstellerangabe den V-Core Controller / V-Torque Gear.
+  - Der Live-Pfad des BT638 nutzt die proprietäre GATT-UUID-Familie DA1A (u. a. `1505`, `1506`, `1508`, `1509`) und liefert Telemetriedaten wie Geschwindigkeit, Odometer und Akkuspannung ohne App-seitigen Auth-Schritt.
+  - Die originale `base.apk` ist ein Multi-Vendor-Baukasten mit Hyena-, Brose- und Hobbywing-SDKs; Hyena-spezifische Features sind im App-Code vorhanden, aber nicht als BT638-Runtime bewiesen.
+  - Native Symbole in `libble-sdk-native-lib.so` (z. B. `GPSTProtocolHandler`) belegen generische Parser- und Auth-Strukturen, wobei spezifische Key-Routinen explizit Sachs-zugeordnet sind.
 
 - Konflikte / mögliche Bugs:
-  * Die frühere Annahme, das gesamte Gerät sei ein Hyena-Antriebssystem, steht im Widerspruch zur VMAX-Hardwarebezeichnung (V-Core) und der Multi-Vendor-Natur der APK.
-  * Das ungesicherte Übertragen von SDK-Funktionen (z. B. ELM, SOH, Charge Cycles) auf den BT638 ohne Live-GATT-Nachweis führt zu Fehlinterpretationen.
-  * Der mit 0xFFFF belegte Reststrecken-Wert (1505 offset 10) zeigt eine Diskrepanz zwischen nativem Parser-Layout und tatsächlich beobachteten Live-Daten.
+  - Unberechtigte Gleichsetzung von Hyena/Hylink-SDK-Code mit dem tatsächlichen BT638/DA1A-Hardwareverhalten.
+  - Mögliche Verwechslung von generischen SDK-Authentication-Methoden (z. B. `SetApiKey`, Sachs-Key-Routinen) mit einem existierenden BT638-Application-Layer-Handshake.
+  - Fehlende Live-Evidenz für fortgeschrittene Hyena-Batteriedaten (SOH, Charge Cycles, ELM) auf dem BT638.
+  - Unbestätigter Controller-Ausleseschutz (Read Protection), der fälschlicherweise als BLE-Handshake interpretiert werden könnte.
 
 - Hypothesen (nicht bestätigt):
-  * Ob erweiterte Hyena-Batteriediagnosedaten (SOH, Ladezyklen, Produktionsdatum) vom BT638 über die DA1A-Familie bereitgestellt werden, ist offen.
-  * Ob zusätzliche native READ-Routinen (z. B. `ReadCharacteristicBatteryCell`, `ReadCharacteristicErrorString`) auf dem BT638 antworten, ist unbestätigt.
-  * Ob ein echter, gerätespezifischer Handshake für bestimmte bislang ungelöste Characteristics existiert, ist mangels Live-Evidenz spekulativ.
+  - Der BT638-Controller besitzt einen geheimen BLE-Application-Layer-Handshake zur Freischaltung erweiterter DA1A-Daten.
+  - Die in der APK gefundenen Hyena-spezifischen Batterie- und Tuning-Funktionen lassen sich direkt auf den V-Core-Controller übertragen.
+  - Feld `1505` Offset 0 und 2 entsprechen exakt den Callback-Werten für Motor- und Treadle-Power in mW.
 
 - Nächste sichere READ-ONLY-Tests (max. 5):
-  1. Vollständige Inventarisierung aller verfügbaren `PROPERTY_READ`-Characteristics des BT638 mitsamt GATT-Status und Rohdaten.
-  2. Gezieltes Auslesen bekannter Diagnose-Handles (Seriennummern, Firmware- und Hardware-IDs) über sichere READ-Requests im Stillstand.
-  3. Protokollierung von Status und Payload bei Abfragen von Batterie-Zellspannungen und Fehlerstatus (READ-only).
-  4. Überprüfung der verbleibenden Offen-Felder (z. B. Motorleistung-Offsets) durch reproduzierbare Messungen im Stand.
-  5. Protokollierung von GATT-Antworten vor und während des Ladevorgangs zur Verifizierung von Ladezustands-Flags.
+  - Vollständige Inventarisierung aller verfügbaren `PROPERTY_READ`-Characteristics des BT638 inklusive Service-UUID, Status und Rohbytes.
+  - Erfassung des Vor- und Nach-Ladezustands (Zustand vor dem Einstecken des Ladegeräts vs. erster Zustand nach Reconnect) ohne Live-Polling während des Ladens.
+  - Auswerten des GATT-Antwortstatus für optionale Diagnose-Characteristics (SerialNumbers, Error, ErrorString) im Stillstand.
+  - Prüfen, ob `1505` Offset 10 (`remainingDistanceKm`) jemals gültige Werte ungleich `0xFFFF` liefert.
+  - Protokollieren von Verbindungsparametern und MTU-Größen nach standardmäßigem GATT-Connect ohne eigene Schreibbefehle.
 
 - Automatische Änderungen: KEINE
 
@@ -49,26 +50,29 @@ Fallback: `true`
 Frische: `aktuell`
 
 - **Belastbare Evidenz**
-    - Hardware-Identität: VMAX-VX2-Gerät ist offiziell als **V-Core Gear / V-Torque** klassifiziert; Hyena ist ein SDK-Modul in der Multi-Vendor-APK, nicht zwangsläufig die Hardware-Infrastruktur.
-    - Live-Daten: DA1A/15xx-Characteristics (1505, 1506, 1509) liefern Geschwindigkeit, Odometer, Akku % und Strom ohne spezifischen „Secret Key“ oder Hyena-Auth-Handshake.
-    - SDK-Fähigkeiten: `libble-sdk-native-lib.so` belegt explizite READ-Funktionen (`ReadCharacteristicBatteryInfo`, `ReadCharacteristicSerialNumbers`), die Implementierung sind vorhanden, auch wenn nicht alle auf dem BT638 aktiv sind.
-    - Vendor-Trennung: Die APK enthält Brose-, Hobbywing- und Sachs-Code. Das Vorhandensein eines SDKs (Hyena) beweist nicht, dass es auf dem konkreten VX2-Gerät genutzt wird.
+    - Hardware ist ein **V-Core Gear / V-Torque** (VMAX-Doku), nicht zwingend Hyena. Live-BLE nutzt die DA1A/15xx-Familie (Speed, Odo, Batt, Current sind bestätigt).
+    - Die `base.apk` enthält Hyena, Brose, Hobbywing SDK-Code, ist aber ein **Multi-Vendor-Baukasten**. SDK-Code beweist keine Hardware-Funktion auf dem aktuellen Gerät.
+    - Kein BT638-spezifischer geheimer Handshake im analysierten Code (Sachs-Routinen sind getrennt dokumentiert). Live-Verbindung funktioniert ohne diese.
+    - Native `libble-sdk-native-lib.so` belegt Implementierungsfähigkeiten (OTA, Battery, Serial), aber keine tatsächliche Verfügbarkeit auf dem verbundenen Controller.
 
 - **Konflikte / mögliche Bugs**
-    - **Power-Wert-Ambiguität:** Die JSON-Mapping für `motorPower` und `treadlePower` nutzt dieselben Kandidaten (Offsets 0 und 2 von 1505). Da beide Felder als `role_assignment_open` markiert sind, besteht hohe Wahrscheinlichkeit für falsche Zuordnung oder falsche Bezeichnung, falls die Werte nicht separat verfügbar sind.
-    - **Verbleibende Reichweite (0xFFFF):** `remainingDistanceKm` ist als `original_app_known_mapping_open` markiert, aber Live-Daten zeigen nur `0xFFFF` (unbekannt). Dies deutet auf eine fehlende Implementierung im BT638 oder eine falsche Decoder-Logik hin.
-    - **Hyena-Feature-Existenz:** Die Dokumentation listet umfangreiche Hyena-Features (ELM, Extender Battery, Optimized Charging) als „Kandidaten“. Da diese nicht auf dem V-Core bestätigt sind, besteht ein Risiko, dass bestehende Decoder-Konfigurationen versucht, diese Werte zu lesen und Fehler generieren.
+    - **Multi-Vendor-Diskrepanz:** Der App-Baukasten ist Multi-Vendor (Hyena/Brose), das Live-Gerät nutzt aber nur einen festen DA1A-Pfad. Es ist unklar, ob der Hyena-Code "Dead Code" ist oder für andere VMAX-Modelle gedacht.
+    - **Falsche Mapping:** `1505` offset 10 (Remaining Distance) ist im Original-App-Modell belegt, alle Live-Messungen zeigen jedoch 0xFFFF (unbekannt). Die semantische Zuordnung ist fehlerhaft oder das Feature wird nicht unterstützt.
+    - **SDK vs. Hardware:** `BatteryPartImpl.getChargeCycles`, `SOH` und `Production Date` existieren als Java-Methoden im SDK, aber es gibt keine Evidenz, dass der BT638 diese Daten bereitstellt. Es besteht die Gefahr der Fehlinterpretation von Code-Existenz als Datenverfügbarkeit.
 
 - **Hypothesen (nicht bestätigt)**
-    - **Motor- vs. Pedal-Power:** Die Werte bei Offset 0 und 2 von 1505 könnten nicht Motorleistung und Pedalleistung sein, sondern z. B. „Gesamtleistung“ und „Regenerationsleistung“ oder unterschiedliche Phasen des gleichen Signals.
-    - **Extender-Support:** Der VX2 Gear (V-Core) könnte die Hyena-Logik für den „Extender Battery“ nicht unterstützen, obwohl der SDK-Code dies vorbereitet.
-    - **Sachs-Auth-Veraltung:** Die `AuthSachsBike`-Funktionen könnten nur für Sachs-Motor-Varianten innerhalb des VMAX-Ökosystems relevant sein und keinem Sicherheits-Schutz für den BT638-VX2 Gear darstellen.
+    - Der "Read Protection"-Hinweis des Nutzers bezieht sich möglicherweise auf eine physische Controller-Sperre (Hardware), nicht auf einen verschlüsselten BLE-Application-Layer-Handshake.
+    - Die `HyenaSDKManager`-Methoden (z.B. `getExtenderBatteryLifeSettings`, `setOptimizedChargingMode`) könnten aktiv sein, wenn die Firmware Hyena unterstützt, sind aber aktuell nicht belegt.
+    - OTA-Funktionen im SDK könnten für interne VMAX-Updates reserviert sein und über den Standard-BT638-GATT-Zugriff nicht erreichbar sein.
+    - Die `1505` offset 10 (Remaining Distance) könnte ein Zustandsflag sein (z.B. "Navigation gestartet"), das nur selten gültige Werte liefert.
 
 - **Nächste sichere READ-ONLY-Tests (max. 5)**
-    - **Battery Cell & Serial:** Lesen von `ReadCharacteristicBatteryCell` und `ReadCharacteristicSerialNumbers` über den DA1A-Pfad, um zu prüfen, ob Hardware-Support für Zellvoltagespannungen und Seriennummern existiert.
-    - **Motor Info/Temp:** Lesen von Motor-Informationen und Temperaturwerten, um die Ambiguität bei `motorPower` und `treadlePower` aufzulösen und die korrekten Felder zu identifizieren.
-    - **Charging State Mapping:** Live-Monitoring von `1509` während des Ladens, um die offenen Felder `chargingRemainSeconds` und `stateOfHealth` exakt auf Bytes zu mappen.
-    - **ELM Features:** Lesen von `OptimizedChargingStatus` und `ExtendedLifeModeState` (falls entsprechende Characteristics existieren), um Hyena-Unterstützung auf dem V-Core zu validieren.
-    - **OTA/Bootloader:** Lesen von Firmware-/Bootloader-Status-Flags, um die `MCUInBootloaderMode`-Evidenz zu bestätigen, ohne Firmware-Änderungen vorzunehmen.
+    - Vollständige GATT-Inventarisierung aller `PROPERTY_READ`-Charakteristika auf dem V-Core, gezielt nach nicht-DA1A UUIDs (Suche nach Service-Unterscheidung).
+    - Wiederholte Messung von `1505` offset 10 unter Last, um zu prüfen, ob 0xFFFF ein konstanter Fehler oder ein abhängiger Zustand ist.
+    - Versuch, `ReadCharacteristicSerialNumbers` und `ReadCharacteristicError` via GATT Read auszulesen (Native-SDK-Pfad simulieren).
+    - Überprüfung, ob sich die Service-UUIDs bei anderen VMAX-Modellen unterscheiden, um die Theorie des Multi-Vendor-App-Baukastens zu validieren.
+    - Bestätigung der DA1A/15xx-Datenpunkte bei niedrigen Temperaturen, um sicherzustellen, dass keine Sensor-Glitches die "unbekannt"-Werte verursachen.
+
+- **Automatische Änderungen: KEINE**
 
 Freigabe: keine automatische Änderung.
