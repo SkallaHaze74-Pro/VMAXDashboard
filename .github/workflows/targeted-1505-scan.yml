@@ -34,15 +34,17 @@ jobs:
 
       - name: Target-Analyzer testen
         run: |
-          python -m py_compile .analyzer-main/tools/decoder_ai/targeted_1505_scan.py
+          python -m py_compile \
+            .analyzer-main/tools/decoder_ai/targeted_1505_scan.py \
+            .analyzer-main/tools/decoder_ai/targeted_1505_scan_v2.py
           PYTHONPATH=.analyzer-main/tools/decoder_ai \
             python -m unittest discover \
               -s .analyzer-main/tools/decoder_ai \
-              -p 'test_targeted_1505_scan.py'
+              -p 'test_targeted_1505_scan*.py'
 
       - name: RPM, Restreichweite, Power A/B und Batterie-Ziele prüfen
         run: |
-          python .analyzer-main/tools/decoder_ai/targeted_1505_scan.py \
+          python .analyzer-main/tools/decoder_ai/targeted_1505_scan_v2.py \
             --root fahrdaten \
             --output decoder-ai/targeted_1505_scan.json \
             --report decoder-ai/targeted_1505_scan.md
