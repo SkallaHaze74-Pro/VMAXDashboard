@@ -1,26 +1,26 @@
 {
-  "schema": "vmax-targeted-1505-scan-v1",
+  "schema": "vmax-targeted-1505-scan-v2",
   "rideCount": 13,
-  "packets1505": 1430,
+  "packets1505": 1428,
   "powerAB": {
     "status": "DUPLICATED_ON_CURRENT_BT638_DATA",
-    "validPairs": 1430,
-    "equalPairs": 1429,
-    "equalPercent": 99.93,
-    "maxAbsDifferenceW": 1919.6,
+    "validPairs": 1428,
+    "equalPairs": 1428,
+    "equalPercent": 100.0,
+    "maxAbsDifferenceW": 0.0,
     "powerA": {
-      "samples": 1430,
+      "samples": 1428,
       "min": 0.0,
       "max": 1053.0,
-      "mean": 62.034476,
-      "distinct": 126
+      "mean": 62.116246,
+      "distinct": 125
     },
     "powerB": {
-      "samples": 1430,
+      "samples": 1428,
       "min": 0.0,
-      "max": 1926.9,
-      "mean": 63.376853,
-      "distinct": 126
+      "max": 1053.0,
+      "mean": 62.116246,
+      "distinct": 125
     },
     "powerA_vs_absVI": {
       "comparisons": 12,
@@ -39,32 +39,22 @@
     "note": "A/B equality or correlation is observational evidence only; it does not assign motor/treadle semantics."
   },
   "rpm1505_8": {
-    "status": "RPM_VALUES_OBSERVED_NEEDS_VALIDATION",
+    "status": "NO_VALID_RPM_SAMPLES_CURRENT_DATA",
     "rawStates": {
-      "ffff": 1428,
-      "valid": 2
+      "ffff": 1428
     },
     "values": {
-      "samples": 2,
-      "min": 13108.0,
-      "max": 13108.0,
-      "mean": 13108.0,
-      "distinct": 1
+      "samples": 0
     },
     "speedCorrelation": null
   },
   "remainingDistance1505_10": {
-    "status": "RANGE_VALUES_OBSERVED_NEEDS_VALIDATION",
+    "status": "NO_VALID_RANGE_SAMPLES_CURRENT_DATA",
     "rawStates": {
-      "ffff": 1428,
-      "valid": 2
+      "ffff": 1428
     },
     "values": {
-      "samples": 2,
-      "min": 13622.0,
-      "max": 13622.0,
-      "mean": 13622.0,
-      "distinct": 1
+      "samples": 0
     },
     "socCorrelation": null
   },
@@ -120,12 +110,12 @@
   "rides": [
     {
       "ride": "Messfahrt_2026-08-13_19-17-14",
-      "packets1505": 397,
-      "powerAValid": 397,
-      "powerBValid": 397,
+      "packets1505": 396,
+      "powerAValid": 396,
+      "powerBValid": 396,
       "powerABEqual": 396,
-      "rpmValid": 1,
-      "remainingRangeValid": 1
+      "rpmValid": 0,
+      "remainingRangeValid": 0
     },
     {
       "ride": "Messfahrt_2026-08-13_20-26-18",
@@ -138,12 +128,12 @@
     },
     {
       "ride": "Messfahrt_2026-08-15_21-09-05",
-      "packets1505": 64,
-      "powerAValid": 64,
-      "powerBValid": 64,
-      "powerABEqual": 64,
-      "rpmValid": 1,
-      "remainingRangeValid": 1
+      "packets1505": 63,
+      "powerAValid": 63,
+      "powerBValid": 63,
+      "powerABEqual": 63,
+      "rpmValid": 0,
+      "remainingRangeValid": 0
     },
     {
       "ride": "Messfahrt_2026-08-15_21-12-46",
@@ -235,5 +225,6 @@
       "rpmValid": 0,
       "remainingRangeValid": 0
     }
-  ]
+  ],
+  "filtered1505HybridPackets": 2
 }
