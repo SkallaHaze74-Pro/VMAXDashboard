@@ -1,6 +1,6 @@
 {
   "schema": "vmax-adaptive-decoder-v1",
-  "revision": "17a2971091549c11",
+  "revision": "0094d27e1200aa83",
   "generatedAtMs": 1787244398334,
   "rideCount": 13,
   "ruleCount": 6,
@@ -66,18 +66,24 @@
       "encoding": "u16be",
       "scale": 1.0,
       "bias": 0.0,
-      "confidence": 89,
+      "confidence": 93,
       "observations": 939,
       "rides": 8,
       "correlation": 1.0,
       "mae": 0.0,
-      "source": "sdk-layout-observed-needs-independent-proof",
+      "source": "sdk-layout+cross-field-check-needs-external-proof",
       "status": "candidate",
       "evidenceGuard": {
         "reason": "same-raw export consistency is not independent semantic proof",
         "libbleVerdict": "OBSERVED_NEEDS_MORE_PROOF",
-        "matchPercent": 89.05,
-        "mae": 11.605336
+        "layoutMatchPercent": 89.05,
+        "layoutMae": 11.605336,
+        "crossFieldComparisons": 830,
+        "crossFieldClosePercent": 95.18,
+        "crossFieldMaeW": 4.130964,
+        "crossFieldCorrelation": 0.984642,
+        "crossFieldReference": "abs(voltage_v * current_a) via electrical_power_w",
+        "independentExternalConfirmation": false
       }
     },
     {

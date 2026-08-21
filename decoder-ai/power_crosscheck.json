@@ -1,0 +1,74 @@
+{
+  "schema": "vmax-power-crosscheck-v1",
+  "candidate": "1509/9 u16be",
+  "reference": "abs(voltage_v * current_a) via electrical_power_w",
+  "evidenceType": "cross-field-physical-consistency",
+  "independentExternalConfirmation": false,
+  "rideCount": 13,
+  "ridesWithComparisons": 7,
+  "comparisons": 830,
+  "maeW": 4.130964,
+  "medianAbsErrorW": 0.0,
+  "closePercent": 95.18,
+  "correlation": 0.984642,
+  "status": "CROSS_FIELD_EVIDENCE_AVAILABLE",
+  "note": "Cross-field consistency is useful evidence but is not external semantic proof. It must never activate the decoder rule by itself.",
+  "rides": [
+    {
+      "ride": "Messfahrt_2026-08-16_22-12-43",
+      "comparisons": 134,
+      "maeW": 3.546269,
+      "medianAbsErrorW": 0.0,
+      "closePercent": 97.01,
+      "correlation": 0.985116
+    },
+    {
+      "ride": "Messfahrt_2026-08-17_17-05-47",
+      "comparisons": 118,
+      "maeW": 4.185593,
+      "medianAbsErrorW": 0.0,
+      "closePercent": 93.22,
+      "correlation": 0.995372
+    },
+    {
+      "ride": "Messfahrt_2026-08-17_20-24-15",
+      "comparisons": 236,
+      "maeW": 1.473729,
+      "medianAbsErrorW": 0.0,
+      "closePercent": 97.46,
+      "correlation": 0.98731
+    },
+    {
+      "ride": "Messfahrt_2026-08-18_18-19-38",
+      "comparisons": 82,
+      "maeW": 12.304878,
+      "medianAbsErrorW": 0.0,
+      "closePercent": 90.24,
+      "correlation": 0.921596
+    },
+    {
+      "ride": "Messfahrt_2026-08-20_12-26-55",
+      "comparisons": 101,
+      "maeW": 5.534653,
+      "medianAbsErrorW": 0.0,
+      "closePercent": 95.05,
+      "correlation": 0.984757
+    },
+    {
+      "ride": "Messfahrt_2026-08-20_14-45-15",
+      "comparisons": 80,
+      "maeW": 3.72125,
+      "medianAbsErrorW": 0.0,
+      "closePercent": 93.75,
+      "correlation": 0.99117
+    },
+    {
+      "ride": "Messfahrt_2026-08-20_18-42-34",
+      "comparisons": 79,
+      "maeW": 3.11519,
+      "medianAbsErrorW": 0.0,
+      "closePercent": 94.94,
+      "correlation": 0.996323
+    }
+  ]
+}

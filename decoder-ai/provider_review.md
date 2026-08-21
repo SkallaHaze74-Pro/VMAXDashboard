@@ -5,11 +5,13 @@
 
 ## Gemini 3.7 Flash
 
-Status: `error`
+Status: `ok`
 
 Modell: `gemini-3.7-flash`
 
-Fehler: Provider vorübergehend nicht verfügbar (500) • gemini-3.7-flash is currently experiencing high demand, spikes in demand are usually temporary. Please try again later.
+### Belastbare Evidenz
+- **Layout-Konsistenz (SDK vs. App-RAW-Extraktion):** 100% Übereinstimmung (1428–1444 Vergleiche, MAE = 0.0) bei `1505.speed_kmh` (1505@6 u16be, Skalierung 0.1), `1509.current_A` (1509@0 s16be, Skalierung 0.001), `1509.soc_percent` (1509@4 u8, Skalierung 1.0) und `1509.voltage_V` (1509@5 u16be, Skalierung 0.001).
+- **Cross-Field-Plausibilität Leistung:** 1509@9 (`u16be`, Skalierung 1.
 
 ## GLM
 
@@ -19,30 +21,30 @@ Modell: `glm-4.5-flash`
 
 Kostenloser GLM-Fallback aktiv.
 
-- **Belastbare Evidenz**
-  - Die Regeln batteryPercent, currentA, odometerKm, speedKmh und voltageV zeigen 99% Konfidenz und hohe Sample-Anzahlen (868-1414) mit perfekter Korrelation (1.0) und MAE 0.0 im Decoder-Profil.
-  - Der libble-Vergleich bestätigt für diese Felder 100% Übereinstimmung mit MAE 0.0, was Layout-Konsistenz belegt.
-  - Die Original-App-Vergleich zeigt für diese Felder "APP_EXPORT_LAYOUT_CONSISTENT_NON_INDEPENDENT", was die Übereinstimmung der Extraktionen bestätigt.
+- Belastbare Evidenz:
+  - Die Felder batteryPercent, currentA, odometerKm, speedKmh und voltageV zeigen 99% Übereinstimmung zwischen SDK-Layout und App-Extraktion mit hohen Sample-Anzahlen (868-1414)
+  - Die powerW-Regel (1509/9/u16be) weist 95.18% Übereinstimmung mit dem berechneten Wert |Spannung × Strom| auf, hat aber nur 93% Konfidenz
+  - Alle bestätigten Regeln stammen aus "original-sdk-layout+app-extraction-check"
 
-- **Konflikte / mögliche Bugs**
-  - Die powerW-Regel (1509/9:u16be) hat nur 89% Konfidenz und eine signifikante MAE von 11.605336 im libble-Vergleich, was auf mögliche Inkonstanz oder falsche Semantik hindeutet.
-  - Diskrepanz in Sample-Anzahlen zwischen Deterministischem Bericht (z.B. speedKmh: 1414 Samples) und libble-Vergleich (speed_kmh: 1428 Samples) trotz gleicher 13 ausgewerteter Fahrten.
-  - Die Felder 1505.powerA_W und 1505.powerB_W haben 0 Vergleiche im libble-Vergleich, obwohl sie SDK-bekannt sind, was auf unvollständige Validierung hindeutet.
-  - In der Datenqualitäts-Tabelle fehlen die Zähler für READ/Hybrid-Exportzeilen in den ersten 10 Messfahrten, was die Verwerfungslogik unvollständig macht.
+- Konflikte / mögliche Bugs:
+  - PowerW-Regel hat "independentExternalConfirmation: false" in der evidenceGuard, obwohl sie als candidate eingestuft ist
+  - In der Datenqualitätstabelle fehlen Werte für "READ im Export" und "Hybrid im Export" bei mehreren Fahrten
+  - Die libble-Vergleichstabelle zeigt "OBSERVED_NEEDS_MORE_PROOF" für 1509.direct_power_W trotz 89.05% Trefferquote
+  - Alle "APP_EXPORT_LAYOUT_CONSISTENT_NON_INDEPENDENT"-Felder werden als konsistent betrachtet, ohne unabhängige semantische Validierung
 
-- **Hypothesen (nicht bestätigt)**
-  - Die powerW-Regel könnte tatsächlich eine andere physikalische Größe abbilden (z.B. nur eine von zwei Leistungskomponenten), was die niedrigere Übereinstimmung erklären würde.
-  - Die Sample-Anzahl-Diskrepanzen könnten auf unterschiedliche Verwerfungskriterien in den Analysepipelines hindeuten.
-  - Die Felder 1505.powerA_W und 1505.powerB_W könnten die korrekten Leistungswerte sein, während die aktuelle powerW-Regel ein Artefakt oder Teilwert darstellt.
-  - Die fehlenden Zuordnungen für batteryCapacityMwh, chargingRemainSeconds, charging, stateOfHealthPercent und stateOfHealthMwh könnten in Kanälen liegen, die noch nicht systematisch analysiert wurden.
+- Hypothesen (nicht bestätigt):
+  - Die hohe Korrelation von powerW mit anderen Feldern könnte auf Selbstreferenz zurückzuführen sein
+  - Die hohe Übereinstimmung (99-100%) bei einigen Feldern könnte Carry-forward-Artefakte aus früheren Fahrten enthalten
+  - Die Skalierungsfaktoren (z.B. 0.001 für currentA und voltageV) wurden nicht unabhängig verifiziert
+  - Die Big-Endian-Interpretation könnte bei einigen Feldern zu Fehlern führen
 
-- **Nächste sichere READ-ONLY-Tests (max. 5)**
-  1. Unabhängige Korrelationsanalyse zwischen powerW (1509/9) und den SDK-Feldern 1505.powerA_W und 1505.powerB_W mit denselben Rohdaten.
-  2. Zeitversetzte Analyse der Sample-Anzahl-Diskrepanzen zwischen Deterministischem Bericht und libble-Vergleich pro Fahrt.
-  3. Gezielte Suche nach Mustern in den Verwerfungslogs der READ/Hybrid-Exporte, insbesondere in den ersten 10 Messfahrten.
-  4. Analyse der Kanäle 1508 (für assistanceLevel und lightOn) und 150A (für motor_current_A) mit erhöhter Aufmerksamkeit für mögliche Leistungs- oder Zustandsinformationen.
-  5. Statistische Untersuchung der powerW-Werte über verschiedene Fahrtbedingungen hinweg, um systematische Abweichungen zu identifizieren.
+- Nächste sichere READ-ONLY-Tests (max. 5):
+  1. Unabhängige physikalische Validierung von powerW durch Vergleich mit externem Leistungs Messgerät
+  2. Gezielte Analyse der remainingDistanceKm-Zuordnung zu Feld 1505 @ 10 u16be
+  3. Klärung der motorPower- und treadlePower-Rollen (A/B-Zuordnung)
+  4. Suche nach den fehlenden Feldern: batteryCapacityMwh, chargingRemainSeconds, charging, stateOfHealthPercent und stateOfHealthMwh
+  5. Überprüfung der Endianness-Handhabung bei Multi-Byte-Feldern durch unabhängige Hex-Analyse
 
-- **Automatische Änderungen: KEINE**
+- Automatische Änderungen: KEINE
 
 Freigabe: keine automatische Änderung.
