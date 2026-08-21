@@ -12,25 +12,23 @@ Modell: `gemini-3.5-flash-lite`
 Fallbackmodell aktiv: `gemini-3.5-flash-lite`.
 
 - Belastbare Evidenz:
-  - Das Profil `d234ab3a232cc544` enthält 5 bestätigte Regeln und 1 Kandidaten (`powerW` auf Kanal 1509, Offset 9), gestützt auf 14 ausgewertete Fahrten.
-  - Der libble- und App-Vergleich zeigt, dass `APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT` vorliegt, was laut Evidence Guard jedoch keinen unabhängigen semantischen Sensornachweis darstellt.
-  - Laut BT638 GATT Deep-READ-Abgleich existieren 112 erfolgreiche Callbacks über 6 logische Scans, wobei bestimmte Kanäle wie 1502, 1505, 1506 und 1509 variable Bytes aufweisen.
+  - Fünf Decoder-Regeln (batteryPercent, currentA, odometerKm, speedKmh, voltageV) sind mit hoher Konfidenz (99%) über mehrere Fahrten und Samples bestätigt (`original-sdk-layout+app-extraction-check`).
+  - Das Feld `powerW` (1509/9) verbleibt explizit als Kandidat (93% Konfidenz), da die bisherige Validierung auf derselben RAW-Extraktion beruht (`sdk-layout+cross-field-check-needs-external-proof`).
 
 - Konflikte / mögliche Bugs:
-  - Der Leistungskandidat `powerW` (1509/9) basiert auf einem Cross-Field-Check (`abs(voltage_v * current_a)`), wird aber vom Evidence Guard korrekt als "nicht unabhängig" eingestuft (`independentExternalConfirmation: false`).
-  - Mehrere Datenqualitätszeilen im libble-Vergleich zeigen 0 akzeptierte Exportzeilen oder ungeklärte READ-/Hybrid-Zähler (`?`), was auf veraltete oder unvollständige Log-Samples hindeutet.
-  - Rollen für `motorPower` und `treadlePower` sind in der App-Zuordnung noch offen ("A/B-Rolle noch offen").
+  - Selbstreferenz und Carry-forward-Effekte: Mehrere Vergleiche basieren auf der Extraktion derselben RAW-Pakete (`APP_EXPORT_LAYOUT_CONSISTENT_NON_INDEPENDENT`), was keinen unabhängigen Live-Sensornachweis darstellt.
+  - Datenqualitätsschwankungen: Mehrere Messfahrten weisen 0 akzeptierte Exportzeilen oder unvollständige READ-/Hybrid-Zähler aus der `Zusammenfassung.txt` auf.
 
 - Hypothesen (nicht bestätigt):
-  - Kanal 1509 Offset 9 (`powerW`) könnte die tatsächliche elektrische Leistung des Controllers repräsentieren, da die Korrelation mit dem berechneten Strom-Spannungs-Produkt bei 0.9855 liegt; dies ist jedoch ohne physische Externevidenz nur ein internes Konsistenzartefakt.
-  - Kanal 150C könnte trotz "Sentinel-only"-Markierung in bestimmten Betriebszuständen als `BatteryCellUpdate` dienen.
+  - `powerW` (1509/9) entspricht der echten elektrischen Leistung (Validierung nur über interne Kreuzkorrelation mit Spannung und Strom, MAE 3.94 W).
+  - Unbekannte Kanäle (z. B. 150A, 150C) lassen sich ohne externe physische Referenz eindeutig semantisch zuordnen.
 
 - Nächste sichere READ-ONLY-Tests (max. 5):
-  1. Durchführung eines passiven BLE-Mitschnitts im Stillstand zur Validierung der statischen Charakteristik von Kanal 1502.
-  2. Auswertung von unvollständigen RAW-Exporten (`Messfahrt_2026-08-13_19-17-14` etc.) auf Parser-Fehler oder veraltete Firmware-Strukturen.
-  3. Protokollierung von Kanal 1508 (`lightOn` / assistanceLevel) während manueller Lichtschalterbetätigung im Stand (ohne Ladezustand).
-  4. Überprüfung der Byte-Variabilität von Kanal 150A und 150B bei minimaler Controller-Last im aufgebockten Zustand (sicherer Stillstand).
-  5. Abgleich der Odometer-Werte (Kanal 1506) über mehrere aufeinanderfolgende, kurze READ-Abfragen nach einem Reconnect.
+  1. Letzten bekannten Zustand vor einem Ladeabbruch bzw. den ersten Zustand nach einem Abziehen/Reconnect im Stillstand auslesen.
+  2. Statische GATT-Characteristics (z. B. 1502) auf unveränderte Byte-Muster bei konstantem Gerätezustand prüfen.
+  3. READ-Abgleiche der Characteristics 1505 bis 1509 im Stillstand wiederholen, um dynamische von statischen Bytes zu trennen.
+  4. Konsistenzprüfung der Rohdaten-Exportzeilen gegen die Zusammenfassungsdateien (`Zusammenfassung.txt`) ohne automatische Nullableitung durchführen.
+  5. Unabhängige Überprüfung der Kanal-Offsets gegen das native SDK (`libble-sdk-native-lib.so`) ohne Schreiboperationen.
 
 - Automatische Änderungen: KEINE
 
@@ -38,11 +36,34 @@ Freigabe: keine automatische Änderung.
 
 ## GLM
 
-Status: `error`
+Status: `ok`
 
-Modell: `glm-5.3`
+Modell: `glm-4.7-flash`
 
-Fehler: Gratis-/Ratenlimit erreicht (429) • 您的账户已达到速率限制，请您控制请求频率
+Fallbackmodell aktiv: `glm-4.7-flash`.
+
+- **Belastbare Evidenz**
+  - Die RAW-Extraktions-Logs (BT638 Deep Read) zeigen konsistente Werte für `batteryPercent` (Offset 4: `30` = 48%), `currentA` (Offset 0: `00-00` = 0A) und `voltageV` (Offset 5-6: `BB 1C` -> 47.9V bei 0.001-Scale), was die Layout-Annahmen bestätigt.
+  - Der SDK-Vergleich zeigt eine 100%ige Übereinstimmung für `direct_power_W`, was hardwareseitig die Konsistenz des Layouts 1509 belegt, auch wenn die semantische Bestätigung des Feldes noch aussteht.
+  - Die Geschwindigkeit (1505/6) und der Kilometerstand (1506/0) zeigen im Deep-Read Konsistenz, sind aber mit der extrem niedrigen Odometer-Berechnung inkonsistent.
+
+- **Konflikte / mögliche Bugs**
+  - **Massiver Datenverlust / Parsing-Fehler:** Der SDK-Vergleich zeigt für 11 von 14 Fahrten "Akzeptierte Exportzeilen: 0". Die Decoder-Logik scheitert an der Verarbeitung der Rohdaten für die Mehrheit der Fahrten, was die Güte der "bestätigten" Regeln in Frage stellt.
+  - **Odometer-Skalierungs-Fehler:** Das Sample `1506` (`00-00-1B-F5`) wird als `u32be@0` mit Scale `0.1` interpretiert. Das ergibt ca. 472,5 km. Dies ist für ein e-Bike mit nur 14 Fahrten physikalisch unplausibel (wahrscheinlich falsche Skala, sollte 1.0 sein).
+  - **Zirkuläre Power-Validierung:** Die Power-Cross-Check-Logik nutzt `abs(voltage_v * current_a)` aus denselben Feldern, um `powerW` zu validieren. Dies ist keine unabhängige Evidenz, sondern eine mathematische Abhängigkeit innerhalb desselben Pakets.
+
+- **Hypothesen (nicht bestätigt)**
+  - Die `odometerKm`-Skala wurde fälschlicherweise auf 0.1 statt 1.0 gesetzt, was zu einem Faktor-10-Unterschied führt.
+  - Die "0 akzeptierten Zeilen" deuten auf ein generelles Formatierungs- oder Regex-Problem im Decoder-Setup hin, das nicht nur einzelne Felder betrifft.
+
+- **Nächste sichere READ-ONLY-Tests**
+  - Manuelle Berechnung des Odometers aus dem Sample `1506` (Bytes `00-00-1B-F5` -> `0x1BF5` -> 4725) und Vergleich mit der Skalierung 0.1 vs. 1.0.
+  - Analyse der rohen Datenstruktur der 11 Fahrten mit 0 akzeptierten Zeilen, um das Parsing-Problem zu identifizieren.
+  - Live-Read von 1505/8 (RPM) und 1505/10 (Distanz) während einer Fahrt, um die fehlenden Dekodierungen zu validieren.
+
+- **Automatische Änderungen: KEINE**
+
+Freigabe: keine automatische Änderung.
 
 ## OpenAI GPT-5.6 Luna • Synthese, kein Evidenzvotum
 

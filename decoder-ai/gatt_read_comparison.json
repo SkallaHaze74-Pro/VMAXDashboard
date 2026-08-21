@@ -2,8 +2,8 @@
   "schema": "vmax-bt638-gatt-read-aggregate-v2",
   "readOnly": true,
   "diagnosticBundles": 6,
-  "sourceBundleCopies": 6,
-  "duplicateBundleCopies": 0,
+  "sourceBundleCopies": 11,
+  "duplicateBundleCopies": 5,
   "records": 177,
   "readAttempts": 112,
   "readCallbacks": 112,
@@ -14,7 +14,7 @@
   "characteristics": 28,
   "successfulCharacteristics": 28,
   "payloadCharacteristics": 28,
-  "dynamicCharacteristics": 19,
+  "dynamicCharacteristics": 7,
   "fields": [
     {
       "service": "0203",
@@ -43,14 +43,14 @@
       "payloadCount": 4,
       "validPayloadCount": 4,
       "invalidPayloadCount": 0,
-      "uniquePayloadCount": 2,
+      "uniquePayloadCount": 1,
       "lengthCounts": {
         "1": 4
       },
       "validLengthCounts": {
         "1": 4
       },
-      "dynamicAcrossScans": true,
+      "dynamicAcrossScans": false,
       "variableByteIndexes": [],
       "sentinelLikeOnly": true,
       "samplePayloads": [
@@ -76,7 +76,9 @@
       "connectionEpochs": [
         "2"
       ],
-      "measurementConnectionEpochs": [],
+      "measurementConnectionEpochs": [
+        "1"
+      ],
       "independentSemanticConfirmation": false
     },
     {
@@ -137,7 +139,9 @@
       "connectionEpochs": [
         "2"
       ],
-      "measurementConnectionEpochs": [],
+      "measurementConnectionEpochs": [
+        "1"
+      ],
       "independentSemanticConfirmation": false
     },
     {
@@ -167,14 +171,14 @@
       "payloadCount": 4,
       "validPayloadCount": 4,
       "invalidPayloadCount": 0,
-      "uniquePayloadCount": 2,
+      "uniquePayloadCount": 1,
       "lengthCounts": {
         "16": 4
       },
       "validLengthCounts": {
         "16": 4
       },
-      "dynamicAcrossScans": true,
+      "dynamicAcrossScans": false,
       "variableByteIndexes": [],
       "sentinelLikeOnly": false,
       "samplePayloads": [
@@ -200,7 +204,9 @@
       "connectionEpochs": [
         "2"
       ],
-      "measurementConnectionEpochs": [],
+      "measurementConnectionEpochs": [
+        "1"
+      ],
       "independentSemanticConfirmation": false
     },
     {
@@ -230,14 +236,14 @@
       "payloadCount": 4,
       "validPayloadCount": 4,
       "invalidPayloadCount": 0,
-      "uniquePayloadCount": 2,
+      "uniquePayloadCount": 1,
       "lengthCounts": {
         "2": 4
       },
       "validLengthCounts": {
         "2": 4
       },
-      "dynamicAcrossScans": true,
+      "dynamicAcrossScans": false,
       "variableByteIndexes": [],
       "sentinelLikeOnly": true,
       "samplePayloads": [
@@ -263,7 +269,9 @@
       "connectionEpochs": [
         "2"
       ],
-      "measurementConnectionEpochs": [],
+      "measurementConnectionEpochs": [
+        "1"
+      ],
       "independentSemanticConfirmation": false
     },
     {
@@ -324,7 +332,9 @@
       "connectionEpochs": [
         "2"
       ],
-      "measurementConnectionEpochs": [],
+      "measurementConnectionEpochs": [
+        "1"
+      ],
       "independentSemanticConfirmation": false
     },
     {
@@ -354,7 +364,7 @@
       "payloadCount": 4,
       "validPayloadCount": 4,
       "invalidPayloadCount": 0,
-      "uniquePayloadCount": 6,
+      "uniquePayloadCount": 3,
       "lengthCounts": {
         "18": 4
       },
@@ -393,7 +403,9 @@
       "connectionEpochs": [
         "2"
       ],
-      "measurementConnectionEpochs": [],
+      "measurementConnectionEpochs": [
+        "1"
+      ],
       "independentSemanticConfirmation": false
     },
     {
@@ -423,7 +435,7 @@
       "payloadCount": 4,
       "validPayloadCount": 4,
       "invalidPayloadCount": 0,
-      "uniquePayloadCount": 8,
+      "uniquePayloadCount": 4,
       "lengthCounts": {
         "16": 4
       },
@@ -466,7 +478,9 @@
       "connectionEpochs": [
         "2"
       ],
-      "measurementConnectionEpochs": [],
+      "measurementConnectionEpochs": [
+        "1"
+      ],
       "independentSemanticConfirmation": false
     },
     {
@@ -496,7 +510,7 @@
       "payloadCount": 4,
       "validPayloadCount": 4,
       "invalidPayloadCount": 0,
-      "uniquePayloadCount": 6,
+      "uniquePayloadCount": 3,
       "lengthCounts": {
         "8": 4
       },
@@ -536,7 +550,9 @@
       "connectionEpochs": [
         "2"
       ],
-      "measurementConnectionEpochs": [],
+      "measurementConnectionEpochs": [
+        "1"
+      ],
       "independentSemanticConfirmation": false
     },
     {
@@ -566,7 +582,7 @@
       "payloadCount": 4,
       "validPayloadCount": 4,
       "invalidPayloadCount": 0,
-      "uniquePayloadCount": 4,
+      "uniquePayloadCount": 2,
       "lengthCounts": {
         "16": 4
       },
@@ -604,7 +620,9 @@
       "connectionEpochs": [
         "2"
       ],
-      "measurementConnectionEpochs": [],
+      "measurementConnectionEpochs": [
+        "1"
+      ],
       "independentSemanticConfirmation": false
     },
     {
@@ -634,7 +652,7 @@
       "payloadCount": 4,
       "validPayloadCount": 4,
       "invalidPayloadCount": 0,
-      "uniquePayloadCount": 6,
+      "uniquePayloadCount": 3,
       "lengthCounts": {
         "11": 4
       },
@@ -675,7 +693,9 @@
       "connectionEpochs": [
         "2"
       ],
-      "measurementConnectionEpochs": [],
+      "measurementConnectionEpochs": [
+        "1"
+      ],
       "independentSemanticConfirmation": false
     },
     {
@@ -705,14 +725,14 @@
       "payloadCount": 4,
       "validPayloadCount": 4,
       "invalidPayloadCount": 0,
-      "uniquePayloadCount": 2,
+      "uniquePayloadCount": 1,
       "lengthCounts": {
         "10": 4
       },
       "validLengthCounts": {
         "10": 4
       },
-      "dynamicAcrossScans": true,
+      "dynamicAcrossScans": false,
       "variableByteIndexes": [],
       "sentinelLikeOnly": true,
       "samplePayloads": [
@@ -738,7 +758,9 @@
       "connectionEpochs": [
         "2"
       ],
-      "measurementConnectionEpochs": [],
+      "measurementConnectionEpochs": [
+        "1"
+      ],
       "independentSemanticConfirmation": false
     },
     {
@@ -768,14 +790,14 @@
       "payloadCount": 4,
       "validPayloadCount": 4,
       "invalidPayloadCount": 0,
-      "uniquePayloadCount": 2,
+      "uniquePayloadCount": 1,
       "lengthCounts": {
         "20": 4
       },
       "validLengthCounts": {
         "20": 4
       },
-      "dynamicAcrossScans": true,
+      "dynamicAcrossScans": false,
       "variableByteIndexes": [],
       "sentinelLikeOnly": true,
       "samplePayloads": [
@@ -801,7 +823,9 @@
       "connectionEpochs": [
         "2"
       ],
-      "measurementConnectionEpochs": [],
+      "measurementConnectionEpochs": [
+        "1"
+      ],
       "independentSemanticConfirmation": false
     },
     {
@@ -831,14 +855,14 @@
       "payloadCount": 4,
       "validPayloadCount": 4,
       "invalidPayloadCount": 0,
-      "uniquePayloadCount": 2,
+      "uniquePayloadCount": 1,
       "lengthCounts": {
         "13": 4
       },
       "validLengthCounts": {
         "13": 4
       },
-      "dynamicAcrossScans": true,
+      "dynamicAcrossScans": false,
       "variableByteIndexes": [],
       "sentinelLikeOnly": true,
       "samplePayloads": [
@@ -864,7 +888,9 @@
       "connectionEpochs": [
         "2"
       ],
-      "measurementConnectionEpochs": [],
+      "measurementConnectionEpochs": [
+        "1"
+      ],
       "independentSemanticConfirmation": false
     },
     {
@@ -894,7 +920,7 @@
       "payloadCount": 4,
       "validPayloadCount": 4,
       "invalidPayloadCount": 0,
-      "uniquePayloadCount": 6,
+      "uniquePayloadCount": 3,
       "lengthCounts": {
         "20": 4
       },
@@ -934,7 +960,9 @@
       "connectionEpochs": [
         "2"
       ],
-      "measurementConnectionEpochs": [],
+      "measurementConnectionEpochs": [
+        "1"
+      ],
       "independentSemanticConfirmation": false
     },
     {
@@ -995,7 +1023,9 @@
       "connectionEpochs": [
         "2"
       ],
-      "measurementConnectionEpochs": [],
+      "measurementConnectionEpochs": [
+        "1"
+      ],
       "independentSemanticConfirmation": false
     },
     {
@@ -1056,7 +1086,9 @@
       "connectionEpochs": [
         "2"
       ],
-      "measurementConnectionEpochs": [],
+      "measurementConnectionEpochs": [
+        "1"
+      ],
       "independentSemanticConfirmation": false
     },
     {
@@ -1117,7 +1149,9 @@
       "connectionEpochs": [
         "2"
       ],
-      "measurementConnectionEpochs": [],
+      "measurementConnectionEpochs": [
+        "1"
+      ],
       "independentSemanticConfirmation": false
     },
     {
@@ -1147,14 +1181,14 @@
       "payloadCount": 4,
       "validPayloadCount": 4,
       "invalidPayloadCount": 0,
-      "uniquePayloadCount": 2,
+      "uniquePayloadCount": 1,
       "lengthCounts": {
         "20": 4
       },
       "validLengthCounts": {
         "20": 4
       },
-      "dynamicAcrossScans": true,
+      "dynamicAcrossScans": false,
       "variableByteIndexes": [],
       "sentinelLikeOnly": false,
       "samplePayloads": [],
@@ -1178,7 +1212,9 @@
       "connectionEpochs": [
         "2"
       ],
-      "measurementConnectionEpochs": [],
+      "measurementConnectionEpochs": [
+        "1"
+      ],
       "independentSemanticConfirmation": false
     },
     {
@@ -1239,7 +1275,9 @@
       "connectionEpochs": [
         "2"
       ],
-      "measurementConnectionEpochs": [],
+      "measurementConnectionEpochs": [
+        "1"
+      ],
       "independentSemanticConfirmation": false
     },
     {
@@ -1269,14 +1307,14 @@
       "payloadCount": 4,
       "validPayloadCount": 4,
       "invalidPayloadCount": 0,
-      "uniquePayloadCount": 2,
+      "uniquePayloadCount": 1,
       "lengthCounts": {
         "20": 4
       },
       "validLengthCounts": {
         "20": 4
       },
-      "dynamicAcrossScans": true,
+      "dynamicAcrossScans": false,
       "variableByteIndexes": [],
       "sentinelLikeOnly": false,
       "samplePayloads": [],
@@ -1300,7 +1338,9 @@
       "connectionEpochs": [
         "2"
       ],
-      "measurementConnectionEpochs": [],
+      "measurementConnectionEpochs": [
+        "1"
+      ],
       "independentSemanticConfirmation": false
     },
     {
@@ -1361,7 +1401,9 @@
       "connectionEpochs": [
         "2"
       ],
-      "measurementConnectionEpochs": [],
+      "measurementConnectionEpochs": [
+        "1"
+      ],
       "independentSemanticConfirmation": false
     },
     {
@@ -1391,7 +1433,7 @@
       "payloadCount": 4,
       "validPayloadCount": 4,
       "invalidPayloadCount": 0,
-      "uniquePayloadCount": 5,
+      "uniquePayloadCount": 3,
       "lengthCounts": {
         "20": 4
       },
@@ -1424,7 +1466,9 @@
       "connectionEpochs": [
         "2"
       ],
-      "measurementConnectionEpochs": [],
+      "measurementConnectionEpochs": [
+        "1"
+      ],
       "independentSemanticConfirmation": false
     },
     {
@@ -1485,7 +1529,9 @@
       "connectionEpochs": [
         "2"
       ],
-      "measurementConnectionEpochs": [],
+      "measurementConnectionEpochs": [
+        "1"
+      ],
       "independentSemanticConfirmation": false
     },
     {
@@ -1515,14 +1561,14 @@
       "payloadCount": 4,
       "validPayloadCount": 4,
       "invalidPayloadCount": 0,
-      "uniquePayloadCount": 2,
+      "uniquePayloadCount": 1,
       "lengthCounts": {
         "2": 4
       },
       "validLengthCounts": {
         "2": 4
       },
-      "dynamicAcrossScans": true,
+      "dynamicAcrossScans": false,
       "variableByteIndexes": [],
       "sentinelLikeOnly": true,
       "samplePayloads": [
@@ -1548,7 +1594,9 @@
       "connectionEpochs": [
         "2"
       ],
-      "measurementConnectionEpochs": [],
+      "measurementConnectionEpochs": [
+        "1"
+      ],
       "independentSemanticConfirmation": false
     },
     {
@@ -1578,14 +1626,14 @@
       "payloadCount": 4,
       "validPayloadCount": 4,
       "invalidPayloadCount": 0,
-      "uniquePayloadCount": 2,
+      "uniquePayloadCount": 1,
       "lengthCounts": {
         "2": 4
       },
       "validLengthCounts": {
         "2": 4
       },
-      "dynamicAcrossScans": true,
+      "dynamicAcrossScans": false,
       "variableByteIndexes": [],
       "sentinelLikeOnly": true,
       "samplePayloads": [
@@ -1611,7 +1659,9 @@
       "connectionEpochs": [
         "2"
       ],
-      "measurementConnectionEpochs": [],
+      "measurementConnectionEpochs": [
+        "1"
+      ],
       "independentSemanticConfirmation": false
     },
     {
@@ -1641,14 +1691,14 @@
       "payloadCount": 4,
       "validPayloadCount": 4,
       "invalidPayloadCount": 0,
-      "uniquePayloadCount": 2,
+      "uniquePayloadCount": 1,
       "lengthCounts": {
         "8": 4
       },
       "validLengthCounts": {
         "8": 4
       },
-      "dynamicAcrossScans": true,
+      "dynamicAcrossScans": false,
       "variableByteIndexes": [],
       "sentinelLikeOnly": false,
       "samplePayloads": [
@@ -1674,7 +1724,9 @@
       "connectionEpochs": [
         "2"
       ],
-      "measurementConnectionEpochs": [],
+      "measurementConnectionEpochs": [
+        "1"
+      ],
       "independentSemanticConfirmation": false
     },
     {
@@ -1735,7 +1787,9 @@
       "connectionEpochs": [
         "2"
       ],
-      "measurementConnectionEpochs": [],
+      "measurementConnectionEpochs": [
+        "1"
+      ],
       "independentSemanticConfirmation": false
     },
     {
@@ -1765,14 +1819,14 @@
       "payloadCount": 4,
       "validPayloadCount": 4,
       "invalidPayloadCount": 0,
-      "uniquePayloadCount": 2,
+      "uniquePayloadCount": 1,
       "lengthCounts": {
         "4": 4
       },
       "validLengthCounts": {
         "4": 4
       },
-      "dynamicAcrossScans": true,
+      "dynamicAcrossScans": false,
       "variableByteIndexes": [],
       "sentinelLikeOnly": true,
       "samplePayloads": [
@@ -1798,7 +1852,9 @@
       "connectionEpochs": [
         "2"
       ],
-      "measurementConnectionEpochs": [],
+      "measurementConnectionEpochs": [
+        "1"
+      ],
       "independentSemanticConfirmation": false
     }
   ],
