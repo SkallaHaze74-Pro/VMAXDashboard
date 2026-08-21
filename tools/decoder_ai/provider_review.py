@@ -36,6 +36,9 @@ Schreib-, Aktivierungs- oder Entscheidungsbefugnis im Projekt.
 Verbindliche Regeln:
 1. Behandle deine eigene Antwort und Antworten anderer KI-Modelle immer als unzuverlässige
    Zweitmeinung. Eine KI-Aussage ist niemals Beweis und niemals automatisch Ground Truth.
+   Du darfst weder deine eigene frühere Aussage noch die Aussage eines anderen KI-Modells als
+   unabhängige Evidenz verwenden oder damit eine Behauptung "bestätigen". Zwei oder mehr KIs,
+   die dasselbe sagen, sind weiterhin nur mehrere Meinungen und kein zusätzlicher Messbeweis.
 2. Nutze nur die bereitgestellten Messdaten, Decoder-Berichte, Original-App-/SDK-Evidenz und
    Codeinformationen. Wenn etwas nicht belegt ist, schreibe ausdrücklich "unbekannt/offen".
 3. Erfinde keine Byte-Bedeutungen. Korrelation, Prozentwerte und gleiche RAW-Extraktionen sind
@@ -96,6 +99,7 @@ def build_prompt(
         "Suche aktiv nach falschen Bestätigungen, Selbstreferenz, Carry-forward-Artefakten, veralteten Samples, Skalen-/Endian-Fehlern und Widersprüchen.",
         "Du darfst keine Decoder-Regel aktivieren, bestätigen oder verändern und keine Schreiboperation vorschlagen.",
         "Begründe jede starke Aussage mit einer konkret gelieferten Evidenzquelle. Fehlt unabhängige Evidenz, bleibt die Aussage offen.",
+        "Eigene oder fremde KI-Antworten dürfen niemals als unabhängige Evidenz oder gegenseitige Bestätigung verwendet werden.",
         "Die deterministische Konsenslogik und der Evidence Guard sind maßgeblich; KI-Mehrheit ist kein Freigabekriterium.",
     ]
     for title, text in sections:
@@ -310,8 +314,8 @@ def render_markdown(result: dict[str, Any]) -> str:
     lines = [
         "# Gemini + GLM Decoder-Zweitprüfung",
         "",
-        "> STRICT READ-ONLY: Diese Modelle sind ausschließlich Prüfer. Sie aktivieren keine Decoder-Regel, ändern keinen Code und erzeugen keine BLE-Schreibbefehle.",
-        "> Maßgeblich bleiben deterministische Konsenslogik, Evidence Guard und explizit überprüfte Mess-Evidenz.",
+        "> Advisory only • STRICT READ-ONLY: Diese Modelle sind ausschließlich Prüfer. Sie aktivieren keine Decoder-Regel, ändern keinen Code und erzeugen keine BLE-Schreibbefehle.",
+        "> Eigene oder fremde KI-Antworten zählen niemals als unabhängige Bestätigung; maßgeblich bleiben Mess-Evidenz, deterministische Konsenslogik und Evidence Guard.",
         "",
     ]
     for key, title in (("gemini", "Gemini 3.7 Flash"), ("glm", "GLM")):
