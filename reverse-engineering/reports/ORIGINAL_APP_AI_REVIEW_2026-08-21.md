@@ -9,7 +9,14 @@ Modell: `gemini-3.6-flash`
 Provider: `Gemini`
 Fallback: `true`
 
-Fehler: Unvollständige Reviewer-Antwort verworfen: Abschlussmarker fehlt. Letzter Ausschnitt:  (Cruise Control), in den Logs taucht jedoch explizit `HobbywingSDK: SetCruiseControl` auf. Dies belegt eine Wiederverwendung von UI-Komponenten über verschiedene Lieferanten/SDKs hinweg. Ohne BT638-Live-Frame darf keine Zuordnung zu Hyena-
+Fehler: Unvollständige Reviewer-Antwort verworfen: Abschlussmarker fehlt. Letzter Ausschnitt: nz durch KI-Konsens:**
+   Übereinstimmende Vermutungen anderer KI-Modelle (z. B. Gemini / GLM) stellen keine Evidenz dar. Dekodierregeln dürfen nur auf realen BT638-Messdaten basieren.
+
+---
+
+### Hypothesen (nicht bestätigt)
+
+1. **Erweiterte
 
 ## GLM / Z.ai
 

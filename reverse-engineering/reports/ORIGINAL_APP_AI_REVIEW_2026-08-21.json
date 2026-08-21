@@ -10,9 +10,9 @@
       "provider": "Gemini",
       "fallback": true,
       "text": "",
-      "primaryError": "Gratis-/Ratenlimit erreicht (429) • You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded fo",
+      "primaryError": "Provider vorübergehend nicht verfügbar (500) • gemini-3.7-flash is currently experiencing high demand, spikes in demand are usually temporary. Please try again later.",
       "outputComplete": false,
-      "error": "Unvollständige Reviewer-Antwort verworfen: Abschlussmarker fehlt. Letzter Ausschnitt:  (Cruise Control), in den Logs taucht jedoch explizit `HobbywingSDK: SetCruiseControl` auf. Dies belegt eine Wiederverwendung von UI-Komponenten über verschiedene Lieferanten/SDKs hinweg. Ohne BT638-Live-Frame darf keine Zuordnung zu Hyena-"
+      "error": "Unvollständige Reviewer-Antwort verworfen: Abschlussmarker fehlt. Letzter Ausschnitt: nz durch KI-Konsens:**\n   Übereinstimmende Vermutungen anderer KI-Modelle (z. B. Gemini / GLM) stellen keine Evidenz dar. Dekodierregeln dürfen nur auf realen BT638-Messdaten basieren.\n\n---\n\n### Hypothesen (nicht bestätigt)\n\n1. **Erweiterte"
     },
     "glm": {
       "status": "error",
