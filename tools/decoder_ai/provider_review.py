@@ -2,8 +2,8 @@
 """Advisory external-model review for VMAX decoder evidence.
 
 This script deliberately does NOT modify decoder_profile.json. Gemini/GLM output is
-stored as a second-opinion report only; deterministic consensus and Android safety
-policies remain the authority for activatable decoder rules.
+stored as a second-opinion report only; deterministic consensus, evidence guards and
+Android safety policies remain the only authority for activatable decoder rules.
 """
 
 from __future__ import annotations
@@ -28,14 +28,42 @@ MAX_SOURCE_CHARS = 24_000
 MAX_PROVIDER_TEXT = 16_000
 
 SYSTEM_PROMPT = """
-Du bist ein rein lesender technischer Zweitprüfer für VMAXDashboard.
-Prüfe die bereitgestellte Decoder-Evidenz auf Widersprüche, Scheinkorrelationen,
-zu kleine Stichproben und sinnvolle nächste Messfahrten. Trenne bestätigte Fakten,
-starke Evidenz, Hypothesen und offene Fragen. Erfinde keine Byte-Bedeutungen.
-Gib keine automatisch ausführbaren BLE-Schreibbefehle, keine Firmware-Patches und
-keine Anweisungen zum Umgehen von Sicherheits- oder Geschwindigkeitsgrenzen aus.
-Die deterministische lokale Konsensanalyse bleibt maßgeblich; deine Antwort ist nur
-advisory. Antworte auf Deutsch und möglichst kompakt.
+Du bist genau EIN Mitglied eines externen, rein lesenden Review-Panels für VMAXDashboard.
+Deine Rolle ist ausschließlich: beobachten, Evidenz gegenprüfen, Widersprüche und Bugs finden,
+Hypothesen kennzeichnen und sichere READ-ONLY-Tests priorisieren. Du hast keinerlei Freigabe-,
+Schreib-, Aktivierungs- oder Entscheidungsbefugnis im Projekt.
+
+Verbindliche Regeln:
+1. Behandle deine eigene Antwort und Antworten anderer KI-Modelle immer als unzuverlässige
+   Zweitmeinung. Eine KI-Aussage ist niemals Beweis und niemals automatisch Ground Truth.
+   Du darfst weder deine eigene frühere Aussage noch die Aussage eines anderen KI-Modells als
+   unabhängige Evidenz verwenden oder damit eine Behauptung "bestätigen". Zwei oder mehr KIs,
+   die dasselbe sagen, sind weiterhin nur mehrere Meinungen und kein zusätzlicher Messbeweis.
+2. Nutze nur die bereitgestellten Messdaten, Decoder-Berichte, Original-App-/SDK-Evidenz und
+   Codeinformationen. Wenn etwas nicht belegt ist, schreibe ausdrücklich "unbekannt/offen".
+3. Erfinde keine Byte-Bedeutungen. Korrelation, Prozentwerte und gleiche RAW-Extraktionen sind
+   keine unabhängige semantische Bestätigung.
+4. Bestätige, aktiviere, installiere oder ändere niemals selbst eine Decoder-Regel. Du darfst
+   höchstens empfehlen, welche Evidenz noch fehlt. Deterministischer Konsens + Evidence Guard
+   entscheiden allein, welche Regeln aktivierbar sind.
+5. Gib keine BLE-Schreibframes, GATT-Schreibbefehle, Motor-Tuning-Werte, Firmware-Patches,
+   Exploit-/Bypass-Anweisungen oder Umgehungen von Sicherheits-/Geschwindigkeitsgrenzen aus.
+6. Bereits vorhandene Schreibfunktionen dürfen nur als Kontext erwähnt werden; Änderungen daran
+   gehören nicht zu deiner Aufgabe. Empfohlene Tests müssen nach Möglichkeit lesend, reproduzierbar
+   und im Stillstand/unter sicheren Bedingungen durchführbar sein.
+7. Priorisiere Fehlerursachen, Datenqualitätsprobleme, Selbstreferenz, Carry-forward-Effekte,
+   falsche Endianness/Skalierung, veraltete Samples und widersprüchliche Quellen.
+8. Wenn zwei Quellen widersprechen, entscheide nicht nach Autorität oder KI-Mehrheit, sondern
+   benenne den Konflikt und fordere unabhängige Mess-Evidenz.
+
+Antworte professionell und knapp auf Deutsch in genau diesen Abschnitten:
+- Belastbare Evidenz
+- Konflikte / mögliche Bugs
+- Hypothesen (nicht bestätigt)
+- Nächste sichere READ-ONLY-Tests (max. 5)
+- Automatische Änderungen: KEINE
+
+Die letzte Zeile muss lauten: "Freigabe: keine automatische Änderung."
 """.strip()
 
 
@@ -67,9 +95,12 @@ def build_prompt(
         ("Original-App-Vergleich", read_limited(original_app_comparison)),
     ]
     out = [
-        "Aufgabe: Führe eine unabhängige Qualitätsprüfung der aktuellen Decoder-Evidenz durch.",
-        "Nenne zuerst belastbare Übereinstimmungen, danach Konflikte/Unsicherheiten und zum Schluss maximal fünf konkrete nächste Tests.",
-        "Schlage keine Regel als bestätigt vor, wenn die gelieferten Daten das nicht tragen.",
+        "Aufgabe: Führe ausschließlich eine unabhängige READ-ONLY-Qualitätsprüfung der aktuellen Decoder-Evidenz durch.",
+        "Suche aktiv nach falschen Bestätigungen, Selbstreferenz, Carry-forward-Artefakten, veralteten Samples, Skalen-/Endian-Fehlern und Widersprüchen.",
+        "Du darfst keine Decoder-Regel aktivieren, bestätigen oder verändern und keine Schreiboperation vorschlagen.",
+        "Begründe jede starke Aussage mit einer konkret gelieferten Evidenzquelle. Fehlt unabhängige Evidenz, bleibt die Aussage offen.",
+        "Eigene oder fremde KI-Antworten dürfen niemals als unabhängige Evidenz oder gegenseitige Bestätigung verwendet werden.",
+        "Die deterministische Konsenslogik und der Evidence Guard sind maßgeblich; KI-Mehrheit ist kein Freigabekriterium.",
     ]
     for title, text in sections:
         out.extend(["", f"===== {title} =====", text])
@@ -268,7 +299,7 @@ def run_provider(name: str, model: str, key: str | None, ask, prompt: str) -> di
                 "fallback": item["fallback"],
                 "text": item["text"],
             }
-        return {"status": "ok", "model": model, "text": ask(key, prompt)}
+        return {"status": "ok", "model": model, "provider": name, "text": ask(key, prompt)}
     except Exception as error:
         return {
             "status": "error",
@@ -283,7 +314,8 @@ def render_markdown(result: dict[str, Any]) -> str:
     lines = [
         "# Gemini + GLM Decoder-Zweitprüfung",
         "",
-        "> Advisory only: Diese Modellantworten aktivieren keine Decoder-Regel und erzeugen keine BLE-Schreibbefehle.",
+        "> Advisory only • STRICT READ-ONLY: Diese Modelle sind ausschließlich Prüfer. Sie aktivieren keine Decoder-Regel, ändern keinen Code und erzeugen keine BLE-Schreibbefehle.",
+        "> Eigene oder fremde KI-Antworten zählen niemals als unabhängige Bestätigung; maßgeblich bleiben Mess-Evidenz, deterministische Konsenslogik und Evidence Guard.",
         "",
     ]
     for key, title in (("gemini", "Gemini 3.7 Flash"), ("glm", "GLM")):
@@ -322,6 +354,8 @@ def main() -> int:
         "schema": "vmax-provider-review-v1",
         "generatedAtMs": int(time.time() * 1000),
         "advisoryOnly": True,
+        "readOnlyReviewerContract": True,
+        "automaticChangeAuthority": False,
         "providers": {
             "gemini": run_provider(
                 "Gemini",
