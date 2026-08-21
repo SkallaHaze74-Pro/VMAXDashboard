@@ -50,7 +50,8 @@ class ChargingTransitionScanTests(unittest.TestCase):
         after = scan.BatterySample(12000, 11000, 1, 80, 50.05, 0.0, None, "y")
         status, reasons = scan.classify_gap(before, after, [], 11_000)
         self.assertEqual("BLE_GAP_NO_CLEAR_CHARGE_EVIDENCE", status)
-        self.assertEqual([], reasons)
+        self.assertTrue(any("kleiner Spannungssprung" in reason for reason in reasons))
+        self.assertTrue(all("Ladeevidenz" in reason for reason in reasons))
 
     def test_short_reconnect_with_one_percent_soc_jump_is_not_charge_evidence(self):
         before = scan.BatterySample(1000, 0, 0, 80, 50.0, 0.0, None, "x")
