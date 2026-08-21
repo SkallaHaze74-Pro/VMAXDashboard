@@ -12,6 +12,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: vmax-original-app-ai-review
+  cancel-in-progress: false
+
 jobs:
   original-app-review:
     runs-on: ubuntu-latest
@@ -44,8 +48,22 @@ jobs:
 
       - name: AI-Zweitprüfung speichern
         run: |
+          set -euo pipefail
           git config user.name 'VMAX Original App AI Review'
           git config user.email 'actions@users.noreply.github.com'
+
+          tmp_dir="$(mktemp -d)"
+          cp reverse-engineering/reports/ORIGINAL_APP_AI_REVIEW_2026-08-21.json "$tmp_dir/review.json"
+          cp reverse-engineering/reports/ORIGINAL_APP_AI_REVIEW_2026-08-21.md "$tmp_dir/review.md"
+
+          # Der Provider-Aufruf kann mehrere Minuten dauern. In dieser Zeit darf main
+          # durch andere Analysejobs weiterlaufen. Deshalb zuerst auf den aktuellen
+          # Remote-Stand wechseln und nur die frisch erzeugten Review-Artefakte darüberlegen.
+          git fetch origin main
+          git reset --hard origin/main
+          cp "$tmp_dir/review.json" reverse-engineering/reports/ORIGINAL_APP_AI_REVIEW_2026-08-21.json
+          cp "$tmp_dir/review.md" reverse-engineering/reports/ORIGINAL_APP_AI_REVIEW_2026-08-21.md
+
           git add \
             reverse-engineering/reports/ORIGINAL_APP_AI_REVIEW_2026-08-21.json \
             reverse-engineering/reports/ORIGINAL_APP_AI_REVIEW_2026-08-21.md
@@ -54,7 +72,4 @@ jobs:
             exit 0
           fi
           git commit -m 'Original-App: Gemini/GLM Deep Review aktualisieren'
-          # Andere Analyse-Workflows können während des Provider-Aufrufs main aktualisieren.
-          # Rebase bewahrt diese Änderungen und verhindert einen unnötigen non-fast-forward Fehler.
-          git pull --rebase origin main
           git push origin HEAD:main
