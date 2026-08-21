@@ -1,0 +1,12 @@
+{
+  "schema": "vmax-bt638-gatt-read-aggregate-v1",
+  "readOnly": true,
+  "diagnosticBundles": 0,
+  "records": 0,
+  "characteristics": 0,
+  "successfulCharacteristics": 0,
+  "payloadCharacteristics": 0,
+  "dynamicCharacteristics": 0,
+  "fields": [],
+  "evidencePolicy": "A READ response proves only that this BT638/GATT characteristic answered with the recorded bytes. It does not by itself prove byte semantics, BMS origin, authentication state or a write capability."
+}

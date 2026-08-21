@@ -1,7 +1,7 @@
 # Original VMAX-App ↔ BT638 Echtzeit-Abgleich
 
-Die Original-App-Callbacks definieren die Soll-Semantik. libble definiert bekannte Parserfelder. BT638-Fahrdaten entscheiden, ob die Zuordnung auf diesem Modell wirklich gilt.
-Ein Treffer `APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT` vergleicht zwei Extraktionen desselben RAW-Pakets. Er belegt Layoutkonsistenz, ist aber kein unabhängiger Live-Sensornachweis und erhöht `confirmedByLiveEvidence` nicht.
+Quellen werden getrennt: VMAX/V-Core beschreibt die konkrete VX2-Gear-Hardware; BT638/GPST-DA1A beschreibt die live beobachtete BLE-/Native-Evidenz; Hyena/Hylink, Brose und Hobbywing sind zunächst nur in der Multi-Vendor-APK gebündelte SDK-Pfade.
+Ein SDK-/Klassenfund ist kein BT638-Nachweis. Ein Treffer `APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT` vergleicht zwei Extraktionen desselben RAW-Pakets und ist ebenfalls kein unabhängiger Live-Sensornachweis.
 
 | Original-Livewert | Callback | Mapping | Status |
 |---|---|---|---|

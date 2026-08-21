@@ -1,9 +1,18 @@
 {
-  "schema": "vmax-original-app-vs-bt638-v2",
+  "schema": "vmax-original-app-vs-bt638-v3",
   "source": {
-    "class": "com.gpstuner.mapviewer.androidbase.bluetooth.manager.HyenaSDKManager",
-    "sdk": "io.hylink.hbp / libble-sdk-native-lib.so",
-    "note": "Semantics are taken from the original app listeners and native parser mapping. Layout agreement with values exported by this app is not counted as independent live-semantic confirmation. First real ride on 2026-08-13 disproved 150D as a second current-speed source."
+    "hardwareModel": "VMAX New VX2 Gear",
+    "hardwareControllerBranding": "VMAX V-Core Gear (official product naming)",
+    "liveDevice": "BT638",
+    "liveProtocolEvidence": "BT638/GPST-DA1A GATT observations and native GPSTProtocolHandler parser",
+    "bundledHyenaSdk": "io.hylink.hbp / io.hylink.hap and HyenaSDKManager are present in base.apk, but use by this BT638 is not proven",
+    "otherBundledVendorSdks": "Brose, Hobbywing and additional multi-vendor code are also present in base.apk",
+    "legacyMetadata": {
+      "class": "com.gpstuner.mapviewer.androidbase.bluetooth.manager.HyenaSDKManager",
+      "sdk": "io.hylink.hbp / libble-sdk-native-lib.so",
+      "note": "Semantics are taken from the original app listeners and native parser mapping. Layout agreement with values exported by this app is not counted as independent live-semantic confirmation. First real ride on 2026-08-13 disproved 150D as a second current-speed source."
+    },
+    "policy": "Do not label DA1A/15xx or the VX2 Gear hardware as Hyena without direct runtime/model evidence."
   },
   "signals": [
     {

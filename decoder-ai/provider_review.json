@@ -1,17 +1,23 @@
 {
   "schema": "vmax-provider-review-v1",
-  "generatedAtMs": 1787277970083,
+  "generatedAtMs": 1787319137166,
   "advisoryOnly": true,
   "readOnlyReviewerContract": true,
   "automaticChangeAuthority": false,
   "providers": {
     "gemini": {
-      "status": "error",
-      "model": "gemini-3.7-flash",
+      "status": "ok",
+      "model": "gemini-3.5-flash-lite",
       "provider": "Gemini",
-      "text": "",
-      "outputComplete": false,
-      "error": "Unvollständige Reviewer-Antwort verworfen: Abschlussmarker fehlt. Letzter Ausschnitt: weis darstellt.\n- **Statuskonflikt Odometer (`1506`)**: Im Decoder-Profil ist `odometerKm:1506:0:u32be` als `confirmed` eingetragen, im Original-App-Abgleich jedoch explizit als `MAPPED_VERIFY_WITH_MORE_BT638_DATA` eingestuft. Im libble-Ber"
+      "fallback": true,
+      "text": "- Belastbare Evidenz:\n  - 5 Regeln (`batteryPercent`, `currentA`, `odometerKm`, `speedKmh`, `voltageV`) sind mit Konfidenz 99% als `confirmed` markiert, basieren laut Profil jedoch auf `original-sdk-layout+app-extraction-check` (gleiche RAW-Extraktion, keine unabhängige physikalische Validierung).\n  - Regel `powerW` (1509/9) ist als `candidate` (93%) eingestuft; der Evidence Guard bestätigt ausdrücklich: \"same-raw export consistency is not independent semantic proof\" (`independentExternalConfirmation: false`).\n  - Laut libble-Vergleich und App-Vergleich sind die übereinstimmenden Extraktionen rein konsistent mit dem SDK-Layout (`APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT`), nicht unabhängig gemessen.\n  - Datenqualität je Export zeigt unvollständige Zähler (`?`) für READ-/Hybrid-Werte in mehreren Messfahrten (z. B. `Messfahrt_2026-08-13_19-17-14`).\n\n- Konflikte / mögliche Bugs:\n  - Selbstreferenz / Zirkelschluss: Die Kennzeichnung als `confirmed` erfolgt trotz des Hinweises, dass App-Extraktionen gegen denselben RAW-Stream keine externe Ground Truth darstellen.\n  - Fehlende Zählerdaten: In der Tabelle \"Datenqualität je Export\" sind READ- und Hybrid-Werte für frühere Messfahrten mit `?` markiert, was auf unvollständige Zusammenfassungen hinweist.\n  - Unbekannte Felder wie 150C oder 150D sind nicht abschließend validiert; 150D wird nach der ersten Fahrt ignoriert.\n\n- Hypothesen (nicht bestätigt):\n  - 1509/9 (`powerW`) entspricht dem tatsächlichen elektrischen Leistungswert, obwohl bisher nur ein Cross-Field-Vergleich gegen `voltage_v * current_a` vorliegt (Korrelation 0.984642, MAE 4.13 W).\n  - Weitere App-Listener (wie `batteryCapacityMwh`, `stateOfHealthPercent`) lassen sich direkt auf ungemappte BLE-Kanäle abbilden.\n\n- Nächste sichere READ-ONLY-Tests (max. 5):\n  1. Prüfen, ob die Zählerwerte in `Zusammenfassung.txt` für die älteren Messfahrten rekonstruiert oder als `unbekannt/offen` dokumentiert werden können.\n  2. Überprüfen der Rohdaten von Messfahrt 1505 und 1509 im Stillstand auf statische Offset-Abweichungen bei Strom und Spannung.\n  3. Validieren der Byte-Offsets für ungemappte Parameter (`150C`, `150D`) ausschließlich über rein lesende Log-Vergleiche im Stillstand.\n  4. Dokumentieren fehlender `Zusammenfassung.txt`-Einträge als explizite Datenlücke statt Null-Imputation.\n\n- Automatische Änderungen: KEINE\n\nFreigabe: keine automatische Änderung.",
+      "outputComplete": true,
+      "retryPath": [
+        "gemini-3.6-flash",
+        "gemini-3.5-flash-lite"
+      ],
+      "primaryError": "Gratis-/Ratenlimit erreicht (429) • You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded fo",
+      "fresh": true
     },
     "glm": {
       "status": "error",
@@ -21,9 +27,12 @@
       "provider": "GLM",
       "fallbackAttempted": true,
       "fallbackError": "The read operation timed out",
-      "outputComplete": false
+      "outputComplete": false,
+      "fresh": false
     }
   },
   "transientFallbackPass": true,
-  "outputContractValidated": true
+  "outputContractValidated": true,
+  "freshProviderCount": 1,
+  "cachedProviderCount": 0
 }
