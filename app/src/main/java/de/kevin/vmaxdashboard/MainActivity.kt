@@ -693,7 +693,7 @@ private fun GitHubSyncCard(
     val status = when {
         !snapshot.tokenConfigured -> "Noch nicht eingerichtet"
         !snapshot.enabled -> "Eingerichtet • Auto-Upload ist aus"
-        snapshot.pendingBundles > 0 -> "Auto-Upload aktiv • ${snapshot.pendingBundles} Fahrt(en) warten"
+        snapshot.pendingBundles > 0 -> "Auto-Upload aktiv • Offene Uploadobjekte: ${snapshot.pendingBundles}"
         else -> "✓ Auto-Upload aktiv • GitHub aktuell"
     }
     Card(shape = RoundedCornerShape(22.dp)) {

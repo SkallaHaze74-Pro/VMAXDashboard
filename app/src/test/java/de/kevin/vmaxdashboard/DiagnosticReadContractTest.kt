@@ -179,6 +179,49 @@ class DiagnosticReadContractTest {
     }
 
     @Test
+    fun publicCsvRedactsProtocolPrefixedIdentityTextFromDeepReadAndRawTelemetry() {
+        val protocolPrefixedIdentity =
+            "FF-54-45-53-54-2D-49-44-2D-31-32-33-34-35-36-37-38-00"
+        val localDeepRead = buildDiagnosticReadCsv(
+            listOf(
+                diagnosticReadDefaults(
+                    shortId = "1511",
+                    hex = protocolPrefixedIdentity,
+                    meaning = "Unknown READ field"
+                ),
+                diagnosticReadDefaults(
+                    shortId = "1513",
+                    hex = protocolPrefixedIdentity,
+                    meaning = "Unknown READ field"
+                ),
+                diagnosticReadDefaults(
+                    shortId = "9999",
+                    hex = protocolPrefixedIdentity,
+                    meaning = "Unknown protocol-framed field"
+                )
+            )
+        )
+        val publicDeepRead = redactDiagnosticReadCsvForPublic(localDeepRead)
+        val localRaw = buildRawTelemetryCsv(
+            listOf(
+                "1;1001;1511;Unknown;20;1;–;$protocolPrefixedIdentity;NOTIFICATION;0;da1a1500;da1a1511;2",
+                "2;1002;1513;Unknown;20;1;–;$protocolPrefixedIdentity;NOTIFICATION;0;da1a1500;da1a1513;2",
+                "3;1003;9999;Unknown;20;1;–;$protocolPrefixedIdentity;NOTIFICATION;0;da1a9900;da1a9999;2"
+            )
+        )
+        val publicRaw = redactRawTelemetryCsvForPublic(localRaw)
+
+        assertTrue(localDeepRead.contains(protocolPrefixedIdentity))
+        assertTrue(localRaw.contains(protocolPrefixedIdentity))
+        assertFalse(publicDeepRead.contains(protocolPrefixedIdentity))
+        assertFalse(publicRaw.contains(protocolPrefixedIdentity))
+        assertTrue(publicDeepRead.contains(diagnosticPayloadSha256(protocolPrefixedIdentity)))
+        assertTrue(publicRaw.contains(diagnosticPayloadSha256(protocolPrefixedIdentity)))
+        assertTrue(publicDeepRead.contains("identity_or_free_form"))
+        assertTrue(publicRaw.contains("identity_or_free_form"))
+    }
+
+    @Test
     fun publicCsvFailsClosedForShortUtf8AndUtf16FreeFormValues() {
         val utf8 = diagnosticReadDefaults(
             shortId = "9998",
@@ -190,23 +233,180 @@ class DiagnosticReadContractTest {
             hex = "41-00-42-00",
             meaning = "Unknown UTF-16LE"
         )
+        val utf16Be = diagnosticReadDefaults(
+            shortId = "9997",
+            hex = "00-41-00-42",
+            meaning = "Unknown UTF-16BE"
+        )
+        val utf16Bom = diagnosticReadDefaults(
+            shortId = "9996",
+            hex = "FF-FE-41-00-42-00",
+            meaning = "Unknown UTF-16LE with BOM"
+        )
         val shortAscii = diagnosticReadDefaults(
             shortId = "999A",
             hex = "41-42",
             meaning = "Unknown short text"
         )
+        val binaryZeros = diagnosticReadDefaults(
+            shortId = "1509",
+            hex = "00-00-00-00",
+            meaning = "Battery live"
+        )
 
         val public = buildDiagnosticReadCsv(
-            listOf(utf8, utf16, shortAscii),
+            listOf(utf8, utf16, utf16Be, utf16Bom, shortAscii, binaryZeros),
             DiagnosticReadRepresentation.PUBLIC_REDACTED
         )
 
         assertFalse(public.contains("C3-84-42"))
         assertFalse(public.contains("41-00-42-00"))
+        assertFalse(public.contains("00-41-00-42"))
+        assertFalse(public.contains("FF-FE-41-00-42-00"))
         assertFalse(public.contains(";41-42;"))
+        assertTrue(public.contains("00-00-00-00"))
         assertTrue(public.contains(diagnosticPayloadSha256("C3-84-42")))
         assertTrue(public.contains(diagnosticPayloadSha256("41-00-42-00")))
         assertTrue(public.contains(diagnosticPayloadSha256("41-42")))
+    }
+
+    @Test
+    fun publicCsvFindsBoundedUtf8AndUtf16TextFramesWithoutHidingBinaryTelemetry() {
+        val framedText = listOf(
+            "FE-54-45-53-54-2D-31-32-33-81",
+            "01-C3-84-42-43-31-32-33-00",
+            "7F-41-00-42-00-43-00-44-00-81",
+            "81-00-41-00-42-00-43-00-44-A5",
+            "7F-FF-FE-60-4F-7D-59-4C-75-BA-4E-81"
+        )
+        val binaryTelemetry = listOf(
+            "00-00-FF-FF-45-C3-B4-00-00-00-00",
+            "00-00-1B-BB-00-02-27-3B-00-00-02-C5-00-00-00-00"
+        )
+        val records = framedText.mapIndexed { index, hex ->
+            diagnosticReadDefaults(
+                shortId = "99${index.toString().padStart(2, '0')}",
+                hex = hex,
+                meaning = "Unknown framed value"
+            )
+        } + binaryTelemetry.mapIndexed { index, hex ->
+            diagnosticReadDefaults(
+                shortId = if (index == 0) "1509" else "1506",
+                hex = hex,
+                meaning = "Binary live telemetry"
+            )
+        }
+
+        val public = buildDiagnosticReadCsv(
+            records,
+            DiagnosticReadRepresentation.PUBLIC_REDACTED
+        )
+
+        framedText.forEach { assertFalse(public.contains(it)) }
+        binaryTelemetry.forEach { assertTrue(public.contains(it)) }
+    }
+
+    @Test
+    fun publicCsvCanonicalizesFullUuidIdentityChannelsBeforeRedaction() {
+        val fullUuid = "00002a00-0000-1000-8000-00805f9b34fb"
+        val binaryIdentity = "DE-AD-BE-EF"
+        val localDeepRead = buildDiagnosticReadCsv(
+            listOf(
+                diagnosticReadDefaults(shortId = "1509", hex = binaryIdentity).copy(
+                    shortId = fullUuid,
+                    characteristicUuid = fullUuid,
+                    meaning = "Unknown legacy field"
+                )
+            )
+        )
+        val localRaw = buildRawTelemetryCsv(
+            listOf(
+                "1;1001;$fullUuid;Unknown;4;1;–;$binaryIdentity;NOTIFICATION;0;1800;$fullUuid;2"
+            )
+        )
+
+        val publicDeepRead = redactDiagnosticReadCsvForPublic(localDeepRead)
+        val publicRaw = redactRawTelemetryCsvForPublic(localRaw)
+
+        assertFalse(publicDeepRead.contains(binaryIdentity))
+        assertFalse(publicRaw.contains(binaryIdentity))
+        assertTrue(publicDeepRead.contains(diagnosticPayloadSha256(binaryIdentity)))
+        assertTrue(publicRaw.contains(diagnosticPayloadSha256(binaryIdentity)))
+    }
+
+    @Test
+    fun uploadBoundaryReRedactsStaleQueuesAndIsIdempotent() {
+        val identity = "FF-54-45-53-54-2D-49-44-2D-31-32-33-34-35-36-37-38-00"
+        val staleRaw = buildRawTelemetryCsv(
+            listOf(
+                "1;1001;1511;Unknown;19;1;–;$identity;NOTIFICATION;0;da1a1500;da1a1511;2"
+            )
+        )
+        val staleDeepRead = buildDiagnosticReadCsv(
+            listOf(diagnosticReadDefaults(shortId = "1511", hex = identity))
+        )
+
+        val publicRaw = publicGitHubUploadBytes("BLE_Rohdaten.csv", staleRaw.toByteArray())
+        val publicDeepRead = publicGitHubUploadBytes(
+            DIAGNOSTIC_READ_CSV_FILE,
+            staleDeepRead.toByteArray()
+        )
+
+        assertTrue(staleRaw.contains(identity))
+        assertTrue(staleDeepRead.contains(identity))
+        assertFalse(String(publicRaw, Charsets.UTF_8).contains(identity))
+        assertFalse(String(publicDeepRead, Charsets.UTF_8).contains(identity))
+        assertTrue(String(publicRaw, Charsets.UTF_8).contains(diagnosticPayloadSha256(identity)))
+        assertTrue(String(publicDeepRead, Charsets.UTF_8).contains(diagnosticPayloadSha256(identity)))
+        assertEquals(
+            String(publicRaw, Charsets.UTF_8),
+            String(publicGitHubUploadBytes("BLE_Rohdaten.csv", publicRaw), Charsets.UTF_8)
+        )
+        assertEquals(
+            String(publicDeepRead, Charsets.UTF_8),
+            String(
+                publicGitHubUploadBytes(DIAGNOSTIC_READ_CSV_FILE, publicDeepRead),
+                Charsets.UTF_8
+            )
+        )
+    }
+
+    @Test
+    fun publicLearningAndManifestIdentityRedactionIsIdempotent() {
+        val identity = "PRIVATE-TEST-SCOOTER"
+        val learning = """{
+          "format":"VMAX_LEARNING_PROFILE_V1",
+          "candidates":[{
+            "model":"$identity",
+            "sessionKeys":["$identity@12345"]
+          }]
+        }""".trimIndent()
+        val manifest = """{"device":"$identity","serial":"SERIAL-TEST-123"}"""
+        val summary = "VMAX BT638 Deep READ\nGerät: $identity\nSerial: SERIAL-TEST-123\n"
+
+        val publicLearning = publicGitHubUploadBytes("Lernprofil.json", learning.toByteArray())
+        val publicManifest = publicGitHubUploadBytes("manifest.json", manifest.toByteArray())
+        val publicSummary = publicGitHubUploadBytes(DIAGNOSTIC_READ_SUMMARY_FILE, summary.toByteArray())
+
+        assertFalse(String(publicLearning, Charsets.UTF_8).contains(identity))
+        assertFalse(String(publicManifest, Charsets.UTF_8).contains(identity))
+        assertFalse(String(publicSummary, Charsets.UTF_8).contains(identity))
+        assertTrue(String(publicLearning, Charsets.UTF_8).contains(diagnosticTextSha256(identity)))
+        assertEquals(
+            String(publicLearning, Charsets.UTF_8),
+            String(publicGitHubUploadBytes("Lernprofil.json", publicLearning), Charsets.UTF_8)
+        )
+        assertEquals(
+            String(publicManifest, Charsets.UTF_8),
+            String(publicGitHubUploadBytes("manifest.json", publicManifest), Charsets.UTF_8)
+        )
+        assertEquals(
+            String(publicSummary, Charsets.UTF_8),
+            String(
+                publicGitHubUploadBytes(DIAGNOSTIC_READ_SUMMARY_FILE, publicSummary),
+                Charsets.UTF_8
+            )
+        )
     }
 
     @Test

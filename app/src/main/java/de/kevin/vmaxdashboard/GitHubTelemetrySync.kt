@@ -115,10 +115,8 @@ private fun redactDiagnosticManifestNode(node: Any?) {
                         key,
                         if (canonicalKey in setOf("device", "device_name", "devicename")) {
                             diagnosticPublicDeviceLabel(exact)
-                        } else if (exact.isBlank()) {
-                            "redacted"
                         } else {
-                            "redacted_sha256:${diagnosticTextSha256(exact)}"
+                            diagnosticPublicIdentityLabel(exact)
                         }
                     )
                 } else {
@@ -142,6 +140,59 @@ internal fun redactDiagnosticReadManifestForPublic(json: String): String {
         "unsalted SHA-256 pseudonym; same payload is linkable across public uploads"
     )
     return manifest.toString(2)
+}
+
+private fun redactLearningSessionKey(value: String): String {
+    val separator = value.lastIndexOf('@')
+    if (separator <= 0) return diagnosticPublicDeviceLabel(value)
+    val identity = value.substring(0, separator)
+    val session = value.substring(separator)
+    return diagnosticPublicDeviceLabel(identity) + session
+}
+
+/** The learning schema stores the BLE device name in model and sessionKeys. */
+internal fun redactLearningProfileForPublic(json: String): String {
+    val root = JSONObject(json)
+    val candidates = root.optJSONArray("candidates")
+    if (candidates != null) {
+        for (index in 0 until candidates.length()) {
+            val candidate = candidates.optJSONObject(index) ?: continue
+            if (candidate.has("model") && !candidate.isNull("model")) {
+                candidate.put("model", diagnosticPublicDeviceLabel(candidate.optString("model")))
+            }
+            val sessionKeys = candidate.optJSONArray("sessionKeys") ?: continue
+            for (sessionIndex in 0 until sessionKeys.length()) {
+                val exact = sessionKeys.optString(sessionIndex)
+                if (exact.isNotBlank()) sessionKeys.put(sessionIndex, redactLearningSessionKey(exact))
+            }
+        }
+    }
+    root.put("public_identity_redacted", true)
+    root.put(
+        "public_hash_privacy",
+        "unsalted SHA-256 pseudonym; same identity is linkable across public uploads"
+    )
+    return root.toString(2)
+}
+
+/**
+ * Last fail-closed privacy boundary before public GitHub upload. Applying it a
+ * second time is intentional: queues created by an older app version may still
+ * contain exact identity bytes.
+ */
+internal fun publicGitHubUploadBytes(name: String, bytes: ByteArray): ByteArray {
+    val text = String(bytes, Charsets.UTF_8)
+    val publicText = when (name) {
+        "BLE_Rohdaten.csv" -> redactRawTelemetryCsvForPublic(text)
+        DIAGNOSTIC_READ_CSV_FILE -> redactDiagnosticReadCsvForPublic(text)
+        DIAGNOSTIC_READ_SUMMARY_FILE, "Zusammenfassung.txt" ->
+            redactDiagnosticReadSummaryForPublic(text)
+        DIAGNOSTIC_READ_MANIFEST_FILE, "manifest.json" ->
+            redactDiagnosticReadManifestForPublic(text)
+        "Lernprofil.json" -> redactLearningProfileForPublic(text)
+        else -> return bytes
+    }
+    return publicText.toByteArray(Charsets.UTF_8)
 }
 
 internal data class TelemetryCsvMetrics(
@@ -454,29 +505,7 @@ class GitHubTelemetrySync private constructor(context: Context) {
                 val uri = files.getValue(name)
                 resolver.openInputStream(uri)?.use { input ->
                     val bytes = input.readBytes()
-                    val publicBytes = when (name) {
-                        "BLE_Rohdaten.csv" -> {
-                            redactRawTelemetryCsvForPublic(String(bytes, Charsets.UTF_8))
-                                .toByteArray(Charsets.UTF_8)
-                        }
-                        DIAGNOSTIC_READ_CSV_FILE -> {
-                            redactDiagnosticReadCsvForPublic(String(bytes, Charsets.UTF_8))
-                                .toByteArray(Charsets.UTF_8)
-                        }
-                        DIAGNOSTIC_READ_SUMMARY_FILE -> {
-                            redactDiagnosticReadSummaryForPublic(String(bytes, Charsets.UTF_8))
-                                .toByteArray(Charsets.UTF_8)
-                        }
-                        "Zusammenfassung.txt" -> {
-                            redactDiagnosticReadSummaryForPublic(String(bytes, Charsets.UTF_8))
-                                .toByteArray(Charsets.UTF_8)
-                        }
-                        DIAGNOSTIC_READ_MANIFEST_FILE -> {
-                            redactDiagnosticReadManifestForPublic(String(bytes, Charsets.UTF_8))
-                                .toByteArray(Charsets.UTF_8)
-                        }
-                        else -> bytes
-                    }
+                    val publicBytes = publicGitHubUploadBytes(name, bytes)
                     check(hasExpectedMeasurementFileHeader(name, String(publicBytes, Charsets.UTF_8))) {
                         "$name ist leer oder hat kein erwartetes Format"
                     }
@@ -510,24 +539,7 @@ class GitHubTelemetrySync private constructor(context: Context) {
             selectedFiles.forEach { name ->
                 val source = File(sourceFolder, name)
                 val destination = File(staging, name)
-                when (name) {
-                    "BLE_Rohdaten.csv" -> {
-                        destination.writeText(redactRawTelemetryCsvForPublic(source.readText()))
-                    }
-                    DIAGNOSTIC_READ_CSV_FILE -> {
-                        destination.writeText(redactDiagnosticReadCsvForPublic(source.readText()))
-                    }
-                    DIAGNOSTIC_READ_SUMMARY_FILE -> {
-                        destination.writeText(redactDiagnosticReadSummaryForPublic(source.readText()))
-                    }
-                    "Zusammenfassung.txt" -> {
-                        destination.writeText(redactDiagnosticReadSummaryForPublic(source.readText()))
-                    }
-                    DIAGNOSTIC_READ_MANIFEST_FILE -> {
-                        destination.writeText(redactDiagnosticReadManifestForPublic(source.readText()))
-                    }
-                    else -> source.copyTo(destination, overwrite = true)
-                }
+                destination.writeBytes(publicGitHubUploadBytes(name, source.readBytes()))
                 check(hasExpectedMeasurementFileHeader(name, destination.readText())) {
                     "$name ist leer oder hat kein erwartetes Format"
                 }
@@ -652,7 +664,7 @@ class GitHubTelemetrySync private constructor(context: Context) {
             ?.sortedBy(File::lastModified)
             .orEmpty()
         if (pending.isEmpty()) {
-            setStatus("GitHub Sync aktuell – keine offenen Messfahrten")
+            setStatus("Messfahrt-Queue leer • Deep READ wird separat synchronisiert")
             return
         }
 
@@ -681,7 +693,8 @@ class GitHubTelemetrySync private constructor(context: Context) {
                     ?.sortedWith(compareBy<File> { it.name == "manifest.json" }.thenBy { it.name })
                     .orEmpty()
                 uploadFiles.forEach { file ->
-                    uploader.uploadIfMissing("$remoteFolder/${file.name}", file.readBytes(), folder.name)
+                    val publicBytes = publicGitHubUploadBytes(file.name, file.readBytes())
+                    uploader.uploadIfMissing("$remoteFolder/${file.name}", publicBytes, folder.name)
                 }
                 markProcessed(sourceKey)
                 folder.deleteRecursively()

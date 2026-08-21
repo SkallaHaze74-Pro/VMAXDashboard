@@ -1,7 +1,9 @@
 package de.kevin.vmaxdashboard
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ExternalAiPromptFactoryTest {
@@ -73,6 +75,8 @@ class ExternalAiPromptFactoryTest {
 
         assertNotEquals(baseContext, changedPendingContext)
         assertNotEquals(baseContext, changedStatusContext)
+        assertTrue(baseContext.contains("Offene Uploadobjekte (Messfahrten + Deep READ): 0"))
+        assertFalse(baseContext.contains("Offene Messfahrten:"))
         assertEquals(
             base,
             ExternalAiPromptFactory.reviewEvidenceFingerprint(

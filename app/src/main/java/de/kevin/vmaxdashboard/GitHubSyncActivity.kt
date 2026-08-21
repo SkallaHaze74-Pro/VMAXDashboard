@@ -364,8 +364,8 @@ private fun GitHubSyncScreen(sync: GitHubTelemetrySync, aiSync: DecoderAiCloudSy
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 Text("Sync-Status", fontWeight = FontWeight.Bold)
                 Text(snapshot.lastStatus.ifBlank { "Bereit" })
-                Text("Offene Messfahrten: ${snapshot.pendingBundles}")
-                Text("Erfolgreich hochgeladen: ${snapshot.uploadedBundles}")
+                Text("Offene Uploadobjekte: ${snapshot.pendingBundles}")
+                Text("Erfolgreich hochgeladene Messfahrten: ${snapshot.uploadedBundles}")
                 Text("Token: ${if (snapshot.tokenConfigured) "✓ eingerichtet" else "○ fehlt"}")
                 OutlinedButton(
                     onClick = {
