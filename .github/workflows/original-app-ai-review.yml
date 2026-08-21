@@ -1,0 +1,57 @@
+name: VMAX Original App AI Review
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'reverse-engineering/reports/ORIGINAL_APP_DEEP_SCAN_2026-08-21.md'
+      - 'tools/decoder_ai/original_app_provider_review.py'
+      - '.github/workflows/original-app-ai-review.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  original-app-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repository laden
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Review-Code validieren
+        run: |
+          python -m py_compile \
+            tools/decoder_ai/provider_review.py \
+            tools/decoder_ai/provider_retry.py \
+            tools/decoder_ai/review_output_guard.py \
+            tools/decoder_ai/original_app_provider_review.py
+
+      - name: Gemini und GLM auf Original-App-Funde ansetzen
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
+        run: |
+          PYTHONPATH=tools/decoder_ai \
+            python tools/decoder_ai/original_app_provider_review.py
+
+      - name: AI-Zweitprüfung speichern
+        run: |
+          git config user.name 'VMAX Original App AI Review'
+          git config user.email 'actions@users.noreply.github.com'
+          git add \
+            reverse-engineering/reports/ORIGINAL_APP_AI_REVIEW_2026-08-21.json \
+            reverse-engineering/reports/ORIGINAL_APP_AI_REVIEW_2026-08-21.md
+          if git diff --cached --quiet; then
+            echo 'Keine Änderung an der AI-Zweitprüfung.'
+            exit 0
+          fi
+          git commit -m 'Original-App: Gemini/GLM Deep Review aktualisieren'
+          git push origin HEAD:main
