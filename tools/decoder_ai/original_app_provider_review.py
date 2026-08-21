@@ -33,6 +33,7 @@ def build_original_app_prompt(deep_scan: Path, old_findings: Path, original_sema
         "Suche besonders nach bisher übersehenen READ-ONLY-Funktionen, falschen Zuordnungen und nützlichen Diagnosezielen.",
         "Bevorzuge sichere Lese-/Erkennungstests. Keine BLE-Schreibframes, keine Tuningwerte, keine Firmware-Patches oder Bypass-Ideen.",
         "Wenn Gemini und GLM zufällig dasselbe vermuten, ist das weiterhin keine zusätzliche Evidenz.",
+        "Antworte insgesamt höchstens 1200 Wörter und beende zwingend mit dem geforderten Freigabe-Satz; priorisiere statt auszuschweifen.",
         "",
         "===== Neuer Deep Scan =====",
         read(deep_scan),
