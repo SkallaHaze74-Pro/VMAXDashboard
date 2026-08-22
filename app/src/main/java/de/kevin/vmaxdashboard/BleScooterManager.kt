@@ -42,6 +42,12 @@ internal fun resolveExportPowerW(
     previousDirectPowerW: Double?
 ): Double? = decodedPowerW ?: previousDirectPowerW ?: electricalPowerW
 
+/** Live CSVs retain the exact decoder value and never substitute the stabilized UI value. */
+internal fun resolveRawBatteryPercentForExport(
+    decodedRawPercent: Int?,
+    previousRawPercent: Int?
+): Int? = decodedRawPercent ?: previousRawPercent
+
 internal const val RAW_TELEMETRY_CSV_HEADER =
     "relative_ms;timestamp_ms;channel;meaning;length;packet_no;changed_bytes;hex;origin;connection_epoch;" +
         "service_uuid;characteristic_uuid;properties_raw"
@@ -335,8 +341,10 @@ class BleScooterManager(private val context: Context) {
     private val secureStore = SecureTelemetryStore(context)
     private val learningStore = LearningProfileStore(context)
     private val historyStore = SessionHistoryStore(context)
+    private val batteryPercentStabilizer = BatteryPercentStabilizer()
     private val previousValues = mutableMapOf<String, ByteArray>()
     private val channelPacketCounts = mutableMapOf<String, Int>()
+    private val rawNotificationPacketCounter = RawNotificationPacketCounter()
     private val sessionRows = mutableListOf<String>()
     private val markerRows = mutableListOf<String>()
     private val telemetryRows = mutableListOf<String>()
@@ -721,8 +729,10 @@ class BleScooterManager(private val context: Context) {
             legacyStartModeCharacteristicAvailable = false
             lastMotorTuningReadRequestAt = 0L
             motorTuningBuffer.clear()
+            batteryPercentStabilizer.disconnect()
             previousValues.clear()
             channelPacketCounts.clear()
+            rawNotificationPacketCounter.clear()
             notificationQueue.clear()
             deferredKnownNotificationQueue.clear()
             deferredNotificationQueue.clear()
@@ -939,6 +949,7 @@ class BleScooterManager(private val context: Context) {
         legacyStartModeCharacteristicAvailable = false
         lastMotorTuningReadRequestAt = 0L
         gattOperationCoordinator.closeConnection(active.epoch)
+        batteryPercentStabilizer.disconnect()
         activeGattConnection = null
         update {
             it.clearConnectionScopedTelemetry(active.epoch).copy(
@@ -1020,11 +1031,13 @@ class BleScooterManager(private val context: Context) {
                             measurementEpochByGattEpoch[active.epoch] = measurementConnectionEpoch
                         }
                         sessionStartedAt = System.currentTimeMillis()
+                        batteryPercentStabilizer.reset()
                         // A reconnect starts fresh live state, but it must not erase
                         // packets already captured by the same measurement session.
                         if (!recordingActive) sessionRows.clear()
                         previousValues.clear()
                         channelPacketCounts.clear()
+                        rawNotificationPacketCounter.clear()
                         packetTimes.clear()
                         motorTuningBuffer.clear()
                         pendingMotorTuningWrite = null
@@ -1092,6 +1105,7 @@ class BleScooterManager(private val context: Context) {
                         legacyStartModeCharacteristicAvailable = false
                         lastMotorTuningReadRequestAt = 0L
                         gattOperationCoordinator.closeConnection(active.epoch)
+                        batteryPercentStabilizer.disconnect()
                         update {
                             it.clearConnectionScopedTelemetry(active.epoch).copy(
                                 connected = false,
@@ -2446,6 +2460,7 @@ class BleScooterManager(private val context: Context) {
             addLog("READ $short (nur Diagnose, nicht als Live-Telemetrie): $hex")
             return
         }
+        val rawPacketNo = rawNotificationPacketCounter.next(short)
         if (powerCriticalNotificationEpoch == callbackConnectionEpoch &&
             characteristic.service.uuid == SERVICE_TELEMETRY &&
             uuid == BATTERY_CHARACTERISTIC
@@ -2465,7 +2480,7 @@ class BleScooterManager(private val context: Context) {
                     short,
                     knowledge.title,
                     packet.size.toString(),
-                    receivedNotificationPackets.toString(),
+                    rawPacketNo.toString(),
                     "–",
                     hex,
                     QUARANTINED_NOTIFICATION_ORIGIN,
@@ -2490,7 +2505,7 @@ class BleScooterManager(private val context: Context) {
                     short,
                     "Diagnose-Notification (nicht im Live-Decoder)",
                     packet.size.toString(),
-                    receivedNotificationPackets.toString(),
+                    rawPacketNo.toString(),
                     "–",
                     hex,
                     DIAGNOSTIC_NOTIFICATION_ORIGIN,
@@ -2518,8 +2533,27 @@ class BleScooterManager(private val context: Context) {
         channelPacketCounts[short] = count
 
         val decoded = LiveTelemetryDecoder.decode(short, packet)
+        val decodedRawBatteryPercent = if (short == "1509") {
+            packet.getOrNull(4)?.toInt()?.and(0xFF)
+        } else {
+            null
+        }
+        val stateBeforePacket = _state.value
+        val packetElapsedRealtimeMs = SystemClock.elapsedRealtime()
+        val freshBatterySpeed = freshBatterySpeedKmh(
+            speedKmh = stateBeforePacket.speedKmh,
+            speedSampleAtElapsedMs = stateBeforePacket.lastSpeedSampleElapsedRealtimeMs,
+            speedSampleConnectionEpoch = stateBeforePacket.speedSampleConnectionEpoch,
+            connectionEpoch = callbackConnectionEpoch,
+            nowElapsedMs = packetElapsedRealtimeMs
+        )
+        val batteryReading = batteryPercentStabilizer.observe(
+            rawPercent = decodedRawBatteryPercent,
+            currentA = decoded.currentA,
+            speedKmh = freshBatterySpeed
+        )
         val speedSampleElapsedRealtimeMs = if (short == "1505" && decoded.speedKmh != null) {
-            SystemClock.elapsedRealtime()
+            packetElapsedRealtimeMs
         } else {
             null
         }
@@ -2532,11 +2566,11 @@ class BleScooterManager(private val context: Context) {
             val measurementMs = now - measurementStartedAt
             sessionRows += listOf(
                 measurementMs.toString(), now.toString(), short, knowledge.title,
-                packet.size.toString(), count.toString(), changedText, hex,
+                packet.size.toString(), rawPacketNo.toString(), changedText, hex,
                 origin.name, measurementConnectionEpoch.toString(),
                 serviceUuid, characteristicUuid, propertiesRaw.toString()
             ).joinToString(";")
-            val snapshot = _state.value
+            val snapshot = stateBeforePacket
             val electricalPower = resolveElectricalPowerW(
                 decoded.voltageV,
                 decoded.currentA,
@@ -2554,7 +2588,10 @@ class BleScooterManager(private val context: Context) {
             telemetryRows += listOf(
                 measurementMs.toString(), now.toString(),
                 (decoded.speedKmh ?: snapshot.speedKmh)?.toString().orEmpty(),
-                (decoded.batteryPercent ?: snapshot.batteryPercent)?.toString().orEmpty(),
+                resolveRawBatteryPercentForExport(
+                    decodedRawPercent = decodedRawBatteryPercent,
+                    previousRawPercent = snapshot.batteryPercentRaw
+                )?.toString().orEmpty(),
                 (decoded.voltageV ?: snapshot.voltageV)?.toString().orEmpty(),
                 (decoded.currentA ?: snapshot.currentA)?.toString().orEmpty(),
                 power?.toString().orEmpty(),
@@ -2575,7 +2612,7 @@ class BleScooterManager(private val context: Context) {
             if (telemetryRows.size > 100_000) telemetryRows.removeAt(0)
         }
 
-        val old = _state.value
+        val old = stateBeforePacket
         val decodedStartMode = VmaxStartMode.fromRaw(decoded.startModeRaw)
         val pendingStartMode = pendingStartModeWrite
         val startModeDomainConfirmed = decodedStartMode != null && pendingStartMode != null &&
@@ -2615,7 +2652,8 @@ class BleScooterManager(private val context: Context) {
 
         update {
             it.copy(
-                batteryPercent = decoded.batteryPercent ?: it.batteryPercent,
+                batteryPercent = batteryReading.stablePercent,
+                batteryPercentRaw = batteryReading.rawPercent,
                 speedKmh = decoded.speedKmh ?: it.speedKmh,
                 driveRaw = decoded.driveRaw ?: it.driveRaw,
                 motorLoadRaw = decoded.motorLoadRaw ?: it.motorLoadRaw,
@@ -2655,7 +2693,7 @@ class BleScooterManager(private val context: Context) {
                 packetsPerSecond = packetsPerSecond,
                 lastPacketAt = now,
                 lastBatteryTelemetryAt = if (
-                    decoded.batteryPercent != null || decoded.voltageV != null
+                    decodedRawBatteryPercent != null || decoded.voltageV != null
                 ) now else it.lastBatteryTelemetryAt,
                 telemetryReady = it.telemetryReady || ConnectionTelemetryPolicy.isLiveNotificationChannel(short),
                 speedSampleConnectionEpoch = if (speedSampleElapsedRealtimeMs != null) callbackConnectionEpoch else it.speedSampleConnectionEpoch,
@@ -2909,11 +2947,12 @@ class BleScooterManager(private val context: Context) {
     ): JSONObject {
         val records = diagnosticRecordsForBundles(bundles)
         val counts = diagnosticReadCounts(records)
+        val characteristicCounts = diagnosticCharacteristicCounts(records)
         val epochs = records.map(DiagnosticReadRecord::connectionEpoch).distinct().sorted()
         val epochArray = JSONArray().apply { epochs.forEach(::put) }
         val scanIds = JSONArray().apply { bundles.map(DiagnosticReadBundle::scanId).distinct().forEach(::put) }
         val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-        return JSONObject()
+        val manifest = JSONObject()
             .put("schema", "vmax-bt638-deep-read-v3")
             .put("measurement", measurementName)
             .put("embedded_in_measurement", true)
@@ -2950,6 +2989,7 @@ class BleScooterManager(private val context: Context) {
             .put("bluetooth_address_included", false)
             .put("app_version", packageInfo.versionName.orEmpty())
             .put("created_at_ms", System.currentTimeMillis())
+        return putDiagnosticCharacteristicCounts(manifest, characteristicCounts)
     }
 
     private fun writeDownloadFile(relativeFolder: String, fileName: String, mimeType: String, content: String) {

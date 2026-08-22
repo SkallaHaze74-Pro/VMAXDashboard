@@ -21,6 +21,68 @@ def write_rows(path: Path, header: str, rows):
 
 
 class LibbleComparisonTests(unittest.TestCase):
+    def test_legacy_blank_payload_does_not_invent_a_quarantine_origin(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ride = Path(tmp) / "Messfahrt_legacy_redacted"
+            ride.mkdir()
+            write_rows(
+                ride / "BLE_Rohdaten.csv",
+                RAW_V1_HEADER,
+                [["0", "1000", "1509", "Legacy redacted", "11", "1", "0", ""]],
+            )
+
+            result = analyze_ride(ride)
+
+            observations = result["export_observations"]
+            self.assertIsNone(observations["observed_exported_read_rows"])
+            self.assertEqual(0, observations["observed_exported_quarantined_rows"])
+            self.assertEqual(0, observations["observed_exported_hybrid_rows"])
+
+    def test_privacy_redacted_origins_count_without_decoder_samples(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ride = Path(tmp) / "Messfahrt_privacy_redacted"
+            ride.mkdir()
+            write_rows(
+                ride / "BLE_Rohdaten.csv",
+                RAW_V2_HEADER,
+                [
+                    ["0", "1000", "1509", "Redacted READ", "11", "1", "0", "", "READ", "0"],
+                    [
+                        "10",
+                        "1010",
+                        "1509",
+                        "Redacted hybrid",
+                        "11",
+                        "2",
+                        "0",
+                        "",
+                        "NOTIFICATION_QUARANTINED",
+                        "0",
+                    ],
+                    [
+                        "20",
+                        "1020",
+                        "1509",
+                        "Redacted diagnostic",
+                        "11",
+                        "3",
+                        "0",
+                        "",
+                        "NOTIFICATION_DIAGNOSTIC",
+                        "0",
+                    ],
+                ],
+            )
+
+            result = analyze_ride(ride)
+
+            self.assertEqual(3, result["raw_export_rows"])
+            self.assertEqual(0, result["accepted_export_rows"])
+            self.assertEqual({}, result["fields"])
+            self.assertEqual(1, result["export_observations"]["observed_exported_read_rows"])
+            self.assertEqual(1, result["export_observations"]["observed_exported_hybrid_rows"])
+            self.assertEqual(2, result["export_observations"]["observed_exported_quarantined_rows"])
+
     def test_real_export_shape_uses_summary_for_rejection_quality(self):
         with tempfile.TemporaryDirectory() as tmp:
             ride = Path(tmp) / "Messfahrt_test"

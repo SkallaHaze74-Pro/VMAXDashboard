@@ -103,7 +103,7 @@ private fun VmaxApp(manager: BleScooterManager, gattScanner: GattReadScanner) {
 
     LaunchedEffect(state.lastBatteryTelemetryAt) {
         if (state.connected && state.lastBatteryTelemetryAt > 0L) {
-            state.batteryPercent?.let { lastRealBattery = it }
+            state.batteryPercentRaw?.takeIf { it in 0..100 }?.let { lastRealBattery = it }
             state.voltageV?.let { lastRealVoltage = it }
             lastRealValueAt = state.lastBatteryTelemetryAt
         }
@@ -166,7 +166,25 @@ private fun VmaxApp(manager: BleScooterManager, gattScanner: GattReadScanner) {
             item { StatusCard(state, gattState, chargeMode, aiProfile) }
             item { SpeedCard(state) }
             item { SectionTitle("Bestätigte Fahrdaten") }
-            item { MetricRow("Akku", state.batteryPercent?.let { "$it %" } ?: "–", "Kilometer", state.odometerKm?.let { "%.1f km".format(it) } ?: "–") }
+            item {
+                val batteryText = when {
+                    state.batteryPercentRaw != null && state.batteryPercentRaw !in 0..100 ->
+                        state.batteryPercent?.let { "$it % • roh ${state.batteryPercentRaw} ungültig" }
+                            ?: "– • roh ${state.batteryPercentRaw} ungültig"
+                    state.batteryPercent != null && state.batteryPercentRaw != null &&
+                        state.batteryPercent != state.batteryPercentRaw ->
+                        "${state.batteryPercent} % • roh ${state.batteryPercentRaw} %"
+                    state.batteryPercent != null -> "${state.batteryPercent} %"
+                    state.batteryPercentRaw != null -> "${state.batteryPercentRaw} % roh"
+                    else -> "–"
+                }
+                MetricRow(
+                    "Akku stabil / roh",
+                    batteryText,
+                    "Kilometer",
+                    state.odometerKm?.let { "%.1f km".format(it) } ?: "–"
+                )
+            }
             item { MetricRow("Spannung", state.voltageV?.let { "%.2f V".format(it) } ?: "–", "Strom", state.currentA?.let { "%.2f A".format(it) } ?: "–") }
             item { SectionTitle("Kandidaten / unabhängiger Vergleich") }
             item { MetricRow("Direktfeld 1509/9 (Kandidat)", state.sdkDirectPowerW?.let { "%.0f W".format(it) } ?: state.motorLoadRaw?.let { "$it W" } ?: "–", "Elektrisch |V×A|", state.currentPowerW?.let { "%.0f W".format(it) } ?: "–") }

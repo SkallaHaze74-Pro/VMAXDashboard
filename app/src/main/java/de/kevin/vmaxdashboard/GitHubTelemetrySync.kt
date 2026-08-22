@@ -217,6 +217,35 @@ private fun decodePublicUploadUtf8(bytes: ByteArray): String = try {
     throw IllegalArgumentException("Public upload artifact is not valid UTF-8", error)
 }
 
+/**
+ * Compatibility boundary for already queued artifacts from an older app build.
+ * Only public upload bytes are upgraded; the exact local archive remains untouched.
+ */
+internal fun publicGitHubUploadBytesWithDiagnosticCsv(
+    name: String,
+    bytes: ByteArray,
+    diagnosticCsvBytes: ByteArray?,
+    diagnosticManifestFileName: String = DIAGNOSTIC_READ_MANIFEST_FILE
+): ByteArray {
+    if (
+        diagnosticCsvBytes == null ||
+        (name != DIAGNOSTIC_READ_SUMMARY_FILE && name != diagnosticManifestFileName)
+    ) {
+        return publicGitHubUploadBytes(name, bytes)
+    }
+    val csv = decodePublicUploadUtf8(diagnosticCsvBytes)
+    val enrichedBytes = when {
+        name == DIAGNOSTIC_READ_SUMMARY_FILE ->
+            enrichDiagnosticReadSummaryWithCsv(decodePublicUploadUtf8(bytes), csv)
+                .toByteArray(Charsets.UTF_8)
+        name == diagnosticManifestFileName ->
+            enrichDiagnosticReadManifestWithCsv(decodePublicUploadUtf8(bytes), csv)
+                .toByteArray(Charsets.UTF_8)
+        else -> bytes
+    }
+    return publicGitHubUploadBytes(name, enrichedBytes)
+}
+
 internal data class TelemetryCsvMetrics(
     val schemaVersion: Int = 1,
     val liveRows: Int = 0,
@@ -574,6 +603,7 @@ class GitHubTelemetrySync private constructor(context: Context) {
     }
 
     private fun finishQueueBundle(staging: File, queueFolder: File, folderName: String, sourceKey: String) {
+        enrichStagedDiagnosticArtifacts(staging)
         File(staging, "manifest.json").writeText(buildManifest(staging, folderName).toString(2))
         File(staging, ".meta.json").writeText(
             JSONObject()
@@ -591,6 +621,25 @@ class GitHubTelemetrySync private constructor(context: Context) {
         check(!queueFolder.exists()) { "Messfahrt-Queueziel existiert bereits unvollständig" }
         check(staging.renameTo(queueFolder)) { "Messfahrt-Staging konnte nicht atomar übernommen werden" }
         setStatus("Messfahrt für GitHub vorgemerkt: $folderName")
+    }
+
+    /**
+     * Measurement exports created by older/current manager code do not persist
+     * the scanner's full GATT inventory. Add only counts that the staged CSV can
+     * prove, and state that limitation explicitly in the public diagnostic manifest.
+     */
+    private fun enrichStagedDiagnosticArtifacts(staging: File) {
+        val csv = File(staging, DIAGNOSTIC_READ_CSV_FILE)
+        val summary = File(staging, DIAGNOSTIC_READ_SUMMARY_FILE)
+        val manifest = File(staging, DIAGNOSTIC_READ_MANIFEST_FILE)
+        if (!csv.isFile) return
+        val csvText = csv.readText()
+        if (summary.isFile) {
+            summary.writeText(enrichDiagnosticReadSummaryWithCsv(summary.readText(), csvText))
+        }
+        if (manifest.isFile) {
+            manifest.writeText(enrichDiagnosticReadManifestWithCsv(manifest.readText(), csvText))
+        }
     }
 
     private fun isCompleteMeasurementQueueFolder(folder: File): Boolean = runCatching {
@@ -714,8 +763,15 @@ class GitHubTelemetrySync private constructor(context: Context) {
                     ?.filter { it.isFile && it.name != ".meta.json" && it.name in fileNames }
                     ?.sortedWith(compareBy<File> { it.name == "manifest.json" }.thenBy { it.name })
                     .orEmpty()
+                val diagnosticCsvBytes = File(folder, DIAGNOSTIC_READ_CSV_FILE)
+                    .takeIf(File::isFile)
+                    ?.readBytes()
                 uploadFiles.forEach { file ->
-                    val publicBytes = publicGitHubUploadBytes(file.name, file.readBytes())
+                    val publicBytes = publicGitHubUploadBytesWithDiagnosticCsv(
+                        file.name,
+                        file.readBytes(),
+                        diagnosticCsvBytes
+                    )
                     uploader.uploadIfMissing("$remoteFolder/${file.name}", publicBytes, folder.name)
                 }
                 markProcessed(sourceKey)

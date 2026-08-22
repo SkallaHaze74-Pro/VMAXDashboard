@@ -1,5 +1,6 @@
 package de.kevin.vmaxdashboard
 
+import org.json.JSONObject
 import java.security.MessageDigest
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
@@ -133,6 +134,170 @@ internal data class DiagnosticReadCounts(
     val observationPayloads: Int,
     val observations: Int
 )
+
+/**
+ * Counts that can be proven from persisted Deep READ rows. The scanner's full
+ * discovered GATT inventory is not part of [DiagnosticReadBundle], so
+ * [recorded] and [readable] are lower bounds rather than inventory totals.
+ */
+internal data class DiagnosticCharacteristicCounts(
+    val recorded: Int,
+    val readable: Int,
+    val callbacks: Int
+)
+
+internal const val DIAGNOSTIC_CHARACTERISTIC_COUNT_SCOPE =
+    "archived records only; full discovered GATT inventory is not persisted"
+
+private fun diagnosticCharacteristicKey(serviceUuid: String, characteristicUuid: String): String? {
+    val service = serviceUuid.trim().lowercase()
+    val characteristic = characteristicUuid.trim().lowercase()
+    if (service.isBlank() || characteristic.isBlank()) return null
+    return "$service/$characteristic"
+}
+
+internal fun diagnosticCharacteristicCounts(
+    records: List<DiagnosticReadRecord>
+): DiagnosticCharacteristicCounts {
+    val recorded = linkedSetOf<String>()
+    val readable = linkedSetOf<String>()
+    val callbacks = linkedSetOf<String>()
+    records.forEach { record ->
+        val key = diagnosticCharacteristicKey(record.serviceUuid, record.characteristicUuid)
+            ?: return@forEach
+        recorded += key
+        if (record.propertiesRaw and 0x02 != 0) readable += key
+        if (
+            record.recordKind == DiagnosticRecordKind.GATT_READ_CALLBACK &&
+            record.callbackReceived
+        ) {
+            callbacks += key
+        }
+    }
+    return DiagnosticCharacteristicCounts(
+        recorded = recorded.size,
+        readable = readable.size,
+        callbacks = callbacks.size
+    )
+}
+
+/** Reconstruct the same non-sensitive counts after the public CSV was redacted. */
+internal fun diagnosticCharacteristicCountsFromCsv(csv: String): DiagnosticCharacteristicCounts? =
+    runCatching {
+        val rows = parseDiagnosticCsv(csv)
+        if (rows.isEmpty()) return@runCatching null
+        val header = rows.first().mapIndexed { index, value ->
+            (if (index == 0) value.removePrefix("\uFEFF") else value).trim().lowercase()
+        }
+        requireUnambiguousPublicCsvShape(header, rows.drop(1), "Deep READ CSV")
+        fun column(name: String): Int? = header.indexOf(name).takeIf { it >= 0 }
+        val serviceIndex = column("service_uuid") ?: return@runCatching null
+        val characteristicIndex = column("characteristic_uuid") ?: return@runCatching null
+        val propertiesRawIndex = column("properties_raw")
+        val propertiesIndex = column("properties")
+        if (propertiesRawIndex == null && propertiesIndex == null) return@runCatching null
+        val callbackIndex = column("callback_received") ?: return@runCatching null
+        val recordKindIndex = column("record_kind") ?: return@runCatching null
+        val recorded = linkedSetOf<String>()
+        val readable = linkedSetOf<String>()
+        val callbacks = linkedSetOf<String>()
+        rows.drop(1).forEach { row ->
+            if (row.all(String::isBlank)) return@forEach
+            val key = diagnosticCharacteristicKey(
+                row.getOrElse(serviceIndex) { "" },
+                row.getOrElse(characteristicIndex) { "" }
+            ) ?: return@forEach
+            recorded += key
+            val propertiesRaw = propertiesRawIndex
+                ?.let { row.getOrElse(it) { "" }.trim().toIntOrNull() }
+                ?: propertiesIndex?.let { diagnosticPropertyMask(row.getOrElse(it) { "" }) }
+                ?: 0
+            if (propertiesRaw and 0x02 != 0) readable += key
+            val callbackReceived = row.getOrElse(callbackIndex) { "" }
+                .trim()
+                .equals("true", ignoreCase = true)
+            val recordKind = row.getOrElse(recordKindIndex) { "" }.trim()
+            if (
+                callbackReceived &&
+                recordKind.equals(DiagnosticRecordKind.GATT_READ_CALLBACK.name, ignoreCase = true)
+            ) {
+                callbacks += key
+            }
+        }
+        DiagnosticCharacteristicCounts(
+            recorded = recorded.size,
+            readable = readable.size,
+            callbacks = callbacks.size
+        )
+    }.getOrNull()
+
+internal fun putDiagnosticCharacteristicCounts(
+    manifest: JSONObject,
+    counts: DiagnosticCharacteristicCounts
+): JSONObject = manifest
+    // The actual discovered inventory is unavailable in persisted bundles.
+    .put("discovered_characteristics", JSONObject.NULL)
+    .put("discovered_characteristics_recorded_lower_bound", counts.recorded)
+    .put("readable_characteristics_recorded_lower_bound", counts.readable)
+    .put("callback_characteristics", counts.callbacks)
+    .put("characteristic_inventory_complete", false)
+    .put("characteristic_count_scope", DIAGNOSTIC_CHARACTERISTIC_COUNT_SCOPE)
+
+internal fun enrichDiagnosticReadManifestWithCsv(manifestJson: String, csv: String): String {
+    val counts = diagnosticCharacteristicCountsFromCsv(csv) ?: return manifestJson
+    return putDiagnosticCharacteristicCounts(JSONObject(manifestJson), counts).toString(2)
+}
+
+private val diagnosticCharacteristicSummaryKeys = setOf(
+    "characteristics",
+    "characteristics_discovered",
+    "characteristics_discovered_recorded_lower_bound",
+    "characteristics_readable_recorded_lower_bound",
+    "characteristics_callbacks",
+    "characteristics_inventory_complete",
+    "characteristics_count_scope"
+)
+
+private fun diagnosticCharacteristicSummaryLines(
+    counts: DiagnosticCharacteristicCounts
+): List<String> = listOf(
+    "Characteristics_Discovered: not_archived",
+    "Characteristics_Discovered_Recorded_Lower_Bound: ${counts.recorded}",
+    "Characteristics_Readable_Recorded_Lower_Bound: ${counts.readable}",
+    "Characteristics_Callbacks: ${counts.callbacks}",
+    "Characteristics_Inventory_Complete: false",
+    "Characteristics_Count_Scope: $DIAGNOSTIC_CHARACTERISTIC_COUNT_SCOPE"
+)
+
+/** Upgrade an old public summary using its sibling CSV without touching local exact evidence. */
+internal fun enrichDiagnosticReadSummaryWithCsv(summary: String, csv: String): String {
+    if (summary.isBlank()) return summary
+    val counts = diagnosticCharacteristicCountsFromCsv(csv) ?: return summary
+    val replacement = diagnosticCharacteristicSummaryLines(counts)
+    val sourceLines = summary.trimEnd('\r', '\n').lineSequence().toList()
+    val output = mutableListOf<String>()
+    var inserted = false
+    sourceLines.forEach { line ->
+        val key = line.substringBefore(':', "").trim().lowercase()
+        if (key in diagnosticCharacteristicSummaryKeys) {
+            if (!inserted) {
+                output += replacement
+                inserted = true
+            }
+        } else {
+            output += line
+        }
+    }
+    if (!inserted) {
+        val insertionIndex = output.indexOfFirst { line ->
+            val key = line.substringBefore(':', "").trim().lowercase()
+            key in setOf("gatt_verbindungsepochen", "modus")
+        }.takeIf { it >= 0 } ?: output.size
+        output.addAll(insertionIndex, replacement)
+    }
+    val terminalNewline = if (summary.endsWith('\n') || summary.endsWith('\r')) "\n" else ""
+    return output.joinToString("\n") + terminalNewline
+}
 
 internal fun diagnosticReadCounts(records: List<DiagnosticReadRecord>): DiagnosticReadCounts {
     val readKinds = setOf(DiagnosticRecordKind.GATT_READ_CALLBACK, DiagnosticRecordKind.GATT_READ_EVENT)
@@ -468,6 +633,7 @@ internal fun buildDiagnosticReadSummary(
 ): String {
     val records = diagnosticRecordsForBundles(bundles)
     val counts = diagnosticReadCounts(records)
+    val characteristicCounts = diagnosticCharacteristicCounts(records)
     val startedAt = bundles.minOfOrNull(DiagnosticReadBundle::scanStartedAt) ?: 0L
     val finishedAt = bundles.maxOfOrNull(DiagnosticReadBundle::scanFinishedAt) ?: startedAt
     val deviceNames = bundles.map(DiagnosticReadBundle::deviceName).filter(String::isNotBlank).distinct()
@@ -494,7 +660,7 @@ internal fun buildDiagnosticReadSummary(
         appendLine("READ_Valide_Payloads: ${counts.validPayloads}")
         appendLine("Advertisement_Payloads: ${counts.observationPayloads}")
         appendLine("Beobachtungen: ${counts.observations}")
-        appendLine("Characteristics: ${records.filter { it.characteristicUuid.isNotBlank() }.map { "${it.serviceUuid}/${it.characteristicUuid}" }.toSet().size}")
+        diagnosticCharacteristicSummaryLines(characteristicCounts).forEach(::appendLine)
         appendLine("GATT_Verbindungsepochen: ${epochs.joinToString(",")}")
         appendLine("Messfahrt_Verbindungsepochen: ${measurementEpochs.joinToString(",")}")
         appendLine("Vollständige_Scans: ${bundles.count(DiagnosticReadBundle::completed)}")
