@@ -1,0 +1,21 @@
+{
+  "format": "VMAX_LEARNING_PROFILE_V1",
+  "updatedAt": 1787411081318,
+  "candidates": [
+    {
+      "key": "Auto Zustandswechsel|1508|11",
+      "model": "BT638",
+      "label": "Auto Zustandswechsel",
+      "channel": "1508",
+      "byteIndex": 11,
+      "confidence": 71,
+      "observations": 1,
+      "lastBefore": 0,
+      "lastAfter": 1,
+      "updatedAt": 1786642596578,
+      "status": "candidate"
+    }
+  ],
+  "public_identity_redacted": true,
+  "public_hash_privacy": "unsalted SHA-256 pseudonym; same identity is linkable across public uploads"
+}
