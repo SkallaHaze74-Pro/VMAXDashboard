@@ -1,6 +1,6 @@
 {
   "schema": "vmax-provider-review-v2",
-  "generatedAtMs": 1787341539233,
+  "generatedAtMs": 1787379726009,
   "inputFingerprint": "fdf88a2aa6027c8429055df0b0d7d9727ef6ed2a56f5ddc948ca9d839c6005e2",
   "advisoryOnly": true,
   "readOnlyReviewerContract": true,
@@ -9,7 +9,7 @@
   "modelConsensusCountsAsEvidence": false,
   "providers": {
     "gemini": {
-      "status": "ok",
+      "status": "cached_ok",
       "model": "gemini-3.5-flash-lite",
       "provider": "Gemini",
       "fallback": true,
@@ -21,16 +21,28 @@
         "gemini-3.5-flash-lite"
       ],
       "primaryError": "The read operation timed out",
-      "fresh": true
+      "fresh": false,
+      "cachedFromPreviousRun": true,
+      "lastAttempt": {
+        "status": "cached_ok",
+        "model": "gemini-3.5-flash-lite",
+        "error": ""
+      }
     },
     "glm": {
-      "status": "ok",
+      "status": "cached_ok",
       "model": "glm-4.7-flash",
       "provider": "Z.ai",
       "fallback": true,
       "text": "- **Belastbare Evidenz**\n  - Die RAW-Extraktions-Logs (BT638 Deep Read) zeigen konsistente Werte für `batteryPercent` (Offset 4: `30` = 48%), `currentA` (Offset 0: `00-00` = 0A) und `voltageV` (Offset 5-6: `BB 1C` -> 47.9V bei 0.001-Scale), was die Layout-Annahmen bestätigt.\n  - Der SDK-Vergleich zeigt eine 100%ige Übereinstimmung für `direct_power_W`, was hardwareseitig die Konsistenz des Layouts 1509 belegt, auch wenn die semantische Bestätigung des Feldes noch aussteht.\n  - Die Geschwindigkeit (1505/6) und der Kilometerstand (1506/0) zeigen im Deep-Read Konsistenz, sind aber mit der extrem niedrigen Odometer-Berechnung inkonsistent.\n\n- **Konflikte / mögliche Bugs**\n  - **Massiver Datenverlust / Parsing-Fehler:** Der SDK-Vergleich zeigt für 11 von 14 Fahrten \"Akzeptierte Exportzeilen: 0\". Die Decoder-Logik scheitert an der Verarbeitung der Rohdaten für die Mehrheit der Fahrten, was die Güte der \"bestätigten\" Regeln in Frage stellt.\n  - **Odometer-Skalierungs-Fehler:** Das Sample `1506` (`00-00-1B-F5`) wird als `u32be@0` mit Scale `0.1` interpretiert. Das ergibt ca. 472,5 km. Dies ist für ein e-Bike mit nur 14 Fahrten physikalisch unplausibel (wahrscheinlich falsche Skala, sollte 1.0 sein).\n  - **Zirkuläre Power-Validierung:** Die Power-Cross-Check-Logik nutzt `abs(voltage_v * current_a)` aus denselben Feldern, um `powerW` zu validieren. Dies ist keine unabhängige Evidenz, sondern eine mathematische Abhängigkeit innerhalb desselben Pakets.\n\n- **Hypothesen (nicht bestätigt)**\n  - Die `odometerKm`-Skala wurde fälschlicherweise auf 0.1 statt 1.0 gesetzt, was zu einem Faktor-10-Unterschied führt.\n  - Die \"0 akzeptierten Zeilen\" deuten auf ein generelles Formatierungs- oder Regex-Problem im Decoder-Setup hin, das nicht nur einzelne Felder betrifft.\n\n- **Nächste sichere READ-ONLY-Tests**\n  - Manuelle Berechnung des Odometers aus dem Sample `1506` (Bytes `00-00-1B-F5` -> `0x1BF5` -> 4725) und Vergleich mit der Skalierung 0.1 vs. 1.0.\n  - Analyse der rohen Datenstruktur der 11 Fahrten mit 0 akzeptierten Zeilen, um das Parsing-Problem zu identifizieren.\n  - Live-Read von 1505/8 (RPM) und 1505/10 (Distanz) während einer Fahrt, um die fehlenden Dekodierungen zu validieren.\n\n- **Automatische Änderungen: KEINE**\n\nFreigabe: keine automatische Änderung.",
       "outputComplete": true,
-      "fresh": true
+      "fresh": false,
+      "cachedFromPreviousRun": true,
+      "lastAttempt": {
+        "status": "cached_ok",
+        "model": "glm-4.7-flash",
+        "error": ""
+      }
     }
   },
   "teamSynthesis": {
@@ -46,6 +58,6 @@
   },
   "transientFallbackPass": true,
   "outputContractValidated": true,
-  "freshProviderCount": 2,
-  "cachedProviderCount": 0
+  "freshProviderCount": 0,
+  "cachedProviderCount": 2
 }

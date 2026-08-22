@@ -10,7 +10,7 @@
         "scope": "BLE_Rohdaten.csv rows only; these are not recorder rejection counters",
         "origin_column_available": false,
         "observed_exported_read_rows": null,
-        "observed_exported_quarantined_rows": 3235,
+        "observed_exported_quarantined_rows": 3217,
         "observed_exported_hybrid_rows": 0
       },
       "quality_counters": {
@@ -32,7 +32,7 @@
         "scope": "BLE_Rohdaten.csv rows only; these are not recorder rejection counters",
         "origin_column_available": false,
         "observed_exported_read_rows": null,
-        "observed_exported_quarantined_rows": 41,
+        "observed_exported_quarantined_rows": 38,
         "observed_exported_hybrid_rows": 0
       },
       "quality_counters": {
@@ -54,7 +54,7 @@
         "scope": "BLE_Rohdaten.csv rows only; these are not recorder rejection counters",
         "origin_column_available": false,
         "observed_exported_read_rows": null,
-        "observed_exported_quarantined_rows": 533,
+        "observed_exported_quarantined_rows": 526,
         "observed_exported_hybrid_rows": 0
       },
       "quality_counters": {
@@ -76,7 +76,7 @@
         "scope": "BLE_Rohdaten.csv rows only; these are not recorder rejection counters",
         "origin_column_available": false,
         "observed_exported_read_rows": null,
-        "observed_exported_quarantined_rows": 104,
+        "observed_exported_quarantined_rows": 96,
         "observed_exported_hybrid_rows": 0
       },
       "quality_counters": {
