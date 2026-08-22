@@ -8,71 +8,75 @@
 ## Gemini
 
 Status: `ok`
-Modell: `gemini-3.5-flash-lite`
+Modell: `gemini-3.7-flash`
 Provider: `Gemini`
-Fallback: `true`
 Frische: `aktuell`
 
-- Belastbare Evidenz:
-  - VMAX VX2 Gear verwendet offiziell die V-Core-Steuerung/Hardware (V-Torque).
-  - BT638 liefert Live-Daten über die proprietäre GATT-DA1A/15xx-Familie (z. B. 1505, 1506, 1508, 1509) ohne expliziten Application-Layer-Handshake von VMAXDashboard.
-  - Die originale App (`base.apk`) enthält Hyena/Hylink-, Brose-, Hobbywing- und GPST-SDK-Komponenten als Multi-Vendor-Baukasten.
-  - Native Symbole in `libble-sdk-native-lib.so` belegen GPST-Protokollhandler und spezifische Sachs-Auth-Funktionen (`AuthSachsBike`).
+### Belastbare Evidenz
+- **Hardware-Klassifikation:** Das Zielgerät ist herstellerseitig als *VMAX V-Core Gear* (25A Controller / V-Torque) ausgewiesen; die `base.apk` ist ein Multi-Vendor-Baukasten (u. a. Hyena, Brose, Hobbywing, Sachs, GPST).
+- **BT638 Live-Telemetrie:** Daten auf der DA1A-/15xx-Familie (`1505`, `1506`, `1508`, `1509` für Speed, Odo, Licht, Fahrstufe, Spannung, Strom, SoC) werden nach Standard-GATT-Connect empfangen, ohne dass ein anwendungsspezifischer BT638-Handshake aktiv ist.
+- **Native libble-Symbole:** In `libble-sdk-native-lib.so` existieren READ- und Parser-Definitionen des `GPSTProtocolHandler` (u. a. `ReadCharacteristicBatteryInfo`, `ReadCharacteristicBatteryCell`, `ReadCharacteristicSerialNumbers`, `ReadCharacteristicError`).
+- **Auth-Abgrenzung:** Enthaltene Handshake-Routinen (`authSachsBike`, `changeSachsConnectionKey`) sind namentlich Sachs-spezifisch; `GPSTLib::SetApiKey` ist eine generische SDK-Schnittstelle ohne belegten BT638-Runtime-Pfad.
 
-- Konflikte / mögliche Bugs:
-  - Fälschliche Gleichsetzung von in der APK vorhandenen Hyena-SDKs oder Sachs-Auth-Routinen mit dem tatsächlichen BT638-Laufzeitverhalten.
-  - Ungeklärte Zuordnung von Leistungswerten (Motor Power vs. Treadle Power bei 1505).
-  - Fehlende Live-Verfügbarkeit des remainingDistanceKm-Wertes (Offset 10 liefert konstant 0xFFFF).
-  - Unbelegte Behauptung eines geheimen BT638-App-Layer-Handshakes oder Controller-Read-Protection-Unlock-Zwangs.
+### Konflikte / mögliche Bugs
+- **Falsche Vendor-Zuweisung:** SDK-Pfade (`io.hylink.*`, `com.brose.*`, `HobbywingSDK`) wurden voreilig BT638 zugeordnet; eine Laufzeitverknüpfung zwischen Hyena HBP/HAP und dem DA1A-Protokoll ist unbewiesen.
+- **Handshake-Fehlschluss:** Das Vorhandensein generischer bzw. Sachs-spezifischer Auth-Symbole wurde fälschlich als notwendiger Controller-Unlock für BT638 interpretiert; ein physischer MCU-Ausleseschutz ist kein BLE-GATT-Handshake.
+- **Offene Signalrollen auf 1505:** Die Zuordnung von Motor- vs. Tretleistung (`performancePowerA/B` auf Offset 0 und 2) ist ungelöst; Offset 10 liefert bisher nur `0xFFFF` (nicht verfügbar).
+- **Lade-Monitoring im Betrieb nicht möglich:** Der Controller schaltet beim Einstecken des Ladekabels hardwareseitig ab und trennt BLE; ein kontinuierliches Live-GATT-Monitoring während des Ladens ist technisch nicht durchführbar.
 
-- Hypothesen (nicht bestätigt):
-  - Ob Hyena-spezifische Batterie-ELM- oder Motor-Tuning-Funktionen jemals auf dem BT638 ausgeführt werden.
-  - Ob der Ladezustand über bestimmte Register der DA1A-Familie direkt vor dem Abschalten abgreifbar ist.
-  - Ob Offset 0 und 2 bei 1505 exakt den Motor- und Treadle-Power-Metriken entsprechen.
+### Hypothesen (nicht bestätigt)
+- **BT638-Verfügbarkeit nativer READs:** Die in `libble-sdk-native-lib.so` deklarierten READ-Funktionen (Serials, ErrorString, BatteryCell) existieren als echte, lesbare Characteristics auf dem Scooter.
+- **Hyena-ELM-/SOH-Relevanz:** Erweiterte Akku-Diagnosewerte (Zyklen, SOH, Produktionsdatum, Ah-Durchsatz) könnten im V-Core-System existieren, sind aber aktuell reine SDK-Kandidaten ohne BT638-GATT-Nachweis.
+- **Cruise-/Lock-Protokollpfad:** Im VMAX-UI sichtbare Cruise- und Lock-Pfade könnten über DA1A oder Hobbywing-Logik gesteuert werden (Kanal auf BT638 unbekannt).
+- **Lade-Flags:** Die Signale `charging` (517) und `chargingRemainSeconds` (516) könnten in noch unkartierten BT638-Offsets kodiert sein.
 
-- Nächste sichere READ-ONLY-Tests (max. 5):
-  1. Sequenzielles Auslesen aller verfügbaren `PROPERTY_READ`-Characteristics des BT638 mit Protokollierung von UUID, Status und Payload.
-  2. Snapshot-Erfassung des letzten BLE-Zustands unmittelbar vor dem Einstecken des Ladegeräts (ohne Live-Polling während des Ladens).
-  3. Erster GATT-Read-Dump direkt nach dem Abziehen des Ladegeräts und erfolgreichem Reconnect.
-  4. Validierung der Offsets 0 und 2 auf Kanal 1505 gegenüber Last- und Stromwerten im Stillstand.
-  5. Protokollierung von GATT-Statuscodes bei absichtlich nicht unterstützten oder leeren Characteristics.
+### Nächste sichere READ-ONLY-Tests (max. 5)
+1. **Sequenzieller GATT-Discovery- und READ-Scan:** Alle tatsächlich vorhandenen Characteristics mit `PROPERTY_READ` abfragen; Service-UUID, Characteristic-UUID, GATT-Statuscode und Rohbytes unverändert sichern.
+2. **Lade-Differenzmessung (Offline/Reconnect):** Telemetrie-Snapshot direkt vor dem Anstecken erfassen; optional kurzen Read-/Notify-Dump nach manuellem Einschaltversuch prüfen; ersten Snapshot nach dem Abziehen/Reconnect vergleichen.
+3. **Diagnose- und Fehler-READs prüfen:** Gezieltes Auslesen von Standard- und proprietären Handles für Seriennummern, Firmware-Versionen und Error-Strings nur dann, wenn `PROPERTY_READ` vom Server aktiv gemeldet wird.
+4. **Leistungs- und RPM-Feldprüfung:** Rohwerte auf `1505` (Offset 0, 2, 8) im sicheren Stillstand bzw. Freilauf mitschneiden, um Leistungskandidaten und Drehzahl ohne Schreibzugriffe einzugrenzen.
 
-- Automatische Änderungen: KEINE
+### Automatische Änderungen: KEINE
+- Keine Aktivierung oder Modifikation von Decoder-Regeln ohne unabhängige BT638-Messdaten.
+- Keine Ausführung von BLE-Schreibbefehlen, Tuning-Profilen, Auth-Frames oder Bypass-Routinen.
+- Keine automatische Übertragung von Hyena-, Brose- oder Sachs-Semantiken auf DA1A-Kanäle.
+- Deterministischer Konsens und Evidence Guard behalten die alleinige Gültigkeit.
 
 Freigabe: keine automatische Änderung.
 
 ## GLM / Z.ai
 
 Status: `ok`
-Modell: `glm-4.7-flash`
+Modell: `glm-4.5-flash`
 Provider: `Z.ai`
 Fallback: `true`
 Frische: `aktuell`
 
-- **Belastbare Evidenz**
-    - Hardware-Identität: VMAX V-Core Gear / V-Torque ist die offizielle Hardwarebezeichnung; Hyena ist nicht nachgewiesen.
-    - Protokollbestätigung: Live-Daten bestätigen DA1A/15xx-Familie (z.B. 1505 für Speed/RPM, 1506 für Odometer, 1508 für Assist, 1509 für Akku).
-    - App-Architektur: `base.apk` ist ein Multi-Vendor-Baukasten (Hyena/Hylink, Brose, Hobbywing, Sachs). Vorhandensein eines SDKs beweist keine Nutzung durch das spezifische BT638-Gerät.
-    - Native SDK-Funktionen: `GPSTProtocolHandler` in `libble-sdk-native-lib.so` implementiert Lesefunktionen für Batterie, Seriennummern, Fehler, Firmware und OTA, deren Laufzeiteinsatz am VX2 Gear jedoch offen ist.
+- Belastbare Evidenz
+1. VMAX VX2 Gear ist offiziell als V-Core Gear / V-Torque bezeichnet, nicht als Hyena-System.
+2. BT638 liefert live Daten auf DA1A/15xx-Familie ohne beobachteten Application-Layer-Handshake.
+3. VMAX-App enthält Hyena-, Brose-, Hobbywing- und andere Multi-Vendor-Komponenten.
+4. Native libble-Funktionen bestätigen Verfügbarkeit von Batterieinfo, Seriennummern, Fehlercodes, Firmware-Infos, Remote- und Lock-Status.
 
-- **Konflikte / mögliche Bugs**
-    - Vendor-Mixing: Code für Hyena, Sachs und Brose liegt im selben Paket. Ein Fehler in der Zuordnung könnte entstehen, wenn DA1A-Daten fälschlicherweise Hyena-Semantik zugewiesen werden.
-    - Fehlende Handshake-Evidenz: Es gibt keine belegten GATT-Handshake-Requests spezifisch für den VX2 Gear, obwohl der Nutzer einen „Secret Key“ erwartet. Der Verdacht auf einen Application-Layer-Schutz ist nicht durch Messdaten gestützt.
-    - Symbole vs. Runtime: `SetApiKey` und `AuthSachsBike` existieren im SDK. Sie sind **nicht** beweisbar für einen VX2-Gear-Handshake, da sie Sachs-spezifisch sind. Ein falscher Einsatz dieser Symbole könnte zu Fehlern führen.
-    - Laden vs. Live-Monitoring: Das Verschwinden der BLE-Verbindung beim Einstecken des Ladegeräts macht ein Live-Monitoring unmöglich. Das Testen von Ladezuständen während des Ladevorgangs ist technisch nicht möglich; ein Reconnect allein ist kein Ladebeweis.
+- Konflikte / mögliche Bugs
+1. Widerspruch zwischen Multi-Vendor-SDK-Vorhandensein in App und tatsächlicher BT638-Nutzung.
+2. Sachs-spezifische Auth-Routinen werden fälschlicherweise mit BT638 in Verbindung gebracht.
+3. Hyena-spezifische Funktionen in App werden möglicherweise fälschlich als BT638-Funktionen interpretiert.
+4. Annahme, generisches SDK biete automatisch gleiche Funktionalität wie BT638.
 
-- **Hypothesen (nicht bestätigt)**
-    - **Hyena-Nutzung:** Es ist hypothetisch, dass der VX2 Gear das Hyena SDK nutzt, obwohl die Live-Evidenz (DA1A) noch keine direkte Verknüpfung zum Hyena-Codepfad zeigt.
-    - **Motor-Leistung:** Die Felder `performancePowerA` und `performancePowerB` im Datenstrom `1505` könnten Motor- oder Tretleistungsdaten sein, dies ist jedoch noch eine offene Zuordnung.
-    - **Verborgene Felder:** Es könnte zusätzliche `PROPERTY_READ`-Characteristika geben, die vom generischen SDK unterstützt werden, aber noch nicht im Live-Scan entdeckt wurden (z.B. Battery Cells).
-    - **Hardware-Lese-Schutz:** Der Controller könnte Hardware-Schutzmechanismen haben, die GATT-READs blockieren, die nicht durch einen einfachen BLE-Handshake umgangen werden, auch wenn der App-SDK entsprechende Funktionen bereitstellt.
+- Hypothesen (nicht bestätigt)
+1. Hyena-spezifische Funktionen in App könnten tatsächlich vom BT638 unterstützt werden.
+2. Sachs-spezifische Auth-Routinen könnten auf BT638 funktionieren, obwohl nicht als solche dokumentiert.
+3. "Read Protection" des Controllers könnte BLE-Datenzugriff einschränken, obwohl nicht durch GATT-Characteristics belegt.
+4. Multi-Vendor-Komponenten in App könnten tatsächlich vom BT638 genutzt werden.
 
-- **Nächste sichere READ-ONLY-Tests (max. 5)**
-    - **Vollständige Charakteristik-Inventur:** Scan alle GATT-Characteristics und deren `PROPERTY_READ`-Flags, unabhängig von bekannten Listen, um neue Datenquellen zu finden (z.B. Serial, Error, OTA-Info).
-    - **Fehler-/Status-Werte prüfen:** Lesen von `ReadCharacteristicError` und `ReadCharacteristicErrorString`, um Debug-Informationen zu erhalten.
-    - **Lade-Zustandslogik (Pre/Post):** Vergleiche den Zustand *vor* dem Einstecken des Ladegeräts und den Zustand *nach* dem Abziehen/Reconnect. Kein Live-Dump während des Ladens.
-    - **Battery-Cell-Daten:** Versuchen, Battery-Cell-Werte zu lesen, falls diese als standardmäßige oder proprietäre READ-Charakteristika auftauchen.
-    - **OTA-Header-Analyse:** Lesen (via App-Schnittstelle oder Cache) der Firmware-Header-Informationen, um die tatsächliche Struktur zu verstehen und nicht zu raten.
+- Nächste sichere READ-ONLY-Tests (max. 5)
+1. Inventarisierung aller PROPERTY_READ-Characteristics des BT638 mit Antwortstatus/Payload.
+2. Prüfung von Diagnosekandidaten: SerialNumbers, Error, ErrorString, Firmware-/Hardwaredetails.
+3. Vergleich von Live-BT638-Daten mit Hyena-, Brose- und Hobbywing-SDK-Definitionen.
+4. Analyse von GATT-Charakteristiken vor/nach Ladevorgang.
+5. Untersuchung noch nicht getesteter DA1A/15xx-Charakteristiken.
 
-- **Automatische Änderungen: KEINE**
+- Automatische Änderungen: KEINE
+
 Freigabe: keine automatische Änderung.
