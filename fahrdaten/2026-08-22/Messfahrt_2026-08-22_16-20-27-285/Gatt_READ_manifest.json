@@ -1,0 +1,42 @@
+{
+  "schema": "vmax-bt638-deep-read-v3",
+  "measurement": "Messfahrt_2026-08-22_16-20-27-285",
+  "embedded_in_measurement": true,
+  "read_scans": 4,
+  "scan_ids": [
+    "scan-1787408424086-e1-9b652c2284e7",
+    "scan-1787408430685-e2-70c91937b6a6",
+    "scan-1787408438368-e2-c52cc7a94294",
+    "scan-1787408697934-e2-dcf15f788242"
+  ],
+  "completed": false,
+  "completed_scans": 3,
+  "partial_scans": 1,
+  "start_ms": 1787408427285,
+  "end_ms": 1787408698529,
+  "connection_epochs": [
+    1,
+    2
+  ],
+  "measurement_connection_epochs": [
+    0,
+    1
+  ],
+  "read_attempts": 84,
+  "read_callbacks": 84,
+  "read_responses": 84,
+  "read_success": 84,
+  "read_payload_callbacks": 84,
+  "read_valid_payloads": 84,
+  "advertisement_payloads": 1,
+  "observations": 60,
+  "full_uuids": true,
+  "characteristic_properties": true,
+  "callback_payload_direct": true,
+  "read_only": true,
+  "bluetooth_address_included": false,
+  "app_version": "7.0.205-fahrdaten",
+  "created_at_ms": 1787408715255,
+  "public_identity_redacted": true,
+  "public_hash_privacy": "unsalted SHA-256 pseudonym; same payload is linkable across public uploads"
+}
