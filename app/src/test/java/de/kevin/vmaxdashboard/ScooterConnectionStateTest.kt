@@ -18,6 +18,7 @@ class ScooterConnectionStateTest {
             diagnosticGattReadRunning = true,
             gattOperationBusy = true,
             batteryPercent = 61,
+            batteryPercentRaw = 48,
             speedKmh = 0.0,
             motorLoadRaw = 420,
             startModeRaw = 1,
@@ -41,6 +42,7 @@ class ScooterConnectionStateTest {
         assertFalse(cleared.diagnosticGattReadRunning)
         assertFalse(cleared.gattOperationBusy)
         assertNull(cleared.batteryPercent)
+        assertNull(cleared.batteryPercentRaw)
         assertNull(cleared.speedKmh)
         assertNull(cleared.motorLoadRaw)
         assertNull(cleared.startModeRaw)

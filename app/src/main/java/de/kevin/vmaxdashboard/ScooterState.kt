@@ -33,7 +33,10 @@ data class ScooterState(
     val status: String = "Bereit",
     val deviceName: String = "BT638",
     val address: String = "",
+    /** Load-sag-resistant value used by the dashboard. */
     val batteryPercent: Int? = null,
+    /** Exact 1509/4 value retained for diagnostics and lossless exports. */
+    val batteryPercentRaw: Int? = null,
     val voltageV: Double? = null,
     val currentA: Double? = null,
     val motorTemperatureC: Double? = null,
@@ -215,6 +218,7 @@ internal fun ScooterState.clearConnectionScopedTelemetry(nextConnectionEpoch: Lo
     diagnosticGattReadRunning = false,
     gattOperationBusy = false,
     batteryPercent = null,
+    batteryPercentRaw = null,
     voltageV = null,
     currentA = null,
     motorTemperatureC = null,

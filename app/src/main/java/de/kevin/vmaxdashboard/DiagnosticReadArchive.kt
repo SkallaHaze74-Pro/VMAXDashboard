@@ -54,7 +54,8 @@ internal fun isCompleteDurableDiagnosticStage(fileNames: Set<String>): Boolean =
     REQUIRED_DURABLE_DIAGNOSTIC_STAGE_FILES.all(fileNames::contains)
 
 /**
- * Persists a complete read-only GATT inventory independently from measurement telemetry.
+ * Persists complete recorded read-only GATT evidence independently from measurement telemetry.
+ * The full discovered GATT inventory is intentionally not claimed by this archive schema.
  * No BluetoothGatt/write handle is reachable from this class.
  */
 internal class DiagnosticReadArchive private constructor(context: Context) {
@@ -281,9 +282,10 @@ internal class DiagnosticReadArchive private constructor(context: Context) {
         val packageInfo = appContext.packageManager.getPackageInfo(appContext.packageName, 0)
         val records = diagnosticRecordsForBundles(listOf(bundle))
         val counts = diagnosticReadCounts(records)
+        val characteristicCounts = diagnosticCharacteristicCounts(records)
         val public = representation == DiagnosticReadRepresentation.PUBLIC_REDACTED
         val deviceIdentity = bundle.deviceName.ifBlank { "BT638" }
-        return JSONObject()
+        val manifest = JSONObject()
             .put("schema", "vmax-bt638-deep-read-v3")
             .put("diagnostic", folderName)
             .put("scan_id", bundle.scanId)
@@ -315,6 +317,7 @@ internal class DiagnosticReadArchive private constructor(context: Context) {
             )
             .put("app_version", packageInfo.versionName.orEmpty())
             .put("created_at_ms", System.currentTimeMillis())
+        return putDiagnosticCharacteristicCounts(manifest, characteristicCounts)
     }
 
     /** Never delete an unrelated pending scan when a filename collision occurs. */
@@ -383,12 +386,20 @@ internal class DiagnosticReadArchive private constructor(context: Context) {
                 val meta = File(folder, ".meta.json").takeIf(File::isFile)
                     ?.let { JSONObject(it.readText()) } ?: return@forEach
                 val remoteFolder = meta.getString("remoteFolder")
+                val diagnosticCsvBytes = File(folder, DIAGNOSTIC_READ_CSV_FILE)
+                    .takeIf(File::isFile)
+                    ?.readBytes()
                 // Manifest goes last, so the workflow path filter sees only a complete bundle.
                 listOf(DIAGNOSTIC_READ_CSV_FILE, DIAGNOSTIC_READ_SUMMARY_FILE, "manifest.json")
                     .forEach { name ->
                         val file = File(folder, name)
                         if (file.isFile) {
-                            val publicBytes = publicGitHubUploadBytes(name, file.readBytes())
+                            val publicBytes = publicGitHubUploadBytesWithDiagnosticCsv(
+                                name,
+                                file.readBytes(),
+                                diagnosticCsvBytes,
+                                diagnosticManifestFileName = "manifest.json"
+                            )
                             uploader.uploadIfMissing("$remoteFolder/$name", publicBytes, folder.name)
                         }
                     }

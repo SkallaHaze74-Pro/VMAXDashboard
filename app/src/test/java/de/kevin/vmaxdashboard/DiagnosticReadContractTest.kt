@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.json.JSONObject
 
 class DiagnosticReadContractTest {
     @Test
@@ -563,6 +564,165 @@ class DiagnosticReadContractTest {
         assertEquals(1, counts.successes)
         assertEquals(2, counts.payloadCallbacks)
         assertEquals(1, counts.observations)
+    }
+
+    @Test
+    fun summaryDistinguishesDiscoveredReadableAndCallbackCharacteristics() {
+        val callback = diagnosticReadDefaults(shortId = "1509")
+        val readableWithoutCallback = diagnosticReadDefaults(
+            status = -1001,
+            shortId = "160C",
+            hex = "",
+            callbackReceived = false,
+            recordKind = DiagnosticRecordKind.GATT_READ_EVENT,
+            outcome = DiagnosticReadOutcome.READ_START_FAILED,
+            payloadValid = false
+        ).copy(properties = "READ|NOTIFY", propertiesRaw = 0x12)
+        val discoveredNotifyOnly = diagnosticReadDefaults(
+            status = null,
+            shortId = "1514",
+            hex = "",
+            callbackReceived = false,
+            recordKind = DiagnosticRecordKind.CONNECTION_EVENT,
+            outcome = DiagnosticReadOutcome.OTHER,
+            payloadValid = false
+        ).copy(properties = "NOTIFY", propertiesRaw = 0x10)
+        val records = listOf(callback, callback.copy(timestampMs = 2), readableWithoutCallback, discoveredNotifyOnly)
+        val bundle = DiagnosticReadBundle(
+            records = records,
+            deviceName = "BT638",
+            scanStartedAt = 1,
+            scanFinishedAt = 2,
+            connectionEpoch = 7,
+            scanId = "scan-1-e7-counts"
+        )
+
+        val summary = buildDiagnosticReadSummary(listOf(bundle))
+
+        assertTrue(summary.contains("Characteristics_Discovered: not_archived"))
+        assertTrue(summary.contains("Characteristics_Discovered_Recorded_Lower_Bound: 3"))
+        assertTrue(summary.contains("Characteristics_Readable_Recorded_Lower_Bound: 2"))
+        assertTrue(summary.contains("Characteristics_Callbacks: 1"))
+        assertTrue(summary.contains("Characteristics_Inventory_Complete: false"))
+        assertFalse(summary.lineSequence().any { it.startsWith("Characteristics: ") })
+    }
+
+    @Test
+    fun diagnosticManifestMakesMissingGattInventoryExplicitWithoutLosingRecordedCounts() {
+        val callback = diagnosticReadDefaults(shortId = "1509")
+        val readableWithoutCallback = diagnosticReadDefaults(
+            status = -1001,
+            shortId = "160C",
+            hex = "",
+            callbackReceived = false,
+            recordKind = DiagnosticRecordKind.GATT_READ_EVENT,
+            outcome = DiagnosticReadOutcome.READ_START_FAILED,
+            payloadValid = false
+        ).copy(properties = "READ|NOTIFY", propertiesRaw = 0x12)
+        val discoveredNotifyOnly = diagnosticReadDefaults(
+            status = null,
+            shortId = "1514",
+            hex = "",
+            callbackReceived = false,
+            recordKind = DiagnosticRecordKind.CONNECTION_EVENT,
+            outcome = DiagnosticReadOutcome.OTHER,
+            payloadValid = false
+        ).copy(properties = "NOTIFY", propertiesRaw = 0x10)
+        val csv = buildDiagnosticReadCsv(
+            listOf(callback, callback.copy(timestampMs = 2), readableWithoutCallback, discoveredNotifyOnly),
+            DiagnosticReadRepresentation.PUBLIC_REDACTED
+        )
+
+        val manifest = JSONObject(
+            enrichDiagnosticReadManifestWithCsv(
+                """{"schema":"vmax-bt638-deep-read-v3","read_callbacks":2}""",
+                csv
+            )
+        )
+
+        assertTrue(manifest.isNull("discovered_characteristics"))
+        assertEquals(3, manifest.getInt("discovered_characteristics_recorded_lower_bound"))
+        assertEquals(2, manifest.getInt("readable_characteristics_recorded_lower_bound"))
+        assertEquals(1, manifest.getInt("callback_characteristics"))
+        assertFalse(manifest.getBoolean("characteristic_inventory_complete"))
+        assertTrue(manifest.getString("characteristic_count_scope").contains("not persisted"))
+    }
+
+    @Test
+    fun legacyPublicSummaryIsUpgradedFromItsSiblingCsvBeforeUpload() {
+        val csv = buildDiagnosticReadCsv(
+            listOf(
+                diagnosticReadDefaults(shortId = "1509"),
+                diagnosticReadDefaults(shortId = "160C").copy(
+                    callbackReceived = false,
+                    recordKind = DiagnosticRecordKind.GATT_READ_EVENT,
+                    outcome = DiagnosticReadOutcome.READ_TIMEOUT,
+                    payloadValid = false,
+                    status = -1002,
+                    length = 0,
+                    hex = ""
+                )
+            ),
+            DiagnosticReadRepresentation.PUBLIC_REDACTED
+        )
+        val legacy = """
+            VMAX BT638 Deep READ
+            READ_Callbacks: 1
+            Characteristics: 2
+            Modus: STRICT_READ_ONLY
+        """.trimIndent() + "\n"
+
+        val upgraded = enrichDiagnosticReadSummaryWithCsv(legacy, csv)
+
+        assertFalse(upgraded.lineSequence().any { it.startsWith("Characteristics: ") })
+        assertTrue(upgraded.contains("Characteristics_Discovered: not_archived"))
+        assertTrue(upgraded.contains("Characteristics_Discovered_Recorded_Lower_Bound: 2"))
+        assertTrue(upgraded.contains("Characteristics_Readable_Recorded_Lower_Bound: 2"))
+        assertTrue(upgraded.contains("Characteristics_Callbacks: 1"))
+        assertTrue(upgraded.endsWith("\n"))
+        assertEquals(legacy, enrichDiagnosticReadSummaryWithCsv(legacy, "unsupported legacy csv"))
+
+        val uploadBytes = publicGitHubUploadBytesWithDiagnosticCsv(
+            DIAGNOSTIC_READ_SUMMARY_FILE,
+            legacy.toByteArray(),
+            csv.toByteArray()
+        )
+        val uploadedSummary = String(uploadBytes, Charsets.UTF_8)
+        assertFalse(uploadedSummary.lineSequence().any { it.startsWith("Characteristics: ") })
+        assertTrue(uploadedSummary.contains("Characteristics_Callbacks: 1"))
+    }
+
+    @Test
+    fun uploadCompatibilityUpgradeDoesNotMistakeMeasurementManifestForDiagnosticManifest() {
+        val csv = buildDiagnosticReadCsv(listOf(diagnosticReadDefaults()))
+        val measurementManifest = """{"schema":"vmax-github-telemetry-v1"}"""
+        val standaloneDiagnosticManifest = """{"schema":"vmax-bt638-deep-read-v3"}"""
+
+        val measurementUpload = JSONObject(
+            String(
+                publicGitHubUploadBytesWithDiagnosticCsv(
+                    "manifest.json",
+                    measurementManifest.toByteArray(),
+                    csv.toByteArray()
+                ),
+                Charsets.UTF_8
+            )
+        )
+        val standaloneUpload = JSONObject(
+            String(
+                publicGitHubUploadBytesWithDiagnosticCsv(
+                    "manifest.json",
+                    standaloneDiagnosticManifest.toByteArray(),
+                    csv.toByteArray(),
+                    diagnosticManifestFileName = "manifest.json"
+                ),
+                Charsets.UTF_8
+            )
+        )
+
+        assertFalse(measurementUpload.has("callback_characteristics"))
+        assertEquals(1, standaloneUpload.getInt("callback_characteristics"))
+        assertFalse(standaloneUpload.getBoolean("characteristic_inventory_complete"))
     }
 
     private fun diagnosticReadDefaults(

@@ -10,6 +10,7 @@ from pathlib import Path
 from raw_origin_guard import is_accepted_live_notification
 
 SDK_SOURCE = "libble-sdk-native-lib.so"
+QUARANTINED_NOTIFICATION_ORIGIN = "NOTIFICATION_QUARANTINED"
 
 FIELD_LAYOUTS = {
     "1505": [
@@ -205,15 +206,26 @@ def analyze_ride(ride: Path):
 
     for row in raw_rows:
         channel = str(row.get("channel") or "").upper()
-        data = parse_hex(str(row.get("hex") or ""))
         origin = str(row.get("origin") or "").strip().upper()
-        if not channel or not data:
-            continue
         if not is_accepted_live_notification(row):
             if origin == "READ":
                 observed_exported_read_rows += 1
-            else:
+            elif origin:
                 observed_exported_quarantined_rows += 1
+                # v205 emits rejected READ/notification hybrids with this origin.
+                # Public privacy redaction may blank their hex, so retain both the
+                # inclusive quarantine total and the more specific hybrid count.
+                if origin == QUARANTINED_NOTIFICATION_ORIGIN:
+                    observed_exported_hybrid_rows += 1
+            else:
+                # Preserve the pre-v205 legacy behavior for payload-bearing rows,
+                # but do not invent an origin class for privacy-redacted blanks.
+                legacy_data = parse_hex(str(row.get("hex") or ""))
+                if channel and legacy_data:
+                    observed_exported_quarantined_rows += 1
+            continue
+        data = parse_hex(str(row.get("hex") or ""))
+        if not channel or not data:
             continue
         if suspicious_read_payload(channel, data):
             observed_exported_hybrid_rows += 1
