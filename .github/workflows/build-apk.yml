@@ -4,8 +4,20 @@ on:
   workflow_dispatch:
   push:
     branches: [ "main" ]
+    paths:
+      - 'app/**'
+      - 'build.gradle.kts'
+      - 'gradle.properties'
+      - 'gradle/**'
+      - 'gradlew'
+      - 'gradlew.bat'
+      - 'settings.gradle.kts'
+      - '.github/workflows/build-apk.yml'
   pull_request:
     branches: [ "main" ]
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -17,16 +29,16 @@ jobs:
 
     steps:
       - name: Projekt laden
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Java 17 einrichten
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Gradle einrichten
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: "8.11.1"
 
@@ -52,7 +64,7 @@ jobs:
           cp app/build/outputs/apk/debug/app-debug.apk "VMAXDashboard-v${VERSION_NAME}-Debug.apk"
 
       - name: Debug-APK bereitstellen
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: VMAXDashboard-Fahrdaten-Debug
           path: VMAXDashboard-v*-Debug.apk
@@ -180,7 +192,7 @@ jobs:
 
       - name: Release-APK bereitstellen
         if: github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: VMAXDashboard-Fahrdaten-Release
           path: VMAXDashboard-v*-Release.apk

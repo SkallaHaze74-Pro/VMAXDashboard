@@ -75,6 +75,40 @@ class GattReadScanTests(unittest.TestCase):
             self.assertEqual([payload_hash], field["samplePayloadHashes"])
             self.assertTrue(field["sensitivePayloadRedacted"])
 
+    def test_exact_and_redacted_copies_of_same_event_are_deduplicated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            standalone = base / "diagnostics" / "DeepRead"
+            ride = base / "fahrdaten" / "Messfahrt"
+            standalone.mkdir(parents=True)
+            ride.mkdir(parents=True)
+            payload_hex = "FF-56-4D-41-58-00"
+            payload_hash = hashlib.sha256(bytes.fromhex(payload_hex.replace("-", ""))).hexdigest()
+            exact = (
+                "1;scan-a;GATT_READ_CALLBACK;CALLBACK_SUCCESS;true;1500;1511;1511;READ;2;0;6;"
+                f"{payload_hex};true;{payload_hash};;7;;;BT638;Unknown field\n"
+            )
+            public = (
+                "1;scan-a;GATT_READ_CALLBACK;CALLBACK_SUCCESS;true;1500;1511;1511;READ;2;0;6;;"
+                f"true;{payload_hash};identity_or_free_form;7;0;;BT638;"
+                "REDACTED_IDENTITY_OR_FREE_FORM\n"
+            )
+            (standalone / "Gatt_READ_Diagnose.csv").write_text(
+                V3_HEADER + "\n" + exact,
+                encoding="utf-8",
+            )
+            (ride / "Gatt_READ_Diagnose.csv").write_text(
+                V3_HEADER + "\n" + public,
+                encoding="utf-8",
+            )
+
+            payload = gatt_read_scan.build_report([base / "diagnostics", base / "fahrdaten"])
+            field = payload["fields"][0]
+
+            self.assertEqual(1, payload["records"])
+            self.assertEqual(1, field["attempts"])
+            self.assertEqual(["0"], field["measurementConnectionEpochs"])
+
     def test_invalid_callback_hash_does_not_create_a_valid_payload_variant(self):
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp) / "diagnostics" / "DeepRead"

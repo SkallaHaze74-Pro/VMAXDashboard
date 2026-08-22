@@ -1,5 +1,13 @@
-# Gefundene Decoder 6.2
+# Live AI 6.2 – konservative Decoder
 
-Verschoben aus dem Root-Verzeichnis zur besseren Strukturierung.
+> Historischer Snapshot. Maßgeblich sind aktuelle deterministische Berichte auf `telemetry-data` und die datierte BT638-Evidenz.
 
-Der inhaltliche Bestand bleibt erhalten. Diese Datei dient aktuell als Platzhalter fur die gebundelte Dokumentationsstruktur und kann mit dem bestehenden Root-Inhalt abgeglichen oder spater vollstandig ubernommen werden.
+Aus zwei BT638-Prüfstandstests übernommen:
+
+- 1509 Byte 4: Akku % (bestätigt)
+- 1505 Byte 7: Fahrwert RAW, Live-Kandidat `/10`
+- 1509/150A Byte 0–1 Big Endian: Motor-/Last-Rohwert
+- 1509 Byte 6: Akku-/Last-Zustandsstufe RAW
+- 1508 Byte 0 und 3: Zubehörstatus RAW
+
+Die zuvor angenommene Spannung/Strom-Skalierung wurde entfernt, weil der zweite Test sie nicht bestätigt. Alle Kandidaten werden zusätzlich in `Live_Telemetrie.csv` gespeichert.

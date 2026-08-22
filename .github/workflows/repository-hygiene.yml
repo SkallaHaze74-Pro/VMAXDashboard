@@ -1,0 +1,43 @@
+name: VMAX Repository Hygiene
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  repository-hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repository laden
+        uses: actions/checkout@v7
+
+      - name: Python einrichten
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Hygiene-Validator testen
+        run: python -m unittest tools.test_check_repository_hygiene
+
+      - name: Main-Struktur prüfen
+        run: python tools/check_repository_hygiene.py
+
+      - name: Daten-Writer-Workflows auf Datenbranch abgleichen
+        run: |
+          set -euo pipefail
+          git fetch --depth=1 origin \
+            telemetry-data:refs/remotes/origin/telemetry-data
+          for workflow in decoder-ai.yml targeted-1505-scan.yml; do
+            git show "origin/telemetry-data:.github/workflows/$workflow" \
+              > "$RUNNER_TEMP/$workflow"
+            cmp --silent ".github/workflows/$workflow" "$RUNNER_TEMP/$workflow" || {
+              echo "$workflow auf main und telemetry-data ist nicht synchron." >&2
+              exit 1
+            }
+          done

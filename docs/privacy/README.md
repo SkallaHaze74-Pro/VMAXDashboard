@@ -1,5 +1,5 @@
-# Privacy
+# Datenschutz
 
-Dieser Ordner ist fuer Datenschutz-, Nutzungs- und Sicherheitsdokumente vorgesehen.
+[`DATENSCHUTZ_ENTWURF.md`](DATENSCHUTZ_ENTWURF.md) beschreibt den aktuellen technischen Datenfluss der privaten Testversion. Er ersetzt ältere Aussagen, nach denen grundsätzlich keine Übertragung möglich sei.
 
-Die App ist aktuell auf lokale, read-only Analyse ausgerichtet. Bestehende Dokumente koennen spaeter geordnet hier eingeordnet werden.
+Vor einer öffentlichen Veröffentlichung sind Verantwortlicher, Kontakt, Speicherdauer und Löschprozess rechtlich vollständig festzulegen.
