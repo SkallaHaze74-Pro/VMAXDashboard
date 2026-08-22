@@ -1,0 +1,23 @@
+VMAX BT638 Deep READ
+Gerät: BT638
+Start: 1787410270723
+Ende: 1787410271361
+Dauer_ms: 638
+Scan_IDs: scan-1787410270723-e3-e9b27eab97a8
+READ_Scans: 1
+READ_Versuche: 28
+READ_Antworten: 28
+READ_Callbacks: 28
+READ_Erfolgreich: 28
+READ_Callback_Payloads: 28
+READ_Valide_Payloads: 28
+Advertisement_Payloads: 0
+Beobachtungen: 2
+Characteristics: 28
+GATT_Verbindungsepochen: 3
+Messfahrt_Verbindungsepochen: 
+Vollständige_Scans: 1
+Teil_Scans: 0
+Modus: STRICT_READ_ONLY
+BluetoothAdresse: redacted_sha256:c8f15cb2d0bd2e65f8e129240db5064f75be16d1a80757b0bde4bf27c4f31148
+Hinweis: READ-Daten werden niemals als Live-Telemetrie oder automatische Decoder-Bestätigung behandelt.
