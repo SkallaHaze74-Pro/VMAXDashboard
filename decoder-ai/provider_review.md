@@ -5,30 +5,32 @@
 
 ## Gemini 3.7 Flash
 
-Status: `cached_ok`
+Status: `ok`
 
 Modell: `gemini-3.5-flash-lite`
 
 Fallbackmodell aktiv: `gemini-3.5-flash-lite`.
 
-- Belastbare Evidenz:
-  - Fünf Decoder-Regeln (batteryPercent, currentA, odometerKm, speedKmh, voltageV) sind mit hoher Konfidenz (99%) über mehrere Fahrten und Samples bestätigt (`original-sdk-layout+app-extraction-check`).
-  - Das Feld `powerW` (1509/9) verbleibt explizit als Kandidat (93% Konfidenz), da die bisherige Validierung auf derselben RAW-Extraktion beruht (`sdk-layout+cross-field-check-needs-external-proof`).
+- Belastbare Evidenz
+  * Es liegen 280 erfolgreiche GATT-Read-Callbacks aus 14 Diagnose-Bundles vor (BT638 GATT Deep-Read).
+  * Fünf Decoder-Regeln (`batteryPercent`, `currentA`, `odometerKm`, `speedKmh`, `voltageV`) basieren laut Profil `b41494223a42174f` auf konsistenten SDK-Layout- und App-Extraktionsvergleichen über bis zu 9 Fahrten.
+  * Für das Leistungssignal (`powerW`) existiert ein interner Kreuzvergleich mit einer Korrelation von 0.984 und einer MAE von 4.01 W.
 
-- Konflikte / mögliche Bugs:
-  - Selbstreferenz und Carry-forward-Effekte: Mehrere Vergleiche basieren auf der Extraktion derselben RAW-Pakete (`APP_EXPORT_LAYOUT_CONSISTENT_NON_INDEPENDENT`), was keinen unabhängigen Live-Sensornachweis darstellt.
-  - Datenqualitätsschwankungen: Mehrere Messfahrten weisen 0 akzeptierte Exportzeilen oder unvollständige READ-/Hybrid-Zähler aus der `Zusammenfassung.txt` auf.
+- Konflikte / mögliche Bugs
+  * Der `powerW`-Kandidat stützt sich ausschließlich auf denselben RAW-Export und eine interne Berechnung (`Spannung × Strom`), wodurch es sich um einen Selbstreferenz-/Cross-Field-Effekt handelt (bestätigt durch `independentExternalConfirmation: false`).
+  * Mehrere historische Messfahrten (z. B. `Messfahrt_2026-08-13_19-17-14`) weisen 0 akzeptierte Exportzeilen und unvollständige READ-/Hybrid-Zähler (`?`) auf, was auf Parser- oder Datenqualitätsprobleme hindeutet.
+  * Diskrepanz zwischen reiner Layout-Konsistenz und echter physikalischer Semantik bei ungeprüften Kanälen (z. B. 1507, 150A).
 
-- Hypothesen (nicht bestätigt):
-  - `powerW` (1509/9) entspricht der echten elektrischen Leistung (Validierung nur über interne Kreuzkorrelation mit Spannung und Strom, MAE 3.94 W).
-  - Unbekannte Kanäle (z. B. 150A, 150C) lassen sich ohne externe physische Referenz eindeutig semantisch zuordnen.
+- Hypothesen (nicht bestätigt)
+  * Die Kandidaten-Regel `powerW` (1509/9) entspricht der tatsächlichen elektrischen Leistung am Motor (bisher nur mathematisch aus anderen 1509-Feldern abgeleitet).
+  * Die Charakteristiken 1507 und 1508 enthalten verlässliche Status-Flags für Licht und Fahrmodi, basieren jedoch aktuell nur auf beobachteten Payload-Änderungen.
 
-- Nächste sichere READ-ONLY-Tests (max. 5):
-  1. Letzten bekannten Zustand vor einem Ladeabbruch bzw. den ersten Zustand nach einem Abziehen/Reconnect im Stillstand auslesen.
-  2. Statische GATT-Characteristics (z. B. 1502) auf unveränderte Byte-Muster bei konstantem Gerätezustand prüfen.
-  3. READ-Abgleiche der Characteristics 1505 bis 1509 im Stillstand wiederholen, um dynamische von statischen Bytes zu trennen.
-  4. Konsistenzprüfung der Rohdaten-Exportzeilen gegen die Zusammenfassungsdateien (`Zusammenfassung.txt`) ohne automatische Nullableitung durchführen.
-  5. Unabhängige Überprüfung der Kanal-Offsets gegen das native SDK (`libble-sdk-native-lib.so`) ohne Schreiboperationen.
+- Nächste sichere READ-ONLY-Tests (max. 5)
+  1. Statischer READ-Abgleich der Charakteristik 1509 im ausgeschalteten Zustand zur Verifizierung von Offset-Nullpunkten.
+  2. Lesender Kontroll-Scan von Charakteristik 1506 (Odometer) im Stillstand zur Prüfung auf statische Carry-forward-Artefakte.
+  3. Validierung der Rohdaten-Parser für die fehlerhaften historischen Messfahrten mit 0 akzeptierten Zeilen (rein lesend).
+  4. Strukturierte Protokollierung der dynamischen Bytes in Charakteristik 1503 im reinen Standby.
+  5. Konsistenzprüfung der Endianness-Annahmen für Geschwindigkeits- und Spannungswerte anhand statischer Test-Payloads.
 
 - Automatische Änderungen: KEINE
 
@@ -36,33 +38,33 @@ Freigabe: keine automatische Änderung.
 
 ## GLM
 
-Status: `cached_ok`
+Status: `ok`
 
 Modell: `glm-4.7-flash`
 
 Fallbackmodell aktiv: `glm-4.7-flash`.
 
-- **Belastbare Evidenz**
-  - Die RAW-Extraktions-Logs (BT638 Deep Read) zeigen konsistente Werte für `batteryPercent` (Offset 4: `30` = 48%), `currentA` (Offset 0: `00-00` = 0A) und `voltageV` (Offset 5-6: `BB 1C` -> 47.9V bei 0.001-Scale), was die Layout-Annahmen bestätigt.
-  - Der SDK-Vergleich zeigt eine 100%ige Übereinstimmung für `direct_power_W`, was hardwareseitig die Konsistenz des Layouts 1509 belegt, auch wenn die semantische Bestätigung des Feldes noch aussteht.
-  - Die Geschwindigkeit (1505/6) und der Kilometerstand (1506/0) zeigen im Deep-Read Konsistenz, sind aber mit der extrem niedrigen Odometer-Berechnung inkonsistent.
+- Belastbare Evidenz
+    - Layout-Konsens für Geschwindigkeit (1505/6), Strom (1509/0), SOC (1509/4) und Spannung (1509/5) ist gegen SDK-native-Lib (libble) mit 100% Trefferquote bestätigt.
+    - Odometer-Layout (1506/0) ist gegen SDK bestätigt (Scale 0.1, u32be).
+    - Die Cross-Field-Berechnung für Power (Spannung × Strom) zeigt hohe physikalische Plausibilität (Korrelation 0.98, MAE 4W).
 
-- **Konflikte / mögliche Bugs**
-  - **Massiver Datenverlust / Parsing-Fehler:** Der SDK-Vergleich zeigt für 11 von 14 Fahrten "Akzeptierte Exportzeilen: 0". Die Decoder-Logik scheitert an der Verarbeitung der Rohdaten für die Mehrheit der Fahrten, was die Güte der "bestätigten" Regeln in Frage stellt.
-  - **Odometer-Skalierungs-Fehler:** Das Sample `1506` (`00-00-1B-F5`) wird als `u32be@0` mit Scale `0.1` interpretiert. Das ergibt ca. 472,5 km. Dies ist für ein e-Bike mit nur 14 Fahrten physikalisch unplausibel (wahrscheinlich falsche Skala, sollte 1.0 sein).
-  - **Zirkuläre Power-Validierung:** Die Power-Cross-Check-Logik nutzt `abs(voltage_v * current_a)` aus denselben Feldern, um `powerW` zu validieren. Dies ist keine unabhängige Evidenz, sondern eine mathematische Abhängigkeit innerhalb desselben Pakets.
+- Konflikte / mögliche Bugs
+    - Diskrepanz in den Datenqualitätszahlen: Der Konsensbericht listet "9 Fahrt(en)" für Strom/Spannung mit 1061 Samples. Die libble-Datenqualitätsanalyse zeigt jedoch für Ride 15 und 16 **0 akzeptierte Zeilen**, obwohl der Bericht diese Fahrten in der Gesamtbilanz auflistet. Dies deutet auf eine Filterungslogik, die gültige Samples verliert oder Fahrten inkonsistent zuordnet.
+    - Power-Konfidenz: Das SDK zeigt `direct_power_W` (100% Layout-Konsistenz), das Decoder-Profil hält es als "candidate" (93%). Der Grund ist der Evidence-Guard: "Same-raw export consistency is not independent semantic proof". Dies ist ein korrekter Sicherheitsmechanismus, verhindert aber die automatische Freigabe durch reinen Datenabgleich.
 
-- **Hypothesen (nicht bestätigt)**
-  - Die `odometerKm`-Skala wurde fälschlicherweise auf 0.1 statt 1.0 gesetzt, was zu einem Faktor-10-Unterschied führt.
-  - Die "0 akzeptierten Zeilen" deuten auf ein generelles Formatierungs- oder Regex-Problem im Decoder-Setup hin, das nicht nur einzelne Felder betrifft.
+- Hypothesen (nicht bestätigt)
+    - Das Feld 1509/9 ist physikalisch als Leistung interpretierbar, da es sich nahtlos in die Rechenlogik `abs(voltage * current)` einfügt, benötigt aber einen externen Hardware-Nachweis (z.B. Vergleich mit einem wattigen Zähler am Akku).
+    - 150D enthält keine Geschwindigkeitsdaten, sondern vermutlich Hilfsinformationen (z.B. Batterietemperatur oder Fehlercodes), wie im "Known Device Behavior" beschrieben.
 
-- **Nächste sichere READ-ONLY-Tests**
-  - Manuelle Berechnung des Odometers aus dem Sample `1506` (Bytes `00-00-1B-F5` -> `0x1BF5` -> 4725) und Vergleich mit der Skalierung 0.1 vs. 1.0.
-  - Analyse der rohen Datenstruktur der 11 Fahrten mit 0 akzeptierten Zeilen, um das Parsing-Problem zu identifizieren.
-  - Live-Read von 1505/8 (RPM) und 1505/10 (Distanz) während einer Fahrt, um die fehlenden Dekodierungen zu validieren.
+- Nächste sichere READ-ONLY-Tests
+    - **Static 1502 Check:** Ein READ-Versuch von 1502 im Stillstand, um zu prüfen, ob sich die Werte verändern oder nur ein statischer Header vorliegt.
+    - **150D vs 1505 Korrelation:** Ein READ-Versuch von 150D parallel zu 1505, um zu bestätigen, dass 150D nicht als redundante Geschwindigkeitsquelle fungiert.
+    - **150C Musteranalyse:** Ein READ-Versuch von 150C, um zu prüfen, ob es sich um einen Zell-Status-Block (Checksummen oder Pack-IDs) handelt und nicht um reine Zufallswerte.
+    - **Odometer Monotonie:** Ein READ-Versuch von 1506 im Stillstand über mehrere Minuten, um sicherzustellen, dass der Kilometerstand nicht rückwärts zählt oder konstant bleibt (was auf einen falschen Zähler hinweisen würde).
+    - **Endianness Power-Check:** Ein manuelles Byte-Check (Big-Endian) der `direct_power_W` SDK-Daten gegen die Decoder-Ausgabe von 1509/9, um sicherzustellen, dass keine Byte-Reihenfolge vorliegt, die die 4W MAE verursacht.
 
-- **Automatische Änderungen: KEINE**
-
+- Automatische Änderungen: KEINE
 Freigabe: keine automatische Änderung.
 
 ## OpenAI GPT-5.6 Luna • Synthese, kein Evidenzvotum
