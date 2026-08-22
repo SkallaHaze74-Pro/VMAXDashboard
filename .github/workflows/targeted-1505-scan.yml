@@ -1,35 +1,34 @@
 name: VMAX Targeted 1505 Scan
 
-# charging-transition classifier v2: kurze Reconnects sind keine Ladeevidenz
 on:
-  push:
-    branches: [telemetry-data]
-    paths:
-      - 'fahrdaten/**/manifest.json'
-      - '.github/workflows/targeted-1505-scan.yml'
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: vmax-telemetry-data-writer
+  cancel-in-progress: false
 
 jobs:
   targeted-scan:
     runs-on: ubuntu-latest
     steps:
       - name: Telemetriedaten laden
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
+          ref: telemetry-data
           fetch-depth: 1
 
       - name: Aktuelle Analyse-Logik aus main laden
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: main
           path: .analyzer-main
           fetch-depth: 1
 
       - name: Python einrichten
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -74,7 +73,7 @@ jobs:
             --output decoder-ai/charging_transition_scan.json \
             --report decoder-ai/charging_transition_scan.md
 
-      - name: Ergebnis speichern
+      - name: Ergebnis nach telemetry-data schreiben
         run: |
           git config user.name 'VMAX Targeted Analyzer'
           git config user.email 'actions@users.noreply.github.com'

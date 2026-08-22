@@ -1,5 +1,7 @@
 # VMAXDashboard
 
+> **Datenbranch-Hinweis:** `telemetry-data` dient ausschließlich als Ablage für Mess-/Diagnosedaten und erzeugte Decoder-Ergebnisse. Für App-Code, Sicherheitsverhalten, Dokumentation sowie Build-/Release-Anweisungen ist `main` maßgeblich. Der übrige Projekt- und README-Inhalt dieses Branches ist ein historischer Snapshot. Nur `.github/workflows/decoder-ai.yml` und `.github/workflows/targeted-1505-scan.yml` werden bewusst bytegleich mit `main` gespiegelt.
+
 Lokales BLE-Telemetrie- und Diagnosewerkzeug fuer kompatible E-Scooter. Das Projekt ist aktuell auf **eigene Nutzung, Tests und reale Messfahrten** ausgerichtet. Die App arbeitet bewusst **read-only**: Es werden keine Fahrparameter veraendert.
 
 ## Aktueller Fokus
