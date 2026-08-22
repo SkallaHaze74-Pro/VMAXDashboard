@@ -1,5 +1,13 @@
-# Messfahrt Marker Edition
+# VMAX Dashboard 5.5 – Messfahrt Marker Edition
 
-Verschoben aus dem Root-Verzeichnis zur besseren Strukturierung.
+> Historischer Versionsstand; keine aktuelle Aussage über sämtliche Funktionen oder Schreibpfade.
 
-Der inhaltliche Bestand bleibt erhalten. Diese Datei dient aktuell als Platzhalter fur die gebundelte Dokumentationsstruktur und kann mit dem bestehenden Root-Inhalt abgeglichen oder spater vollstandig ubernommen werden.
+## Neu
+- Start-/Stopp-Button für gezielte BLE-Messfahrten
+- Millisekunden-Timer
+- Ereignismarker für Stillstand, Anfahren, Geschwindigkeit, Bremse, Licht, Blinker, Fahrmodus und Laden
+- Automatischer Export beim Stoppen
+- Gemeinsamer Ordner mit `BLE_Rohdaten.csv`, `Ereignisse.csv` und `Zusammenfassung.txt`
+- Keine Steuer- oder Tuningbefehle
+
+Die Dateien liegen unter `Downloads/VMAXDashboard/Messfahrt_<Datum_Uhrzeit>/`.

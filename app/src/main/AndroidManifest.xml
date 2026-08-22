@@ -30,7 +30,7 @@
         android:name=".VMAXSyncApplication"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:icon="@mipmap/ic_launcher"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:label="Scooter Telemetry VX"
         android:theme="@style/Theme.VMAXDashboard">
 

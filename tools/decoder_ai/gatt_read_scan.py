@@ -143,13 +143,11 @@ def _record_signature(row: dict[str, str]) -> tuple[str, ...]:
         str(row.get("properties_raw") or "").strip(),
         str(row.get("status") or "").strip(),
         str(row.get("length") or "").strip(),
-        str(row.get("hex") or "").strip().upper(),
-        str(row.get("payload_sha256") or "").strip().lower(),
+        _payload_identity(row),
         str(row.get("payload_valid") or "").strip().lower(),
         str(row.get("connection_epoch") or "").strip(),
         str(row.get("rssi") or "").strip(),
         str(row.get("evidence") or "").strip(),
-        str(row.get("meaning") or "").strip(),
     )
 
 

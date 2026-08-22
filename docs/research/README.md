@@ -1,5 +1,5 @@
-# Research
+# Forschung
 
-Dieser Ordner ist fuer Decoder-Funde, Analyseergebnisse und Reverse-Engineering-nahe Dokumentation vorgesehen.
+Die Dateien in diesem Ordner sind historische Analyse- und Decoder-Snapshots. Sie dokumentieren, welche Hypothesen zu einem bestimmten Versionsstand bestanden; sie bestätigen keine heute gültige Zuordnung.
 
-Bestehende Forschungsnotizen bleiben vorerst erhalten und koennen spaeter geordnet uebernommen werden.
+Aktuelle, datierte Original-App- und BT638-Evidenz liegt unter [`../../reverse-engineering/reports/`](../../reverse-engineering/reports/). Messfahrtbasierte Ergebnisse werden auf `telemetry-data/decoder-ai/` erzeugt.

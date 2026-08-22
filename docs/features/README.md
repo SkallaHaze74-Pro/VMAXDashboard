@@ -1,5 +1,3 @@
-# Features
+# Historische Feature-Stände
 
-Dieser Ordner ist fuer feature-bezogene Notizen, Editionsstaende und experimentelle Funktionsbeschreibungen vorgesehen.
-
-Die Struktur dient nur der Professionalisierung und loescht keine vorhandenen Inhalte.
+Diese Dateien dokumentieren ältere Editions- und UI-Stände. Sie bleiben zur Nachvollziehbarkeit erhalten, sind aber keine aktuelle Funktions- oder Datenschutzbeschreibung. Maßgeblich sind die Root-README, `AGENTS.md`, aktuelle App-Tests und die datierten Reverse-Engineering-Berichte.

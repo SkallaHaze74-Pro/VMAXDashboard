@@ -376,6 +376,7 @@ internal fun redactDiagnosticReadCsvForPublic(csv: String): String {
     val header = rows.first().mapIndexed { index, value ->
         if (index == 0) value.removePrefix("\uFEFF") else value
     }.toMutableList()
+    requireUnambiguousPublicCsvShape(header, rows.drop(1), "Deep READ CSV")
     fun ensureColumn(name: String): Int {
         val current = header.indexOf(name)
         if (current >= 0) return current
@@ -387,6 +388,9 @@ internal fun redactDiagnosticReadCsvForPublic(csv: String): String {
     require(hexIndex >= 0) { "Deep READ CSV has no recognized hex column" }
     val shortIdIndex = header.indexOf("short_id")
     val characteristicIndex = header.indexOf("characteristic_uuid")
+    require(shortIdIndex >= 0 || characteristicIndex >= 0) {
+        "Deep READ CSV has no characteristic identifier column"
+    }
     val meaningIndex = header.indexOf("meaning")
     val recordKindIndex = header.indexOf("record_kind")
     val hashIndex = ensureColumn("payload_sha256")
@@ -426,6 +430,7 @@ internal fun redactRawTelemetryCsvForPublic(csv: String): String {
     val header = rows.first().mapIndexed { index, value ->
         if (index == 0) value.removePrefix("\uFEFF") else value
     }.toMutableList()
+    requireUnambiguousPublicCsvShape(header, rows.drop(1), "Raw telemetry CSV")
     fun requireColumn(name: String): Int = header.indexOf(name).also { index ->
         require(index >= 0) { "Raw telemetry CSV has no $name column" }
     }
@@ -562,7 +567,24 @@ private fun parseDiagnosticCsv(csv: String): List<List<String>> {
         row += cell.toString()
         if (row.any(String::isNotEmpty)) rows += row
     }
+    require(!quoted) { "CSV contains an unterminated quoted cell" }
     return rows
+}
+
+private fun requireUnambiguousPublicCsvShape(
+    header: List<String>,
+    body: List<List<String>>,
+    label: String
+) {
+    val normalizedHeader = header.map { it.trim().lowercase() }
+    require(normalizedHeader.distinct().size == normalizedHeader.size) {
+        "$label contains ambiguous duplicate columns"
+    }
+    body.forEachIndexed { index, row ->
+        require(row.size <= header.size) {
+            "$label row ${index + 2} has more cells than its header"
+        }
+    }
 }
 
 private fun renderDiagnosticCsv(rows: List<List<String>>): String = buildString {

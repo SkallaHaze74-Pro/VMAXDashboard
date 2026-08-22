@@ -22,6 +22,9 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.nio.ByteBuffer
+import java.nio.charset.CharacterCodingException
+import java.nio.charset.CodingErrorAction
 import java.security.KeyStore
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -181,7 +184,16 @@ internal fun redactLearningProfileForPublic(json: String): String {
  * contain exact identity bytes.
  */
 internal fun publicGitHubUploadBytes(name: String, bytes: ByteArray): ByteArray {
-    val text = String(bytes, Charsets.UTF_8)
+    val text = when (name) {
+        "BLE_Rohdaten.csv",
+        DIAGNOSTIC_READ_CSV_FILE,
+        DIAGNOSTIC_READ_SUMMARY_FILE,
+        "Zusammenfassung.txt",
+        DIAGNOSTIC_READ_MANIFEST_FILE,
+        "manifest.json",
+        "Lernprofil.json" -> decodePublicUploadUtf8(bytes)
+        else -> return bytes
+    }
     val publicText = when (name) {
         "BLE_Rohdaten.csv" -> redactRawTelemetryCsvForPublic(text)
         DIAGNOSTIC_READ_CSV_FILE -> redactDiagnosticReadCsvForPublic(text)
@@ -190,9 +202,19 @@ internal fun publicGitHubUploadBytes(name: String, bytes: ByteArray): ByteArray 
         DIAGNOSTIC_READ_MANIFEST_FILE, "manifest.json" ->
             redactDiagnosticReadManifestForPublic(text)
         "Lernprofil.json" -> redactLearningProfileForPublic(text)
-        else -> return bytes
+        else -> error("unreachable public upload artifact: $name")
     }
     return publicText.toByteArray(Charsets.UTF_8)
+}
+
+private fun decodePublicUploadUtf8(bytes: ByteArray): String = try {
+    Charsets.UTF_8.newDecoder()
+        .onMalformedInput(CodingErrorAction.REPORT)
+        .onUnmappableCharacter(CodingErrorAction.REPORT)
+        .decode(ByteBuffer.wrap(bytes))
+        .toString()
+} catch (error: CharacterCodingException) {
+    throw IllegalArgumentException("Public upload artifact is not valid UTF-8", error)
 }
 
 internal data class TelemetryCsvMetrics(

@@ -2,6 +2,7 @@ package de.kevin.vmaxdashboard
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -369,6 +370,37 @@ class DiagnosticReadContractTest {
                 Charsets.UTF_8
             )
         )
+    }
+
+    @Test
+    fun uploadBoundaryRejectsMalformedUtf8BeforePublicRedaction() {
+        val validPrefix = "channel;hex\n1516;".toByteArray(Charsets.UTF_8)
+        val malformedUtf8 = validPrefix + byteArrayOf(0xC3.toByte(), 0x28) +
+            "\n".toByteArray(Charsets.UTF_8)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            publicGitHubUploadBytes("BLE_Rohdaten.csv", malformedUtf8)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            publicGitHubUploadBytes(DIAGNOSTIC_READ_CSV_FILE, malformedUtf8)
+        }
+    }
+
+    @Test
+    fun publicCsvFailsClosedForAmbiguousOrUnidentifiableSchemas() {
+        val duplicateRaw = "channel;hex;hex\n1516;31-32-33;31-32-33\n"
+        val overwideRaw = "channel;hex\n1516;31-32-33;TRAILING\n"
+        val unidentifiedDeepRead = "timestamp_ms;hex;meaning\n1;31-32-33;Serial\n"
+        val unterminatedRaw = "channel;hex\n1516;\"31-32-33\n"
+
+        listOf(
+            { redactRawTelemetryCsvForPublic(duplicateRaw) },
+            { redactRawTelemetryCsvForPublic(overwideRaw) },
+            { redactDiagnosticReadCsvForPublic(unidentifiedDeepRead) },
+            { redactRawTelemetryCsvForPublic(unterminatedRaw) }
+        ).forEach { redaction ->
+            assertThrows(IllegalArgumentException::class.java) { redaction() }
+        }
     }
 
     @Test
