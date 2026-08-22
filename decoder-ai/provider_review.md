@@ -11,26 +11,25 @@ Modell: `gemini-3.5-flash-lite`
 
 Fallbackmodell aktiv: `gemini-3.5-flash-lite`.
 
-- Belastbare Evidenz
-  * Es liegen 280 erfolgreiche GATT-Read-Callbacks aus 14 Diagnose-Bundles vor (BT638 GATT Deep-Read).
-  * Fünf Decoder-Regeln (`batteryPercent`, `currentA`, `odometerKm`, `speedKmh`, `voltageV`) basieren laut Profil `b41494223a42174f` auf konsistenten SDK-Layout- und App-Extraktionsvergleichen über bis zu 9 Fahrten.
-  * Für das Leistungssignal (`powerW`) existiert ein interner Kreuzvergleich mit einer Korrelation von 0.984 und einer MAE von 4.01 W.
+- Belastbare Evidenz:
+  - Fünf Decoder-Regeln (`batteryPercent`, `currentA`, `odometerKm`, `speedKmh`, `voltageV`) basieren auf konsistentem `original-sdk-layout+app-extraction-check` über 5 bis 10 Messfahrten (bis zu 1320 Samples, Konfidenz 99%).
+  - Das Signal `powerW` (1509/9, `u16be`) ist explizit als `candidate` markiert (Konfidenz 93%) mit dem Evidence-Guard-Vermerk, dass App-Export-Konsistenz keine unabhängige semantische Beweisführung darstellt.
+  - Der GATT-Deep-Read-Abgleich verzeichnet 364 erfolgreicheCallbacks aus 17 Scans, bestätigt aber keine Byte-Semantiken automatisch.
 
-- Konflikte / mögliche Bugs
-  * Der `powerW`-Kandidat stützt sich ausschließlich auf denselben RAW-Export und eine interne Berechnung (`Spannung × Strom`), wodurch es sich um einen Selbstreferenz-/Cross-Field-Effekt handelt (bestätigt durch `independentExternalConfirmation: false`).
-  * Mehrere historische Messfahrten (z. B. `Messfahrt_2026-08-13_19-17-14`) weisen 0 akzeptierte Exportzeilen und unvollständige READ-/Hybrid-Zähler (`?`) auf, was auf Parser- oder Datenqualitätsprobleme hindeutet.
-  * Diskrepanz zwischen reiner Layout-Konsistenz und echter physikalischer Semantik bei ungeprüften Kanälen (z. B. 1507, 150A).
+- Konflikte / mögliche Bugs:
+  - Selbstreferenz / Carry-forward-Effekt: Mehrere Vergleiche (`APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT`) vergleichen nur App-Extraktionen gegen denselben RAW-Datenstrom; dies ist kein externer physikalischer Sensornachweis.
+  - Das Leistungsfeld `powerW` zeigt zwar eine hohe Korrelation (0.9916) und geringe MAE (4.13 W) zur Multiplikation aus Spannung und Strom, bleibt jedoch ohne unabhängige Validierung ein statistischer Kandidat.
 
-- Hypothesen (nicht bestätigt)
-  * Die Kandidaten-Regel `powerW` (1509/9) entspricht der tatsächlichen elektrischen Leistung am Motor (bisher nur mathematisch aus anderen 1509-Feldern abgeleitet).
-  * Die Charakteristiken 1507 und 1508 enthalten verlässliche Status-Flags für Licht und Fahrmodi, basieren jedoch aktuell nur auf beobachteten Payload-Änderungen.
+- Hypothesen (nicht bestätigt):
+  - 1509/9 (`u16be`) repräsentiert die elektrische Leistung in Watt, benötigt jedoch externe physikalische Verifizierung (z. B. Leistungsmesser am Scooter).
+  - Charakteristik 150C enthält derzeit nur Sentinel-/Platzhalterbytes und ist noch nicht als `BatteryCellUpdate` verifiziert.
 
-- Nächste sichere READ-ONLY-Tests (max. 5)
-  1. Statischer READ-Abgleich der Charakteristik 1509 im ausgeschalteten Zustand zur Verifizierung von Offset-Nullpunkten.
-  2. Lesender Kontroll-Scan von Charakteristik 1506 (Odometer) im Stillstand zur Prüfung auf statische Carry-forward-Artefakte.
-  3. Validierung der Rohdaten-Parser für die fehlerhaften historischen Messfahrten mit 0 akzeptierten Zeilen (rein lesend).
-  4. Strukturierte Protokollierung der dynamischen Bytes in Charakteristik 1503 im reinen Standby.
-  5. Konsistenzprüfung der Endianness-Annahmen für Geschwindigkeits- und Spannungswerte anhand statischer Test-Payloads.
+- Nächste sichere READ-ONLY-Tests (max. 5):
+  1. Statischer READ-Abgleich der Charakteristik 1502 im unbewegten Zustand zur Validierung des statischen Akku-/Controllerblocks.
+  2. Prüfung der Read-Only-Datenqualität in den Zusammenfassungs-Texten auf Vollständigkeit der Zähler ohne Annahme von Nullwerten.
+  3. Vergleichende Protokollierung von 1505 (`speedKmh`) im Stand, um Offset-Drift auszuschließen.
+  4. Konsistenzprüfung der Odometer-Werte (1506) zwischen aufeinanderfolgenden unbewegten Scans.
+  5. Validierung der Rohdaten-Exportzeilen ohne automatische Zuweisung von unbekannten Kanälen.
 
 - Automatische Änderungen: KEINE
 
@@ -40,31 +39,36 @@ Freigabe: keine automatische Änderung.
 
 Status: `ok`
 
-Modell: `glm-4.7-flash`
+Modell: `glm-4.5-flash`
 
-Fallbackmodell aktiv: `glm-4.7-flash`.
+Fallbackmodell aktiv: `glm-4.5-flash`.
 
-- Belastbare Evidenz
-    - Layout-Konsens für Geschwindigkeit (1505/6), Strom (1509/0), SOC (1509/4) und Spannung (1509/5) ist gegen SDK-native-Lib (libble) mit 100% Trefferquote bestätigt.
-    - Odometer-Layout (1506/0) ist gegen SDK bestätigt (Scale 0.1, u32be).
-    - Die Cross-Field-Berechnung für Power (Spannung × Strom) zeigt hohe physikalische Plausibilität (Korrelation 0.98, MAE 4W).
+Belastbare Evidenz
+- Alle 5 bestätigten Regeln zeigen 100% Trefferquote mit 0.0 MAE im libble-Vergleich
+- Cross-Field-Check für powerW zeigt hohe Korrelation (0.991626) mit geringer Abweichung (4.13W)
+- BT638 GATT DEEP READ zeigt stabile Ergebnisse für 28 Characteristics mit konsistenten Payloads
 
-- Konflikte / mögliche Bugs
-    - Diskrepanz in den Datenqualitätszahlen: Der Konsensbericht listet "9 Fahrt(en)" für Strom/Spannung mit 1061 Samples. Die libble-Datenqualitätsanalyse zeigt jedoch für Ride 15 und 16 **0 akzeptierte Zeilen**, obwohl der Bericht diese Fahrten in der Gesamtbilanz auflistet. Dies deutet auf eine Filterungslogik, die gültige Samples verliert oder Fahrten inkonsistent zuordnet.
-    - Power-Konfidenz: Das SDK zeigt `direct_power_W` (100% Layout-Konsistenz), das Decoder-Profil hält es als "candidate" (93%). Der Grund ist der Evidence-Guard: "Same-raw export consistency is not independent semantic proof". Dies ist ein korrekter Sicherheitsmechanismus, verhindert aber die automatische Freigabe durch reinen Datenabgleich.
+Konflikte / mögliche Bugs
+- powerW bleibt Kandidat ohne unabhängige externe Validierung
+- Felder 1505.powerA_W und 1505.powerB_W im libble-Vergleich als "OBSERVED_NEEDS_MORE_PROOF" markiert
+- 11 Characteristics ändern sich zwischen Scans, was auf mögliche Instabilität hindeutet
+- 5 Felder in Original-App-Vergleich noch als "MAPPED_VERIFY_WITH_MORE_BT638_DATA" ohne Zuordnung
 
-- Hypothesen (nicht bestätigt)
-    - Das Feld 1509/9 ist physikalisch als Leistung interpretierbar, da es sich nahtlos in die Rechenlogik `abs(voltage * current)` einfügt, benötigt aber einen externen Hardware-Nachweis (z.B. Vergleich mit einem wattigen Zähler am Akku).
-    - 150D enthält keine Geschwindigkeitsdaten, sondern vermutlich Hilfsinformationen (z.B. Batterietemperatur oder Fehlercodes), wie im "Known Device Behavior" beschrieben.
+Hypothesen (nicht bestätigt)
+- powerW könnte alternative Leistungsgröße sein, nicht direkt |Spannung × Strom|
+- Dynamische Characteristics könnten vom Fahrzustand (Geschwindigkeit, Ladung) abhängen
+- Unterschiede in Characteristics könnten auf Firmware-Hardware-Varianten zurückgehen
+- Unzugeordnete Felder könnten neue Firmware-Features repräsentieren
 
-- Nächste sichere READ-ONLY-Tests
-    - **Static 1502 Check:** Ein READ-Versuch von 1502 im Stillstand, um zu prüfen, ob sich die Werte verändern oder nur ein statischer Header vorliegt.
-    - **150D vs 1505 Korrelation:** Ein READ-Versuch von 150D parallel zu 1505, um zu bestätigen, dass 150D nicht als redundante Geschwindigkeitsquelle fungiert.
-    - **150C Musteranalyse:** Ein READ-Versuch von 150C, um zu prüfen, ob es sich um einen Zell-Status-Block (Checksummen oder Pack-IDs) handelt und nicht um reine Zufallswerte.
-    - **Odometer Monotonie:** Ein READ-Versuch von 1506 im Stillstand über mehrere Minuten, um sicherzustellen, dass der Kilometerstand nicht rückwärts zählt oder konstant bleibt (was auf einen falschen Zähler hinweisen würde).
-    - **Endianness Power-Check:** Ein manuelles Byte-Check (Big-Endian) der `direct_power_W` SDK-Daten gegen die Decoder-Ausgabe von 1509/9, um sicherzustellen, dass keine Byte-Reihenfolge vorliegt, die die 4W MAE verursacht.
+Nächste sichere READ-ONLY-Tests (max. 5)
+- Analyse der 11 dynamischen Characteristics zur Identifikation von Mustern
+- Unabhängige physikalische Validierung der powerW-Regel
+- Untersuchung der "OBSERVED_NEEDS_MORE_PROOF"-Felder aus libble-Vergleich
+- Gezieltes Mapping der 5 noch unzugeordneten App-Listener-Felder
+- Cross-Check Characteristics über verschiedene Firmware-Versionen
 
-- Automatische Änderungen: KEINE
+Automatische Änderungen: KEINE
+
 Freigabe: keine automatische Änderung.
 
 ## OpenAI GPT-5.6 Luna • Synthese, kein Evidenzvotum

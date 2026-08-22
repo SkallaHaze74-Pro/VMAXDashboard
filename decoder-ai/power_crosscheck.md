@@ -3,12 +3,12 @@
 Vergleich: **1509/9 RAW-Kandidat** gegen **|Spannung × Strom|** aus anderen 1509-Feldern.
 Dieser Test vermeidet die frühere Selbstbestätigung über `power_w`.
 
-- Fahrten mit Vergleich: **9** / 15
-- Vergleiche: **1061**
-- MAE: **4.011687 W**
+- Fahrten mit Vergleich: **10** / 16
+- Vergleiche: **1320**
+- MAE: **4.132121 W**
 - Median |Fehler|: **0.0 W**
-- Physikalisch nah (±max(25 W, 10%)): **95.29%**
-- Korrelation: **0.984765**
+- Physikalisch nah (±max(25 W, 10%)): **95.08%**
+- Korrelation: **0.991626**
 - Status: `CROSS_FIELD_EVIDENCE_AVAILABLE`
 
 > Wichtig: Das ist Cross-Field-Evidenz, keine externe Ground Truth. Eine Decoder-Regel wird dadurch nicht automatisch bestätigt.
@@ -26,3 +26,4 @@ Dieser Test vermeidet die frühere Selbstbestätigung über `power_w`.
 | Messfahrt_2026-08-20_18-42-34 | 79 | 3.11519 | 94.94% | 0.996323 |
 | Messfahrt_2026-08-21_20-22-43-141 | 135 | 2.737037 | 96.3% | 0.992322 |
 | Messfahrt_2026-08-22_16-20-27-285 | 96 | 4.772917 | 94.79% | 0.977606 |
+| Messfahrt_2026-08-22_16-36-33-768 | 259 | 4.625483 | 94.21% | 0.997643 |
