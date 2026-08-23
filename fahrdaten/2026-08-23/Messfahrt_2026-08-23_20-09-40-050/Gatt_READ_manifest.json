@@ -1,0 +1,46 @@
+{
+  "schema": "vmax-bt638-deep-read-v3",
+  "measurement": "Messfahrt_2026-08-23_20-09-40-050",
+  "embedded_in_measurement": true,
+  "read_scans": 2,
+  "scan_ids": [
+    "scan-1787508578243-e1-509e0ffc669c",
+    "scan-1787508583910-e2-eee33f662242"
+  ],
+  "completed": false,
+  "completed_scans": 1,
+  "partial_scans": 1,
+  "start_ms": 1787508580050,
+  "end_ms": 1787508589273,
+  "connection_epochs": [
+    1,
+    2
+  ],
+  "measurement_connection_epochs": [
+    0,
+    1
+  ],
+  "read_attempts": 28,
+  "read_callbacks": 28,
+  "read_responses": 28,
+  "read_success": 28,
+  "read_payload_callbacks": 28,
+  "read_valid_payloads": 28,
+  "advertisement_payloads": 1,
+  "observations": 56,
+  "full_uuids": true,
+  "characteristic_properties": true,
+  "callback_payload_direct": true,
+  "read_only": true,
+  "bluetooth_address_included": false,
+  "app_version": "7.0.207-fahrdaten",
+  "created_at_ms": 1787508968586,
+  "discovered_characteristics": null,
+  "discovered_characteristics_recorded_lower_bound": 39,
+  "readable_characteristics_recorded_lower_bound": 28,
+  "callback_characteristics": 28,
+  "characteristic_inventory_complete": false,
+  "characteristic_count_scope": "archived records only; full discovered GATT inventory is not persisted",
+  "public_identity_redacted": true,
+  "public_hash_privacy": "unsalted SHA-256 pseudonym; same payload is linkable across public uploads"
+}
