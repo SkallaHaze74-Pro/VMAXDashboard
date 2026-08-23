@@ -1,0 +1,17 @@
+VMAX Dashboard Messfahrt
+Start: 1787508580050
+Ende: 1787508968518
+Dauer_ms: 388468
+BLE_Pakete: 1039
+BLE_Empfangen: 1039
+BLE_Akzeptiert: 1036
+READ_Verworfen: 0
+Hybrid_Verworfen: 3
+Diagnose_Notifications_isoliert: 0
+Verbindungsepochen: 2
+Deep_READ_Scans: 2
+Deep_READ_Antworten: 28
+Deep_READ_Export: vollständig
+Marker: 5
+Gerät: BT638
+Kanäle: 1502,1505,1506,1508,1509,150A,150B,150D
