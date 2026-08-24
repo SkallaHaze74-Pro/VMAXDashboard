@@ -5,7 +5,7 @@
 
 ## Gemini 3.7 Flash
 
-Status: `ok`
+Status: `cached_ok`
 
 Modell: `gemini-3.5-flash-lite`
 
@@ -36,7 +36,7 @@ Freigabe: keine automatische Änderung.
 
 ## GLM
 
-Status: `ok`
+Status: `cached_ok`
 
 Modell: `glm-4.5-flash`
 
