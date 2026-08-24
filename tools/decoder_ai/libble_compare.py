@@ -7,7 +7,10 @@ import statistics
 from collections import defaultdict
 from pathlib import Path
 
+from raw_origin_guard import is_accepted_live_notification
+
 SDK_SOURCE = "libble-sdk-native-lib.so"
+QUARANTINED_NOTIFICATION_ORIGIN = "NOTIFICATION_QUARANTINED"
 
 FIELD_LAYOUTS = {
     "1505": [
@@ -21,7 +24,7 @@ FIELD_LAYOUTS = {
     "1509": [
         ("current_A", 0, 2, "s16be", 0.001, "current_a"),
         ("battery_temp_C", 2, 2, "s16be", 0.1, "battery_temp_c"),
-        ("soc_percent", 4, 1, "u8", 1.0, "battery_percent"),
+        ("soc_percent", 4, 1, "u8", 1.0, "battery_percent_raw"),
         ("voltage_V", 5, 2, "u16be", 0.001, "voltage_v"),
         ("secondary_current_A", 7, 2, "s16be", 0.001, None),
         ("direct_power_W", 9, 2, "u16be", 1.0, "power_w"),
@@ -65,6 +68,10 @@ TOLERANCE = {
     "voltage_V": 0.002,
     "direct_power_W": 1.1,
     "motor_temp_C": 0.11,
+}
+
+LIVE_COLUMN_FALLBACKS = {
+    "battery_percent_raw": ("battery_percent",),
 }
 
 
@@ -178,6 +185,15 @@ def fnum(value):
         return None
 
 
+def live_reference_number(row, column):
+    """Prefer the explicit v3 field while retaining historical ride compatibility."""
+    for candidate in (column, *LIVE_COLUMN_FALLBACKS.get(column, ())):
+        value = fnum(row.get(candidate))
+        if value is not None and math.isfinite(value):
+            return value
+    return None
+
+
 def summarize(values):
     if not values:
         return {"samples": 0}
@@ -199,15 +215,30 @@ def analyze_ride(ride: Path):
     channel_nonplaceholder = defaultdict(int)
     observed_exported_read_rows = 0
     observed_exported_hybrid_rows = 0
+    observed_exported_quarantined_rows = 0
 
     for row in raw_rows:
         channel = str(row.get("channel") or "").upper()
-        data = parse_hex(str(row.get("hex") or ""))
-        origin = str(row.get("origin") or "NOTIFICATION").upper()
-        if not channel or not data:
+        origin = str(row.get("origin") or "").strip().upper()
+        if not is_accepted_live_notification(row):
+            if origin == "READ":
+                observed_exported_read_rows += 1
+            elif origin:
+                observed_exported_quarantined_rows += 1
+                # v205 emits rejected READ/notification hybrids with this origin.
+                # Public privacy redaction may blank their hex, so retain both the
+                # inclusive quarantine total and the more specific hybrid count.
+                if origin == QUARANTINED_NOTIFICATION_ORIGIN:
+                    observed_exported_hybrid_rows += 1
+            else:
+                # Preserve the pre-v205 legacy behavior for payload-bearing rows,
+                # but do not invent an origin class for privacy-redacted blanks.
+                legacy_data = parse_hex(str(row.get("hex") or ""))
+                if channel and legacy_data:
+                    observed_exported_quarantined_rows += 1
             continue
-        if origin == "READ":
-            observed_exported_read_rows += 1
+        data = parse_hex(str(row.get("hex") or ""))
+        if not channel or not data:
             continue
         if suspicious_read_payload(channel, data):
             observed_exported_hybrid_rows += 1
@@ -231,7 +262,7 @@ def analyze_ride(ride: Path):
             stat = by_field[f"{channel}.{name}"]
             stat["values"].append(value)
             if live_column and live:
-                reference = fnum(live.get(live_column))
+                reference = live_reference_number(live, live_column)
                 if reference is not None and math.isfinite(reference):
                     error = abs(value - reference)
                     stat["comparisons"] += 1
@@ -285,6 +316,7 @@ def analyze_ride(ride: Path):
             "scope": "BLE_Rohdaten.csv rows only; these are not recorder rejection counters",
             "origin_column_available": "origin" in raw_columns,
             "observed_exported_read_rows": observed_exported_read_rows if "origin" in raw_columns else None,
+            "observed_exported_quarantined_rows": observed_exported_quarantined_rows,
             "observed_exported_hybrid_rows": observed_exported_hybrid_rows,
         },
         "quality_counters": quality_counters,

@@ -12,11 +12,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from raw_origin_guard import is_accepted_live_notification
+
 PROFILE_SCHEMA = "vmax-adaptive-decoder-v1"
 
 TARGETS = {
     "speedKmh": {"column": "speed_kmh_candidate", "min_span": 3.0, "max_mae": 0.6, "range": (0.0, 100.0)},
-    "batteryPercent": {"column": "battery_percent", "min_span": 5.0, "max_mae": 1.5, "range": (0.0, 100.0)},
+    "batteryPercent": {
+        "column": "battery_percent_raw",
+        "fallback_columns": ("battery_percent",),
+        "min_span": 5.0,
+        "max_mae": 1.5,
+        "range": (0.0, 100.0),
+    },
     "voltageV": {"column": "voltage_v", "min_span": 0.25, "max_mae": 0.25, "range": (0.0, 100.0)},
     "currentA": {"column": "current_a", "min_span": 0.5, "max_mae": 0.3, "range": (-200.0, 200.0)},
     "powerW": {"column": "power_w", "min_span": 40.0, "max_mae": 25.0, "range": (-30000.0, 30000.0)},
@@ -44,6 +52,7 @@ SDK_CANONICAL = {
 # First real ride disproved the old interpretation of 150D/0 as a second live speed.
 # It behaves like a statistic/limit value and is therefore excluded from speed learning.
 FORBIDDEN_NUMERIC = {("speedKmh", "150D")}
+FORBIDDEN_DISCRETE_SIGNALS = {"charging"}
 BLOCKED_DISCRETE_CHANNELS = {
     "1505", "1506", "1509", "150A", "150C", "150D",
     "2A00", "2A01", "2A02", "2A04", "2A05", "2A28",
@@ -94,6 +103,15 @@ def as_float(value: object) -> Optional[float]:
     return out if math.isfinite(out) else None
 
 
+def target_reference_value(row: dict, cfg: dict) -> Optional[float]:
+    """Read v3's explicit raw reference first, then historical column aliases."""
+    for column in (cfg["column"], *cfg.get("fallback_columns", ())):
+        value = as_float(row.get(column))
+        if value is not None:
+            return value
+    return None
+
+
 def hex_bytes(text: str) -> bytes:
     out = []
     for part in text.replace(":", "-").replace(" ", "-").split("-"):
@@ -129,7 +147,7 @@ def candidate_allowed(signal: str, channel: str, offset: int, encoding: str) -> 
 
 def discrete_candidate_allowed(signal: str, channel: str, offset: int) -> bool:
     channel = channel.upper()
-    if offset < 0 or channel in BLOCKED_DISCRETE_CHANNELS:
+    if signal in FORBIDDEN_DISCRETE_SIGNALS or offset < 0 or channel in BLOCKED_DISCRETE_CHANNELS:
         return False
     if channel == "1508":
         return signal == "lightOn" and offset == 0
@@ -159,12 +177,11 @@ def read_raw_rows(path: Path) -> list[dict]:
         for row in csv.DictReader(handle, delimiter=";"):
             channel = (row.get("channel") or "").strip().upper()
             raw = hex_bytes(row.get("hex") or "")
-            origin = (row.get("origin") or "NOTIFICATION").strip().upper()
             try:
                 rel_ms = int(row.get("relative_ms") or "")
             except ValueError:
                 continue
-            if channel and raw and origin != "READ" and not suspicious_read_payload(channel, raw):
+            if channel and raw and is_accepted_live_notification(row) and not suspicious_read_payload(channel, raw):
                 rows.append({"relative_ms": rel_ms, "channel": channel, "bytes": raw})
     return rows
 
@@ -189,7 +206,7 @@ def read_live_lookup(path: Path) -> dict[tuple[int, str], dict[str, float]]:
                 # are not safe references in a carry-forward snapshot CSV.
                 if expected_channel is None or channel != expected_channel:
                     continue
-                val = as_float(row.get(cfg["column"]))
+                val = target_reference_value(row, cfg)
                 if val is None:
                     continue
                 low, high = cfg["range"]

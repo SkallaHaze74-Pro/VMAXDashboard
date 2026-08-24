@@ -37,6 +37,7 @@ class ConsensusPolicyTests(unittest.TestCase):
         self.assertFalse(consensus.discrete_candidate_allowed("lightOn", "1509", 0))
         self.assertFalse(consensus.discrete_candidate_allowed("brakeActive", "150D", 8))
         self.assertFalse(consensus.discrete_candidate_allowed("brakeActive", "1508", 3))
+        self.assertFalse(consensus.discrete_candidate_allowed("charging", "151D", 2))
 
     def test_live_reference_values_keep_their_real_source_channel(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -53,6 +54,19 @@ class ConsensusPolicyTests(unittest.TestCase):
             self.assertEqual(75.0, values[(10, "1509")]["batteryPercent"])
             self.assertNotIn("tripDistanceKm", values[(0, "1505")])
 
+    def test_v3_battery_reference_uses_raw_not_stabilized_value(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "Live_Telemetrie.csv"
+            path.write_text(
+                "relative_ms;battery_percent_raw;battery_percent_stable;battery_stability;source_channel\n"
+                "10;27;32;RECOVERING_AFTER_LOAD;1509\n",
+                encoding="utf-8",
+            )
+
+            values = consensus.read_live_lookup(path)
+
+            self.assertEqual(27.0, values[(10, "1509")]["batteryPercent"])
+
     def test_canonical_signal_cannot_move_to_another_channel(self):
         self.assertFalse(consensus.candidate_allowed("currentA", "150A", 0, "s16be"))
         self.assertFalse(consensus.candidate_allowed("speedKmh", "151D", 6, "u16be"))
@@ -64,7 +78,10 @@ class ConsensusPolicyTests(unittest.TestCase):
                 "relative_ms;timestamp_ms;channel;meaning;length;packet_no;changed_bytes;hex;origin\n"
                 "0;1000;1505;x;18;1;0;00-00-00-00-FF-FF-00-7B-FF-FF-FF-FF-FF-00-00-00-00-00;NOTIFICATION\n"
                 "10;1010;1505;x;18;2;0;00-00-00-00-FF-FF-00-7B-FF-FF-FF-FF-FF-00-00-00-00-00;READ\n"
-                "20;1020;1505;x;18;3;0;00-00-00-00-FF-FF-00-00-33-34-35-36-37-38-39-35-3D-14;NOTIFICATION\n",
+                "20;1020;1505;x;18;3;0;00-00-00-00-FF-FF-00-00-33-34-35-36-37-38-39-35-3D-14;NOTIFICATION\n"
+                "30;1030;1505;x;18;4;0;00-00-00-00-FF-FF-00-7B-FF-FF-FF-FF-FF-00-00-00-00-00;NOTIFICATION_REJECTED_HYBRID\n"
+                "40;1040;1505;x;18;5;0;00-00-00-00-FF-FF-00-7B-FF-FF-FF-FF-FF-00-00-00-00-00;DIAGNOSTIC_OBSERVATION\n"
+                "50;1050;1505;x;18;6;0;00-00-00-00-FF-FF-00-7B-FF-FF-FF-FF-FF-00-00-00-00-00;\n",
                 encoding="utf-8",
             )
             rows = consensus.read_raw_rows(path)
