@@ -73,6 +73,10 @@ internal object VmaxDecoderPolicy {
                 3 -> label.contains("Fahrmodus", ignoreCase = true) ||
                     label.contains("ECO", ignoreCase = true) ||
                     label.contains("SPORT", ignoreCase = true)
+                // Confirmed live field: 0=Zero-Start, 1=Kick-Start. It is
+                // decoded deliberately and must not survive as an unknown
+                // learning candidate, regardless of its historic label.
+                11 -> false
                 else -> true
             }
             // Six rides show that 150D is a persisted ride-statistics block. The

@@ -18,7 +18,13 @@ PROFILE_SCHEMA = "vmax-adaptive-decoder-v1"
 
 TARGETS = {
     "speedKmh": {"column": "speed_kmh_candidate", "min_span": 3.0, "max_mae": 0.6, "range": (0.0, 100.0)},
-    "batteryPercent": {"column": "battery_percent", "min_span": 5.0, "max_mae": 1.5, "range": (0.0, 100.0)},
+    "batteryPercent": {
+        "column": "battery_percent_raw",
+        "fallback_columns": ("battery_percent",),
+        "min_span": 5.0,
+        "max_mae": 1.5,
+        "range": (0.0, 100.0),
+    },
     "voltageV": {"column": "voltage_v", "min_span": 0.25, "max_mae": 0.25, "range": (0.0, 100.0)},
     "currentA": {"column": "current_a", "min_span": 0.5, "max_mae": 0.3, "range": (-200.0, 200.0)},
     "powerW": {"column": "power_w", "min_span": 40.0, "max_mae": 25.0, "range": (-30000.0, 30000.0)},
@@ -95,6 +101,15 @@ def as_float(value: object) -> Optional[float]:
     except (TypeError, ValueError):
         return None
     return out if math.isfinite(out) else None
+
+
+def target_reference_value(row: dict, cfg: dict) -> Optional[float]:
+    """Read v3's explicit raw reference first, then historical column aliases."""
+    for column in (cfg["column"], *cfg.get("fallback_columns", ())):
+        value = as_float(row.get(column))
+        if value is not None:
+            return value
+    return None
 
 
 def hex_bytes(text: str) -> bytes:
@@ -191,7 +206,7 @@ def read_live_lookup(path: Path) -> dict[tuple[int, str], dict[str, float]]:
                 # are not safe references in a carry-forward snapshot CSV.
                 if expected_channel is None or channel != expected_channel:
                     continue
-                val = as_float(row.get(cfg["column"]))
+                val = target_reference_value(row, cfg)
                 if val is None:
                     continue
                 low, high = cfg["range"]

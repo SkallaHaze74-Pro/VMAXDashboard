@@ -16,11 +16,166 @@ class BatteryPercentStabilizerTest {
 
         assertEquals(23, loadSag.rawPercent)
         assertEquals(37, loadSag.stablePercent)
-        assertEquals(BatteryPercentStability.HELD_TRANSIENT, loadSag.stability)
+        assertEquals(BatteryPercentStability.RECOVERING_AFTER_LOAD, loadSag.stability)
         assertEquals(21, movingLow.rawPercent)
         assertEquals(37, movingLow.stablePercent)
         assertEquals(32, movingRebound.rawPercent)
         assertEquals(37, movingRebound.stablePercent)
+    }
+
+    @Test
+    fun postLoadRecoveryHoldsStableForFull45SecondsThenRequiresFreshRestWindow() {
+        val stabilizer = BatteryPercentStabilizer()
+        settleAt(stabilizer, rawPercent = 37, firstSampleAtElapsedMs = 1_000L)
+
+        val load = stabilizer.observe(
+            rawPercent = 27,
+            currentA = 8.0,
+            speedKmh = 0.0,
+            nowElapsedMs = 10_000L
+        )
+        assertEquals(27, load.rawPercent)
+        assertEquals(37, load.stablePercent)
+        assertEquals(BatteryPercentStability.RECOVERING_AFTER_LOAD, load.stability)
+
+        listOf(54_997L, 54_998L, 54_999L).forEach { nowElapsedMs ->
+            val recovering = stabilizer.observe(
+                rawPercent = 32,
+                currentA = 0.0,
+                speedKmh = 0.0,
+                nowElapsedMs = nowElapsedMs
+            )
+            assertEquals(32, recovering.rawPercent)
+            assertEquals(37, recovering.stablePercent)
+            assertEquals(BatteryPercentStability.RECOVERING_AFTER_LOAD, recovering.stability)
+        }
+
+        val firstEligibleRestSample = stabilizer.observe(
+            rawPercent = 32,
+            currentA = 0.0,
+            speedKmh = 0.0,
+            nowElapsedMs = 55_000L
+        )
+        assertEquals(37, firstEligibleRestSample.stablePercent)
+        assertEquals(BatteryPercentStability.WAITING_FOR_REST, firstEligibleRestSample.stability)
+
+        stabilizer.observe(32, currentA = 0.0, speedKmh = 0.0, nowElapsedMs = 55_001L)
+        val settled = stabilizer.observe(
+            rawPercent = 32,
+            currentA = 0.0,
+            speedKmh = 0.0,
+            nowElapsedMs = 55_002L
+        )
+        assertEquals(32, settled.rawPercent)
+        assertEquals(32, settled.stablePercent)
+        assertEquals(BatteryPercentStability.STABLE, settled.stability)
+    }
+
+    @Test
+    fun movementPositiveLoadAndRegenerationEachRestartRecoveryDeadline() {
+        val stabilizer = BatteryPercentStabilizer()
+        settleAt(stabilizer, rawPercent = 37, firstSampleAtElapsedMs = 1_000L)
+
+        stabilizer.observe(30, currentA = 0.0, speedKmh = 4.0, nowElapsedMs = 10_000L)
+        assertRecovering(stabilizer, nowElapsedMs = 54_999L)
+
+        stabilizer.observe(29, currentA = 8.0, speedKmh = 0.0, nowElapsedMs = 54_999L)
+        assertRecovering(stabilizer, nowElapsedMs = 99_998L)
+
+        stabilizer.observe(28, currentA = -5.0, speedKmh = 0.0, nowElapsedMs = 99_998L)
+        assertRecovering(stabilizer, nowElapsedMs = 144_997L)
+
+        stabilizer.observe(31, currentA = 0.0, speedKmh = 0.0, nowElapsedMs = 144_998L)
+        stabilizer.observe(31, currentA = 0.0, speedKmh = 0.0, nowElapsedMs = 144_999L)
+        val settled = stabilizer.observe(
+            rawPercent = 31,
+            currentA = 0.0,
+            speedKmh = 0.0,
+            nowElapsedMs = 145_000L
+        )
+        assertEquals(31, settled.stablePercent)
+        assertEquals(BatteryPercentStability.STABLE, settled.stability)
+    }
+
+    @Test
+    fun movementWithoutANewSocStillStartsRecoveryAndKeepsLastRawObservable() {
+        val stabilizer = BatteryPercentStabilizer()
+        settleAt(stabilizer, rawPercent = 37, firstSampleAtElapsedMs = 1_000L)
+
+        val movingWithoutSoc = stabilizer.observe(
+            rawPercent = null,
+            currentA = 0.0,
+            speedKmh = 4.0,
+            nowElapsedMs = 10_000L
+        )
+
+        assertEquals(37, movingWithoutSoc.rawPercent)
+        assertEquals(37, movingWithoutSoc.stablePercent)
+        assertEquals(BatteryPercentStability.RECOVERING_AFTER_LOAD, movingWithoutSoc.stability)
+        assertRecovering(stabilizer, nowElapsedMs = 54_999L)
+
+        val waitingForFreshSoc = stabilizer.observe(
+            rawPercent = null,
+            currentA = 0.0,
+            speedKmh = 0.0,
+            nowElapsedMs = 55_000L
+        )
+        assertEquals(37, waitingForFreshSoc.rawPercent)
+        assertEquals(37, waitingForFreshSoc.stablePercent)
+        assertEquals(BatteryPercentStability.WAITING_FOR_REST, waitingForFreshSoc.stability)
+    }
+
+    @Test
+    fun currentMoving1505PacketStartsRecoveryWithoutWaitingForCarriedState() {
+        val stabilizer = BatteryPercentStabilizer()
+        settleAt(stabilizer, rawPercent = 37, firstSampleAtElapsedMs = 1_000L)
+
+        val currentPacketSpeed = batteryMotionSpeedKmh(
+            decodedSpeedKmh = 4.7,
+            freshCarriedSpeedKmh = 0.0
+        )
+        val moving = stabilizer.observe(
+            rawPercent = null,
+            currentA = null,
+            speedKmh = currentPacketSpeed,
+            nowElapsedMs = 10_000L
+        )
+
+        assertEquals(4.7, currentPacketSpeed!!, 0.0)
+        assertEquals(37, moving.rawPercent)
+        assertEquals(37, moving.stablePercent)
+        assertEquals(BatteryPercentStability.RECOVERING_AFTER_LOAD, moving.stability)
+        assertEquals(
+            4.7,
+            batteryMotionSpeedKmh(decodedSpeedKmh = 0.0, freshCarriedSpeedKmh = 4.7)!!,
+            0.0
+        )
+        assertNull(
+            batteryMotionSpeedKmh(
+                decodedSpeedKmh = Double.NaN,
+                freshCarriedSpeedKmh = -1.0
+            )
+        )
+    }
+
+    @Test
+    fun regressingElapsedInputCannotShortenRecoveryHold() {
+        val stabilizer = BatteryPercentStabilizer()
+        settleAt(stabilizer, rawPercent = 37, firstSampleAtElapsedMs = 1_000L)
+
+        stabilizer.observe(29, currentA = 8.0, speedKmh = 0.0, nowElapsedMs = 100_000L)
+        stabilizer.observe(28, currentA = -5.0, speedKmh = 0.0, nowElapsedMs = 90_000L)
+
+        assertRecovering(stabilizer, nowElapsedMs = 144_999L)
+        stabilizer.observe(32, currentA = 0.0, speedKmh = 0.0, nowElapsedMs = 145_000L)
+        stabilizer.observe(32, currentA = 0.0, speedKmh = 0.0, nowElapsedMs = 145_001L)
+        val settled = stabilizer.observe(
+            rawPercent = 32,
+            currentA = 0.0,
+            speedKmh = 0.0,
+            nowElapsedMs = 145_002L
+        )
+        assertEquals(32, settled.stablePercent)
     }
 
     @Test
@@ -122,13 +277,18 @@ class BatteryPercentStabilizerTest {
     fun movingFirstObservationCannotBecomeTheStableBaseline() {
         val stabilizer = BatteryPercentStabilizer()
 
-        val moving = stabilizer.observe(rawPercent = 21, currentA = 0.0, speedKmh = 4.7)
+        val moving = stabilizer.observe(
+            rawPercent = 21,
+            currentA = 0.0,
+            speedKmh = 4.7,
+            nowElapsedMs = 1_000L
+        )
 
         assertEquals(21, moving.rawPercent)
         assertNull(moving.stablePercent)
-        assertEquals(BatteryPercentStability.HELD_TRANSIENT, moving.stability)
+        assertEquals(BatteryPercentStability.RECOVERING_AFTER_LOAD, moving.stability)
 
-        settle(stabilizer, 32)
+        settleAt(stabilizer, rawPercent = 32, firstSampleAtElapsedMs = 46_000L)
         assertEquals(32, stabilizer.current().stablePercent)
     }
 
@@ -167,7 +327,23 @@ class BatteryPercentStabilizerTest {
 
         assertEquals(25, regenerating.rawPercent)
         assertEquals(37, regenerating.stablePercent)
-        assertEquals(BatteryPercentStability.HELD_TRANSIENT, regenerating.stability)
+        assertEquals(BatteryPercentStability.RECOVERING_AFTER_LOAD, regenerating.stability)
+    }
+
+    @Test
+    fun disconnectAndResetClearRecoveryDeadlineAsWellAsBatteryValues() {
+        val stabilizer = BatteryPercentStabilizer()
+        settleAt(stabilizer, rawPercent = 37, firstSampleAtElapsedMs = 1_000L)
+
+        stabilizer.observe(27, currentA = 8.0, speedKmh = 0.0, nowElapsedMs = 10_000L)
+        stabilizer.disconnect()
+        settleAt(stabilizer, rawPercent = 32, firstSampleAtElapsedMs = 10_001L)
+        assertEquals(32, stabilizer.current().stablePercent)
+
+        stabilizer.observe(26, currentA = -5.0, speedKmh = 0.0, nowElapsedMs = 20_000L)
+        stabilizer.reset()
+        settleAt(stabilizer, rawPercent = 31, firstSampleAtElapsedMs = 20_001L)
+        assertEquals(31, stabilizer.current().stablePercent)
     }
 
     @Test
@@ -197,5 +373,33 @@ class BatteryPercentStabilizerTest {
             stabilizer.observe(rawPercent, currentA = 0.0, speedKmh = 0.0)
         }
         assertEquals(rawPercent, stabilizer.current().stablePercent)
+    }
+
+    private fun settleAt(
+        stabilizer: BatteryPercentStabilizer,
+        rawPercent: Int,
+        firstSampleAtElapsedMs: Long
+    ) {
+        repeat(3) { offset ->
+            stabilizer.observe(
+                rawPercent = rawPercent,
+                currentA = 0.0,
+                speedKmh = 0.0,
+                nowElapsedMs = firstSampleAtElapsedMs + offset
+            )
+        }
+        assertEquals(rawPercent, stabilizer.current().stablePercent)
+    }
+
+    private fun assertRecovering(stabilizer: BatteryPercentStabilizer, nowElapsedMs: Long) {
+        val recovering = stabilizer.observe(
+            rawPercent = 31,
+            currentA = 0.0,
+            speedKmh = 0.0,
+            nowElapsedMs = nowElapsedMs
+        )
+        assertEquals(31, recovering.rawPercent)
+        assertEquals(37, recovering.stablePercent)
+        assertEquals(BatteryPercentStability.RECOVERING_AFTER_LOAD, recovering.stability)
     }
 }

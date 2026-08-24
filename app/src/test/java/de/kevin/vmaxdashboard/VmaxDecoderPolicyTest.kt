@@ -28,6 +28,9 @@ class VmaxDecoderPolicyTest {
     fun automaticLearningSkipsKnownSwitchesAndRideStatistics() {
         assertFalse(VmaxDecoderPolicy.isLearningCandidateAllowed("Auto Zustandswechsel", "1508", 0))
         assertFalse(VmaxDecoderPolicy.isLearningCandidateAllowed("Auto Fahrt/Ruhe", "1508", 3))
+        assertFalse(VmaxDecoderPolicy.isLearningCandidateAllowed("Auto Zustandswechsel", "1508", 11))
+        assertFalse(VmaxDecoderPolicy.isLearningCandidateAllowed("Zero-Start", "1508", 11))
+        assertFalse(VmaxDecoderPolicy.isLearningCandidateAllowed("Kick-Start", "1508", 11))
         assertFalse(VmaxDecoderPolicy.isLearningCandidateAllowed("Auto Zustandswechsel", "150D", 0))
         assertFalse(VmaxDecoderPolicy.isLearningCandidateAllowed("Auto Zustandswechsel", "150D", 3))
         assertFalse(VmaxDecoderPolicy.isLearningCandidateAllowed("Auto Zustandswechsel", "150D", 8))

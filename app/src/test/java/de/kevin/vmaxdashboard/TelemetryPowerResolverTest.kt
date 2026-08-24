@@ -27,13 +27,6 @@ class TelemetryPowerResolverTest {
     }
 
     @Test
-    fun batteryExportUsesOnlyExactRawObservations() {
-        assertEquals(21, resolveRawBatteryPercentForExport(decodedRawPercent = 21, previousRawPercent = 37))
-        assertEquals(37, resolveRawBatteryPercentForExport(decodedRawPercent = null, previousRawPercent = 37))
-        assertNull(resolveRawBatteryPercentForExport(decodedRawPercent = null, previousRawPercent = null))
-    }
-
-    @Test
     fun corruptUnsignedDirectPowerIsRejectedAtCanonicalDecoder() {
         val valid = LiveTelemetryDecoder.decode(
             "1509",

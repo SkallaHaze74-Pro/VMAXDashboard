@@ -6,6 +6,45 @@ import org.junit.Test
 
 class GitHubTelemetryMetricsTest {
     @Test
+    fun schema3KeepsV2PowerRulesWithExplicitBatteryAnd1508Contract() {
+        val metrics = telemetryCsvMetrics(
+            sequenceOf(
+                LIVE_TELEMETRY_CSV_HEADER_V3,
+                "0;1000;;27;32;RECOVERING_AFTER_LOAD;42.8;19.0;834;810;1509_direct;" +
+                    ";;;;218;834;1;3;0;1509"
+            )
+        )
+
+        assertEquals(3, metrics.schemaVersion)
+        assertEquals(834.0, metrics.maxDirectPowerW!!, 0.0001)
+        assertEquals(810.0, metrics.maxElectricalPowerW!!, 0.0001)
+    }
+
+    @Test
+    fun schema3RequiresEveryColumnFromTheLiveTelemetryV3Contract() {
+        val requiredColumns = LIVE_TELEMETRY_CSV_HEADER_V3.split(';')
+        val v2RequiredColumns =
+            setOf("power_w", "electrical_power_w", "power_provenance", "source_channel")
+        assertEquals(21, requiredColumns.size)
+
+        requiredColumns.indices.forEach { omittedIndex ->
+            val incompleteHeader = requiredColumns
+                .filterIndexed { index, _ -> index != omittedIndex }
+                .joinToString(";")
+
+            val metrics = telemetryCsvMetrics(sequenceOf(incompleteHeader))
+            val expectedFallbackSchema =
+                if (requiredColumns[omittedIndex] in v2RequiredColumns) 1 else 2
+
+            assertEquals(
+                "missing ${requiredColumns[omittedIndex]} must use the conservative fallback schema",
+                expectedFallbackSchema,
+                metrics.schemaVersion
+            )
+        }
+    }
+
+    @Test
     fun schema2MaximaUseOnlyFreshCanonicalSourceRows() {
         val csv = sequenceOf(
             "relative_ms;timestamp_ms;speed_kmh_candidate;battery_percent;voltage_v;current_a;power_w;electrical_power_w;power_provenance;source_channel",
