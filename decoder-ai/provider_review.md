@@ -11,25 +11,24 @@ Modell: `gemini-3.5-flash-lite`
 
 Fallbackmodell aktiv: `gemini-3.5-flash-lite`.
 
-- Belastbare Evidenz
-  - Die RAW-Extraktionen der Kanäle 1505, 1506 und 1509 zeigen eine konsistente Layout-Übereinstimmung mit dem originalen SDK (`APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT`).
-  - GATT-Deep-Reads (392 erfolgreiche Callbacks) bestätigen die Erreichbarkeit und Dynamik von 28 Characteristics im BT638-Profil.
-  - Fünf Kernregeln (SOC, Strom, Kilometerstand, Geschwindigkeit, Spannung) stützen sich auf wiederholte SDK-Layout-Prüfungen über bis zu 11 Messfahrten.
+- Belastbare Evidenz: 
+  - Die Kanäle 1505 (`speedKmh`), 1506 (`odometerKm`) und 1509 (`currentA`, `voltageV`, `batteryPercent`) zeigen in `libble-Vergleich` und Original-App-Abgleich eine 100% konsistente Layout-Übereinstimmung mit dem SDK (`APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT`).
+  - `powerW` (1509/9) bleibt laut Decoder-Profil explizit ein `candidate` (Konfidenz 93%), gestützt durch 1837 plattforminterne Cross-Field-Vergleiche mit einer Korrelation von 0.9919.
 
-- Konflikte / mögliche Bugs
-  - Zirkuläre Selbstreferenz bei `powerW` (1509/9): Die hohe Korrelation (0.9918) und der MAE basieren auf der Berechnung Spannung × Strom aus demselben RAW-Paket, was keine unabhängige physikalische Evidenz darstellt.
-  - Datenqualitätslücken: Für mehrere frühe Messfahrten (z. B. `Messfahrt_2026-08-13_19-17-14`) fehlen in der Zusammenfassung die READ/Hybrid-Zähler komplett.
-  - Unklare Semantik bei Kandidaten wie 150C (bisher nur Sentinel-/Platzhalterbytes ohne Live-Daten).
+- Konflikte / mögliche Bugs: 
+  - Selbstreferenz / Zirkelschluss: Die Validierung von `powerW` basiert auf `abs(voltage_v * current_a)` aus demselben RAW-Export (`1509`), was keine unabhängige externe Sensorquelle darstellt (`independentExternalConfirmation: false`).
+  - Unvollständige Zähler in der Datenqualitäts-Tabelle (viele Fragezeichen bei READ/Hybrid in den älteren Messfahrten laut Zusammenfassung).
 
-- Hypothesen (nicht bestätigt)
-  - `powerW` (1509/9) repräsentiert die berechnete elektrische Leistung, ist jedoch mangels externer Messreferenz (z.B. geeichtes Zangenamperemeter) nicht endgültig validiert.
-  - Die Characteristics 1502 und 1508 enthalten herstellerspezifische Status- oder Steuerungsblöcke, deren exakte Bit-Offsets unbekannt sind.
+- Hypothesen (nicht bestätigt): 
+  - `powerW` (1509/9) entspricht der physikalisch tatsächlichen elektrischen Leistung am Motor, benötigt jedoch noch externe Hardware-Validierung.
+  - Charakteristik `150C` repräsentiert ein BatteryCellUpdate, ist aber aktuell nur auf Sentinel-/Platzhalterbytes reduziert.
 
-- Nächste sichere READ-ONLY-Tests (max. 5)
-  1. Statischer Read-Abgleich von Kanal 1509 im ausgeschalteten/Stillstands-Zustand (Null-Last-Prüfung für Strom).
-  2. Zeitstempel-Analyse der RAW-Exportzeilen zur Erkennung potenzieller Carry-forward- oder Stale-Sample-Effekte.
-  3. Vergleichende READ-Abfrage der Charakteristik 1506 (Odometer) im Stand zur Validierung der Integer-Stabilität.
-  4. Strukturierte Längenprüfung der GATT-Payloads von Charakteristik 1503 über mehrere Scans hinweg.
+- Nächste sichere READ-ONLY-Tests (max. 5): 
+  1. Statischer READ-Abruf von Characteristic 1502 und 1509 im Leerlauf zur Verifizierung der Basisregister.
+  2. Prüfung der Payload-Änderungen von 1503 und 1508 bei verschiedenen Stufen ohne MotormLast.
+  3. Verifikation der Odometer-Inkremente (1506) bei stationärem Radlauf ohne Schreibbefehle.
+  4. Abgleich der Rohdaten-Exportzeilen gegen die Zusammenfassungs-Zähler für Messfahrt 2026-08-16_22-12-43.
+  5. Lesen von 150A zur Untersuchung des motor_current_A Kandidatenstatus im Stillstand.
 
 - Automatische Änderungen: KEINE
 
@@ -44,28 +43,28 @@ Modell: `glm-4.5-flash`
 Fallbackmodell aktiv: `glm-4.5-flash`.
 
 - **Belastbare Evidenz**
-  - batteryPercent, currentA, odometerKm, speedKmh und voltageV sind mit 99% Konfidenz durch original-sdk-layout+app-extraction-check validiert (5/6 Regeln bestätigt)
-  - BT638 GATT Deep Read zeigt stabile Lesefunktionen für 28 Characteristics, mit 9 dynamischen Charakteristiken
-  - Cross-Field-Validierung für powerW zeigt hohe Korrelation (0.991833) und niedrigen Fehler (4.50 W), bleibt aber unabhängige semantische Bestätigung schuldig
+  - Die 5 bestätigten Regeln (batteryPercent, currentA, odometerKm, speedKmh, voltageV) zeigen konsistent hohe Konfidenz (99%) und perfekte Korrelationen (1.0)
+  - Der libble-Vergleich bestätigt 100% Übereinstimmung dieser Felder mit dem SDK-Layout
+  - Die Cross-Field-Validierung für powerW (94.72% Übereinstimmung mit |Spannung × Strom|) ist statistisch signifikant
+  - BT638 GATT Deep-Read zeigt stabile Ergebnisse für die bestätigten Felder
 
 - **Konflikte / mögliche Bugs**
-  - powerW-Regel bleibt trotz starker Cross-Field-Übereinstimmung im Kandidatenstatus (nur 93% Konfidenz) - Evidence Guard explizit: "same-raw export consistency is not independent semantic proof"
-  - Mehrere SDK-Felder werden als "OBSERVED_NEEDS_MORE_PROOF" markiert (powerA_W, powerB_W, secondary_current_A, motor_current_A)
-  - Inkonsistente Zählungen in "Datenqualität je Export": Akzeptierte Exportzeilen (z.B. 1064) vs. laut Zusammenfassung gezählte Werte (168 READ, 5 Hybrid) - mögliche Verwerfungslogik unklar
-  - Characteristic 150C wird als "BatteryCellUpdate candidate" bezeichnet, enthält aber bisher nur Sentinel-Bytes ohne semantische Zuordnung
+  - Widerspruch zwischen powerW als Kandidat (93%) im Decoder und 100%-Übereinstimmung im libble-Vergleich
+  - Datenqualitätsanzeige zeigt für einige Messfahrten "0 akzeptierte Exportzeilen", obwohl später Daten verarbeitet wurden
+  - Sentinel-Only Characteristics (150C, 150B) werden als Platzhalter behandelt, könnten aber Zustandsinformationen enthalten
+  - Unterschiedliche Bewertung desselben Feldes in Original-App-Vergleich ("APP_EXPORT_LAYOUT_CONSISTENT_NON_INDEPENDENT") vs. Decoder-Bestätigung
 
 - **Hypothesen (nicht bestätigt)**
-  - powerW (1509/9) könnte elektrische Leistung darstellen, da stark mit |Spannung × Strom| korreliert, benötigt aber unabhängige physikalische Validierung
-  - Characteristic 1502 ("Battery/static candidate") könnte statische Akkuinformationen wie Seriennummer oder Herstellungsdaten enthalten
-  - Characteristic 1503 zeigt dynamische Veränderungen zwischen Scans, könnte noch unentdeckte Motor-/Controllerstatistiken enthalten
-  - Die "APP_EXPORT_LAYOUT_CONSISTENT_NON_INDEPENDENT"-Felder (z.B. batteryVoltageMv, batteryPercent) sind layout-konsistent, aber semantisch noch nicht unabhängig validiert
+  - powerW könnte bereits ausreichend validiert sein, aber Evidence Guard blockiert Bestätigung ohne unabhängige externe Validierung
+  - Dynamische Characteristics könnten zusätzliche relevante Informationen enthalten, die noch nicht vollständig extrahiert wurden
+  - Die variablen Bytes in dynamischen Charakteristiken könnten mit bestimmten Gerätezuständen korrelieren
+  - Unterschiede in Datenqualität zwischen Messfahrten könnten auf inkonsistente Exportmethoden hindeuten
 
-- **Nächste sichere READ-ONLY-Tests (max. 5)**
-  1. Unabhängige physikalische Validierung von powerW durch Vergleich mit externem Leistungsmesser während Fahrt
-  2. Detaillierte Analyse von Characteristic 1502 zur Identifizierung möglicher statischer Akkuinformationen
-  3. Untersuchung von Characteristic 150C auf Zellspannungsdaten, besonders während Ladevorgang
-  4. Gezielte Validierung der "OBSERVED_NEEDS_MORE_PROOF"-Felder (powerA_W, powerB_W, secondary_current_A, motor_current_A)
-  5. Analyse von Characteristic 1503 zur Identifizierung möglicher Motor-/Controllerstatistiken
+- **Nächste sichere READ-ONLY-Tests**
+  - Unabhängige Validierung von powerW durch Vergleich mit Referenzmessung (externes Wattmeter)
+  - Analyse von dynamischen Characteristics (1502, 1503, 1505) auf Muster und Korrelation mit bekannten Parametern
+  - Untersuchung von Sentinel-Only Characteristics (150C, 150B) auf Zustandsänderungen bei bestimmten Gerätezuständen
+  - Überprüfung der Datenqualitätsunterschiede zwischen verschiedenen Messfahrten
 
 - **Automatische Änderungen: KEINE**
 
