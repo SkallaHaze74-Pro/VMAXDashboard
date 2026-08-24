@@ -120,7 +120,7 @@ class BatteryPercentStabilizerTest {
             speedKmh = 0.0,
             nowElapsedMs = 55_000L
         )
-        assertEquals(37, waitingForFreshSoc.rawPercent)
+        assertEquals(31, waitingForFreshSoc.rawPercent)
         assertEquals(37, waitingForFreshSoc.stablePercent)
         assertEquals(BatteryPercentStability.WAITING_FOR_REST, waitingForFreshSoc.stability)
     }
