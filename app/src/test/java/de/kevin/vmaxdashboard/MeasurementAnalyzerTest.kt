@@ -14,14 +14,14 @@ class MeasurementAnalyzerTest {
                     in 20..39 -> 1
                     else -> 0
                 }
-                add(packet(index * 200L, "1508", bytes(phase, 0, 0, phase + 1, 0, 0, 0, 0, 0, 0, 0, 0)))
+                add(packet(index * 200L, "1508", bytes(phase, 0, 0, phase + 1, 0, 0, 0, 0, 0, 0, 0, phase)))
                 add(packet(index * 200L + 50L, "150D", bytes(phase, 0, phase, 0, 0, 0, 0, 0)))
             }
         }
 
         val (findings, _) = MeasurementAnalyzer.analyze(rows, emptyList())
 
-        assertFalse(findings.any { it.channel == "1508" && it.byteIndex in setOf(0, 3) })
+        assertFalse(findings.any { it.channel == "1508" && it.byteIndex in setOf(0, 3, 11) })
         assertFalse(findings.any { it.channel == "150D" && it.byteIndex in 0..3 })
     }
 
@@ -80,6 +80,32 @@ class MeasurementAnalyzerTest {
         assertTrue(report.contains("Messdauer_ms: 540705"))
         assertTrue(report.contains("Telemetrie_bis_ms: 95355"))
         assertTrue(report.contains("Größte_Datenlücke_ms: 445350"))
+        assertTrue(report.contains("Startverzögerung_ms: 95355"))
+        assertTrue(report.contains("Endlücke_ms: 445350"))
+        assertTrue(report.contains("Größte_globale_Datenstromlücke_ms: 0"))
+        assertTrue(report.contains("Größte_kanalinterne_Taktlücke_ms: 0"))
+    }
+
+    @Test
+    fun reportSeparatesGlobalStreamGapFromSameChannelCadenceGap() {
+        val rows = listOf(
+            packet(1_000L, "1505", bytes(0, 0, 0, 0, 0xFF, 0xFF, 0, 0)),
+            packet(1_100L, "1508", bytes(0, 0, 0, 2)),
+            packet(1_200L, "1508", bytes(0, 0, 0, 2)),
+            packet(1_300L, "1505", bytes(0, 0, 0, 0, 0xFF, 0xFF, 0, 0)),
+            packet(1_800L, "1508", bytes(0, 0, 0, 2)),
+            packet(3_200L, "1508", bytes(0, 0, 0, 2)),
+            packet(3_300L, "1505", bytes(0, 0, 0, 0, 0xFF, 0xFF, 0, 0))
+        )
+        val markers = listOf("0;1000;START", "6000;7000;STOP")
+
+        val (_, report) = MeasurementAnalyzer.analyze(rows, markers)
+
+        assertTrue(report.contains("Größte_Datenlücke_ms: 2700"))
+        assertTrue(report.contains("Startverzögerung_ms: 1000"))
+        assertTrue(report.contains("Endlücke_ms: 2700"))
+        assertTrue(report.contains("Größte_globale_Datenstromlücke_ms: 1400"))
+        assertTrue(report.contains("Größte_kanalinterne_Taktlücke_ms: 2000"))
     }
 
     @Test

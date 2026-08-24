@@ -53,6 +53,27 @@ object MeasurementAnalyzer {
         val largestDataGapMs = gapAnchors.zipWithNext { before, after -> after - before }
             .maxOrNull()
             ?: 0L
+        val startDelayMs = telemetryFromMs ?: 0L
+        val endGapMs = if (telemetryUntilMs != null) {
+            (measurementDurationMs - telemetryUntilMs).coerceAtLeast(0L)
+        } else {
+            0L
+        }
+        val globalStreamTimes = packets.map { it.t }.distinct().sorted()
+        val largestGlobalStreamGapMs = globalStreamTimes
+            .zipWithNext { before, after -> after - before }
+            .maxOrNull()
+            ?: 0L
+        val largestSameChannelCadenceGapMs = packets
+            .groupBy { it.channel }
+            .values
+            .maxOfOrNull { channelPackets ->
+                channelPackets.map { it.t }.distinct().sorted()
+                    .zipWithNext { before, after -> after - before }
+                    .maxOrNull()
+                    ?: 0L
+            }
+            ?: 0L
         val automaticPatternCount = patternFindings.size
         val report = buildString {
             appendLine("VMAX Automatische Messfahrt-Analyse")
@@ -65,6 +86,10 @@ object MeasurementAnalyzer {
             appendLine("Telemetrie_bis_ms: ${telemetryUntilMs ?: 0L}")
             appendLine("Telemetriezeitraum_ms: $telemetrySpanMs")
             appendLine("Größte_Datenlücke_ms: $largestDataGapMs")
+            appendLine("Startverzögerung_ms: $startDelayMs")
+            appendLine("Endlücke_ms: $endGapMs")
+            appendLine("Größte_globale_Datenstromlücke_ms: $largestGlobalStreamGapMs")
+            appendLine("Größte_kanalinterne_Taktlücke_ms: $largestSameChannelCadenceGapMs")
             appendLine("Manuelle Marker: ${markers.size}")
             appendLine("Automatische allgemeine Mustererkennung: aktiv")
             appendLine("Automatische Impuls-/Blink-Kandidaten: $automaticPatternCount")

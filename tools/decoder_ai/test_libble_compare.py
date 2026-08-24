@@ -3,7 +3,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from libble_compare import FIELD_LAYOUTS, PLAUSIBLE, aggregate, analyze_ride, nearest_live
+from libble_compare import (
+    FIELD_LAYOUTS,
+    PLAUSIBLE,
+    aggregate,
+    analyze_ride,
+    live_reference_number,
+    nearest_live,
+)
 
 
 RAW_V1_HEADER = "relative_ms;timestamp_ms;channel;meaning;length;packet_no;changed_bytes;hex"
@@ -13,6 +20,13 @@ LIVE_V2_HEADER = (
     "power_w;electrical_power_w;power_provenance;motor_temp_c;battery_temp_c;trip_km;"
     "odometer_km;drive_raw_1505_b7;motor_load_raw_be;battery_state_raw_1509_b6;"
     "accessory_raw_b0;accessory_raw_b3;source_channel"
+)
+LIVE_V3_HEADER = (
+    "relative_ms;timestamp_ms;speed_kmh_candidate;battery_percent_raw;"
+    "battery_percent_stable;battery_stability;voltage_v;current_a;power_w;"
+    "electrical_power_w;power_provenance;motor_temp_c;battery_temp_c;trip_km;"
+    "odometer_km;speed_raw_1505_u16be_b6_b7;motor_load_raw_be;"
+    "light_state_1508_b0;ride_mode_1508_b3;start_mode_1508_b11;source_channel"
 )
 
 
@@ -99,10 +113,10 @@ class LibbleComparisonTests(unittest.TestCase):
             )
             write_rows(
                 ride / "Live_Telemetrie.csv",
-                LIVE_V2_HEADER,
+                LIVE_V3_HEADER,
                 [
-                    ["0", "1000", "12.3", "80", "48.5", "1.5", "72", "72.75", "1509_direct_carried", "", "25.0", "", "", "", "72", "", "", "", "1505"],
-                    ["10", "1010", "12.3", "80", "48.5", "1.5", "72", "72.75", "1509_direct", "", "25.0", "", "", "", "72", "", "", "", "1509"],
+                    ["0", "1000", "12.3", "80", "80", "STABLE", "48.5", "1.5", "72", "72.75", "1509_direct_carried", "", "25.0", "", "", "123", "72", "", "", "", "1505"],
+                    ["10", "1010", "12.3", "80", "80", "STABLE", "48.5", "1.5", "72", "72.75", "1509_direct", "", "25.0", "", "", "123", "72", "", "", "", "1509"],
                 ],
             )
             (ride / "Zusammenfassung.txt").write_text(
@@ -141,6 +155,16 @@ class LibbleComparisonTests(unittest.TestCase):
             self.assertEqual("Zusammenfassung.txt", result["quality_counters"]["source"])
             self.assertEqual(1, result["quality_counters"]["rejected_read_packets"])
             self.assertEqual(2, result["quality_counters"]["rejected_hybrid_packets"])
+
+    def test_battery_reference_prefers_v3_raw_and_keeps_v2_compatibility(self):
+        self.assertEqual(
+            27.0,
+            live_reference_number(
+                {"battery_percent_raw": "27", "battery_percent_stable": "32", "battery_percent": "99"},
+                "battery_percent_raw",
+            ),
+        )
+        self.assertEqual(80.0, live_reference_number({"battery_percent": "80"}, "battery_percent_raw"))
 
     def test_ride_level_match_is_layout_consistency_not_live_confirmation(self):
         with tempfile.TemporaryDirectory() as tmp:

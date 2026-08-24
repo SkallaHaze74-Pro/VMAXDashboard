@@ -256,6 +256,8 @@ internal data class TelemetryCsvMetrics(
 
 private const val MAX_MANIFEST_SPEED_KMH = 100.0
 private const val MAX_MANIFEST_DIRECT_POWER_W = 30_000.0
+private val LIVE_TELEMETRY_CSV_V3_COLUMNS =
+    LIVE_TELEMETRY_CSV_HEADER_V3.split(';').map { it.lowercase() }.toSet()
 
 private fun csvFiniteDouble(cells: List<String>, index: Int?): Double? {
     if (index == null) return null
@@ -271,9 +273,12 @@ internal fun telemetryCsvMetrics(lines: Sequence<String>): TelemetryCsvMetrics {
     val header = iterator.next().split(';').mapIndexed { index, name ->
         name.trim().removePrefix("\uFEFF").lowercase() to index
     }.toMap()
-    val schemaVersion = if (
-        setOf("power_w", "electrical_power_w", "power_provenance", "source_channel").all(header::containsKey)
-    ) 2 else 1
+    val v2Columns = setOf("power_w", "electrical_power_w", "power_provenance", "source_channel")
+    val schemaVersion = when {
+        LIVE_TELEMETRY_CSV_V3_COLUMNS.all(header::containsKey) -> 3
+        v2Columns.all(header::containsKey) -> 2
+        else -> 1
+    }
     val speedIndex = header["speed_kmh_candidate"] ?: header["speed_kmh"]
     val directPowerIndex = header["power_w"]
     val electricalPowerIndex = header["electrical_power_w"]
@@ -301,7 +306,7 @@ internal fun telemetryCsvMetrics(lines: Sequence<String>): TelemetryCsvMetrics {
         if (source == "1509") {
             val directPower = csvFiniteDouble(cells, directPowerIndex)
                 ?.takeIf { it in 0.0..MAX_MANIFEST_DIRECT_POWER_W }
-            val isConfirmedDirectPower = if (schemaVersion == 2) {
+            val isConfirmedDirectPower = if (schemaVersion >= 2) {
                 powerProvenanceIndex
                     ?.let { cells.getOrNull(it) }
                     ?.trim()
@@ -313,7 +318,7 @@ internal fun telemetryCsvMetrics(lines: Sequence<String>): TelemetryCsvMetrics {
             if (isConfirmedDirectPower && directPower != null) {
                 maxDirectPower = maxOf(maxDirectPower ?: directPower, directPower)
             }
-            if (schemaVersion == 2) {
+            if (schemaVersion >= 2) {
                 csvFiniteDouble(cells, electricalPowerIndex)?.let {
                     maxElectricalPower = maxOf(maxElectricalPower ?: it, it)
                 }

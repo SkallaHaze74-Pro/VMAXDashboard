@@ -42,11 +42,16 @@ internal fun resolveExportPowerW(
     previousDirectPowerW: Double?
 ): Double? = decodedPowerW ?: previousDirectPowerW ?: electricalPowerW
 
-/** Live CSVs retain the exact decoder value and never substitute the stabilized UI value. */
-internal fun resolveRawBatteryPercentForExport(
-    decodedRawPercent: Int?,
-    previousRawPercent: Int?
-): Int? = decodedRawPercent ?: previousRawPercent
+/** Export byte 11 losslessly while the stricter decoder remains the write-confirmation gate. */
+internal fun resolveStartModeRawForExport(
+    sourceChannel: String,
+    packet: ByteArray,
+    previousRaw: Int?
+): Int? = if (sourceChannel == "1508") {
+    packet.getOrNull(VmaxStartModeProtocol.LIVE_VALUE_OFFSET)?.toInt()?.and(0xFF)
+} else {
+    previousRaw
+}
 
 internal const val RAW_TELEMETRY_CSV_HEADER =
     "relative_ms;timestamp_ms;channel;meaning;length;packet_no;changed_bytes;hex;origin;connection_epoch;" +
@@ -54,6 +59,31 @@ internal const val RAW_TELEMETRY_CSV_HEADER =
 
 internal fun buildRawTelemetryCsv(rows: List<String>): String =
     RAW_TELEMETRY_CSV_HEADER + "\n" + rows.joinToString("\n")
+
+internal const val LIVE_TELEMETRY_CSV_HEADER_V3 =
+    "relative_ms;timestamp_ms;speed_kmh_candidate;battery_percent_raw;battery_percent_stable;" +
+        "battery_stability;voltage_v;current_a;power_w;electrical_power_w;power_provenance;" +
+        "motor_temp_c;battery_temp_c;trip_km;odometer_km;speed_raw_1505_u16be_b6_b7;" +
+        "motor_load_raw_be;light_state_1508_b0;ride_mode_1508_b3;start_mode_1508_b11;source_channel"
+
+internal fun buildLiveTelemetryCsv(rows: List<String>): String =
+    LIVE_TELEMETRY_CSV_HEADER_V3 + "\n" + rows.joinToString("\n")
+
+internal fun measurementDeepReadExportStatus(
+    totalScans: Int,
+    completedScans: Int,
+    exportSucceeded: Boolean
+): String {
+    val total = totalScans.coerceAtLeast(0)
+    if (total == 0) return "nicht vorhanden"
+    val completed = completedScans.coerceIn(0, total)
+    val scanStatus = "Scans $completed/$total abgeschlossen"
+    return if (exportSucceeded) {
+        "vollständig archiviert; $scanStatus"
+    } else {
+        "fehlgeschlagen (Fahrdaten separat gesichert); $scanStatus"
+    }
+}
 
 internal const val QUARANTINED_NOTIFICATION_ORIGIN = "NOTIFICATION_QUARANTINED"
 internal const val DIAGNOSTIC_NOTIFICATION_ORIGIN = "NOTIFICATION_DIAGNOSTIC"
@@ -2547,10 +2577,15 @@ class BleScooterManager(private val context: Context) {
             connectionEpoch = callbackConnectionEpoch,
             nowElapsedMs = packetElapsedRealtimeMs
         )
+        val batteryMotionSpeed = batteryMotionSpeedKmh(
+            decodedSpeedKmh = decoded.speedKmh,
+            freshCarriedSpeedKmh = freshBatterySpeed
+        )
         val batteryReading = batteryPercentStabilizer.observe(
             rawPercent = decodedRawBatteryPercent,
             currentA = decoded.currentA,
-            speedKmh = freshBatterySpeed
+            speedKmh = batteryMotionSpeed,
+            nowElapsedMs = packetElapsedRealtimeMs
         )
         val speedSampleElapsedRealtimeMs = if (short == "1505" && decoded.speedKmh != null) {
             packetElapsedRealtimeMs
@@ -2588,10 +2623,9 @@ class BleScooterManager(private val context: Context) {
             telemetryRows += listOf(
                 measurementMs.toString(), now.toString(),
                 (decoded.speedKmh ?: snapshot.speedKmh)?.toString().orEmpty(),
-                resolveRawBatteryPercentForExport(
-                    decodedRawPercent = decodedRawBatteryPercent,
-                    previousRawPercent = snapshot.batteryPercentRaw
-                )?.toString().orEmpty(),
+                batteryReading.rawPercent?.toString().orEmpty(),
+                batteryReading.stablePercent?.toString().orEmpty(),
+                batteryReading.stability.name,
                 (decoded.voltageV ?: snapshot.voltageV)?.toString().orEmpty(),
                 (decoded.currentA ?: snapshot.currentA)?.toString().orEmpty(),
                 power?.toString().orEmpty(),
@@ -2603,9 +2637,13 @@ class BleScooterManager(private val context: Context) {
                 (decoded.odometerKm ?: snapshot.odometerKm)?.toString().orEmpty(),
                 (decoded.driveRaw ?: snapshot.driveRaw)?.toString().orEmpty(),
                 (decoded.motorLoadRaw ?: snapshot.motorLoadRaw)?.toString().orEmpty(),
-                (decoded.batteryStateRaw ?: snapshot.batteryStateRaw)?.toString().orEmpty(),
                 (decoded.accessoryByte0 ?: snapshot.accessoryByte0)?.toString().orEmpty(),
                 (decoded.accessoryByte3 ?: snapshot.accessoryByte3)?.toString().orEmpty(),
+                resolveStartModeRawForExport(
+                    sourceChannel = short,
+                    packet = packet,
+                    previousRaw = snapshot.startModeRaw
+                )?.toString().orEmpty(),
                 short
             ).joinToString(";")
             if (sessionRows.size > 100_000) sessionRows.removeAt(0)
@@ -2847,7 +2885,7 @@ class BleScooterManager(private val context: Context) {
         val stamp = java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss-SSS", java.util.Locale.GERMANY).format(java.util.Date(snapshot.startedAt))
         val folder = "VMAXDashboard/Messfahrt_$stamp"
         val telemetry = buildRawTelemetryCsv(snapshot.rawRows)
-        val liveTelemetry = "relative_ms;timestamp_ms;speed_kmh_candidate;battery_percent;voltage_v;current_a;power_w;electrical_power_w;power_provenance;motor_temp_c;battery_temp_c;trip_km;odometer_km;drive_raw_1505_b7;motor_load_raw_be;battery_state_raw_1509_b6;accessory_raw_b0;accessory_raw_b3;source_channel\n" + snapshot.telemetryRows.joinToString("\n")
+        val liveTelemetry = buildLiveTelemetryCsv(snapshot.telemetryRows)
         val markers = "relative_ms;timestamp_ms;marker\n" + snapshot.markerRows.joinToString("\n")
         // Quarantined notifications remain byte-exact in BLE_Rohdaten.csv, but only
         // accepted platform NOTIFICATION rows may influence analysis or learning.
@@ -2858,6 +2896,7 @@ class BleScooterManager(private val context: Context) {
         val learningJson = learningStore.exportJson()
         val diagnosticRecords = diagnosticRecordsForBundles(snapshot.diagnosticReadBundles)
         val diagnosticCounts = diagnosticReadCounts(diagnosticRecords)
+        val completedDiagnosticScans = snapshot.diagnosticReadBundles.count { it.completed }
         var diagnosticExportSucceeded = snapshot.diagnosticReadBundles.isEmpty()
         if (snapshot.diagnosticReadBundles.isNotEmpty()) {
             runCatching {
@@ -2902,15 +2941,17 @@ class BleScooterManager(private val context: Context) {
             appendLine("Diagnose_Notifications_isoliert: ${snapshot.diagnosticNotifications}")
             appendLine("Verbindungsepochen: ${snapshot.connectionCount}")
             appendLine("Deep_READ_Scans: ${snapshot.diagnosticReadBundles.size}")
+            appendLine("Deep_READ_Vollständige_Scans: $completedDiagnosticScans")
+            appendLine("Deep_READ_Teil_Scans: ${snapshot.diagnosticReadBundles.size - completedDiagnosticScans}")
             // "Antworten" means actual Android onCharacteristicRead callbacks,
             // not inventory, timeout or connection-observation rows.
             appendLine("Deep_READ_Antworten: ${diagnosticCounts.callbacks}")
             appendLine(
-                "Deep_READ_Export: " + when {
-                    snapshot.diagnosticReadBundles.isEmpty() -> "nicht vorhanden"
-                    diagnosticExportSucceeded -> "vollständig"
-                    else -> "fehlgeschlagen (Fahrtdaten separat gesichert)"
-                }
+                "Deep_READ_Export: " + measurementDeepReadExportStatus(
+                    totalScans = snapshot.diagnosticReadBundles.size,
+                    completedScans = completedDiagnosticScans,
+                    exportSucceeded = diagnosticExportSucceeded
+                )
             )
             appendLine("Marker: ${snapshot.markerRows.size}")
             appendLine("Gerät: ${_state.value.deviceName}")

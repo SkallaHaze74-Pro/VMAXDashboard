@@ -725,6 +725,22 @@ class DiagnosticReadContractTest {
         assertFalse(standaloneUpload.getBoolean("characteristic_inventory_complete"))
     }
 
+    @Test
+    fun measurementSummarySeparatesArchiveSuccessFromCompletedScans() {
+        assertEquals(
+            "nicht vorhanden",
+            measurementDeepReadExportStatus(totalScans = 0, completedScans = 0, exportSucceeded = true)
+        )
+        assertEquals(
+            "vollständig archiviert; Scans 1/2 abgeschlossen",
+            measurementDeepReadExportStatus(totalScans = 2, completedScans = 1, exportSucceeded = true)
+        )
+        assertEquals(
+            "fehlgeschlagen (Fahrdaten separat gesichert); Scans 1/2 abgeschlossen",
+            measurementDeepReadExportStatus(totalScans = 2, completedScans = 1, exportSucceeded = false)
+        )
+    }
+
     private fun diagnosticReadDefaults(
         status: Int? = 0,
         shortId: String = "1509",

@@ -24,7 +24,7 @@ FIELD_LAYOUTS = {
     "1509": [
         ("current_A", 0, 2, "s16be", 0.001, "current_a"),
         ("battery_temp_C", 2, 2, "s16be", 0.1, "battery_temp_c"),
-        ("soc_percent", 4, 1, "u8", 1.0, "battery_percent"),
+        ("soc_percent", 4, 1, "u8", 1.0, "battery_percent_raw"),
         ("voltage_V", 5, 2, "u16be", 0.001, "voltage_v"),
         ("secondary_current_A", 7, 2, "s16be", 0.001, None),
         ("direct_power_W", 9, 2, "u16be", 1.0, "power_w"),
@@ -68,6 +68,10 @@ TOLERANCE = {
     "voltage_V": 0.002,
     "direct_power_W": 1.1,
     "motor_temp_C": 0.11,
+}
+
+LIVE_COLUMN_FALLBACKS = {
+    "battery_percent_raw": ("battery_percent",),
 }
 
 
@@ -181,6 +185,15 @@ def fnum(value):
         return None
 
 
+def live_reference_number(row, column):
+    """Prefer the explicit v3 field while retaining historical ride compatibility."""
+    for candidate in (column, *LIVE_COLUMN_FALLBACKS.get(column, ())):
+        value = fnum(row.get(candidate))
+        if value is not None and math.isfinite(value):
+            return value
+    return None
+
+
 def summarize(values):
     if not values:
         return {"samples": 0}
@@ -249,7 +262,7 @@ def analyze_ride(ride: Path):
             stat = by_field[f"{channel}.{name}"]
             stat["values"].append(value)
             if live_column and live:
-                reference = fnum(live.get(live_column))
+                reference = live_reference_number(live, live_column)
                 if reference is not None and math.isfinite(reference):
                     error = abs(value - reference)
                     stat["comparisons"] += 1
