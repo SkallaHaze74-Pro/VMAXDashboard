@@ -103,14 +103,14 @@ jobs:
         if: github.event_name != 'workflow_dispatch'
         uses: actions/checkout@v7
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Telemetriedaten für manuelle Neuberechnung laden
         if: github.event_name == 'workflow_dispatch'
         uses: actions/checkout@v7
         with:
           ref: telemetry-data
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Aktuelle Decoder-Logik aus main laden
         if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/telemetry-data')
@@ -274,6 +274,7 @@ jobs:
         run: |
           git config user.name 'VMAX Decoder AI'
           git config user.email 'actions@users.noreply.github.com'
+          analysis_input_revision=$(git rev-parse HEAD)
           git add \
             decoder-ai/decoder_profile.json \
             decoder-ai/analysis_report.md \
@@ -295,4 +296,10 @@ jobs:
             exit 0
           fi
           git commit -m 'Decoder AI: Fahrdaten und BT638 Deep READ abgleichen'
-          git push origin HEAD:telemetry-data
+          python "$ANALYZER_ROOT/tools/decoder_ai/telemetry_report_publisher.py" \
+            --repo . \
+            --input-revision "$analysis_input_revision" \
+            --remote origin \
+            --branch telemetry-data \
+            --allow-untracked-path .decoder-main/ \
+            --max-attempts 3
