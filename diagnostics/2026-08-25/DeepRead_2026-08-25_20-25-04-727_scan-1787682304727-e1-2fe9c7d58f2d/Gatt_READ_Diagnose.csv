@@ -1,0 +1,4 @@
+timestamp_ms;scan_id;record_kind;outcome;callback_received;service_uuid;characteristic_uuid;short_id;properties;properties_raw;status;length;hex;payload_valid;payload_sha256;public_redaction;connection_epoch;measurement_connection_epoch;rssi;evidence;meaning
+1787682304727;scan-1787682304727-e1-2fe9c7d58f2d;CONNECTION_EVENT;ATTEMPT_STARTED;false;;;ATTEMPT;-;0;;0;;false;;;1;;;BT638 beobachtet;Deep READ / BLE observation attempt started
+1787682307582;scan-1787682304727-e1-2fe9c7d58f2d;BLE_OBSERVATION;ADVERTISEMENT_OBSERVED;false;;;ADV;BROADCAST;1;;62;;true;f6d343a341c87a93857071866634b6184cf24293eb6ef9bc146073454557d7bd;identity_or_free_form;1;;-58;BT638 beobachtet;REDACTED_IDENTITY_OR_FREE_FORM
+1787682311177;scan-1787682304727-e1-2fe9c7d58f2d;CONNECTION_EVENT;CONNECTION_CLOSED;false;;;EVENT;-;0;-1003;0;;false;;;1;;;BT638 beobachtet;Connection closed before first diagnostic READ session
