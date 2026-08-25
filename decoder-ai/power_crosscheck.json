@@ -4,13 +4,13 @@
   "reference": "abs(voltage_v * current_a) via electrical_power_w",
   "evidenceType": "cross-field-physical-consistency",
   "independentExternalConfirmation": false,
-  "rideCount": 20,
-  "ridesWithComparisons": 14,
-  "comparisons": 1932,
-  "maeW": 4.415062,
+  "rideCount": 21,
+  "ridesWithComparisons": 15,
+  "comparisons": 2147,
+  "maeW": 4.22054,
   "medianAbsErrorW": 0.0,
-  "closePercent": 94.72,
-  "correlation": 0.992055,
+  "closePercent": 95.02,
+  "correlation": 0.992114,
   "status": "CROSS_FIELD_EVIDENCE_AVAILABLE",
   "note": "Cross-field consistency is useful evidence but is not external semantic proof. It must never activate the decoder rule by itself.",
   "rides": [
@@ -125,6 +125,14 @@
       "medianAbsErrorW": 0.0,
       "closePercent": 94.74,
       "correlation": 0.994671
+    },
+    {
+      "ride": "Messfahrt_2026-08-25_20-25-07-885",
+      "comparisons": 215,
+      "maeW": 2.472558,
+      "medianAbsErrorW": 0.0,
+      "closePercent": 97.67,
+      "correlation": 0.988929
     }
   ]
 }
