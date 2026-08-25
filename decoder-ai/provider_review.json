@@ -1,52 +1,37 @@
 {
   "schema": "vmax-provider-review-v2",
-  "generatedAtMs": 1787531735474,
-  "inputFingerprint": "7100b0ee179cdf22fad6db406c0f9120dbee0cdf04785d16596eb512d8522f93",
+  "generatedAtMs": 1787671081933,
+  "inputFingerprint": "745a5894690ba421b32d2e8dca3ee0d0fb5bacd9cbd6426b0484c6a61a3e4f04",
   "advisoryOnly": true,
   "readOnlyReviewerContract": true,
   "automaticChangeAuthority": false,
-  "independentReviewerCount": 2,
+  "independentReviewerCount": 1,
   "modelConsensusCountsAsEvidence": false,
   "providers": {
     "gemini": {
-      "status": "cached_ok",
-      "model": "gemini-3.5-flash-lite",
+      "status": "ok",
+      "model": "gemini-3.6-flash",
       "provider": "Gemini",
       "fallback": true,
-      "text": "- Belastbare Evidenz: \n  - Die Kanäle 1505 (`speedKmh`), 1506 (`odometerKm`) und 1509 (`currentA`, `voltageV`, `batteryPercent`) zeigen in `libble-Vergleich` und Original-App-Abgleich eine 100% konsistente Layout-Übereinstimmung mit dem SDK (`APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT`).\n  - `powerW` (1509/9) bleibt laut Decoder-Profil explizit ein `candidate` (Konfidenz 93%), gestützt durch 1837 plattforminterne Cross-Field-Vergleiche mit einer Korrelation von 0.9919.\n\n- Konflikte / mögliche Bugs: \n  - Selbstreferenz / Zirkelschluss: Die Validierung von `powerW` basiert auf `abs(voltage_v * current_a)` aus demselben RAW-Export (`1509`), was keine unabhängige externe Sensorquelle darstellt (`independentExternalConfirmation: false`).\n  - Unvollständige Zähler in der Datenqualitäts-Tabelle (viele Fragezeichen bei READ/Hybrid in den älteren Messfahrten laut Zusammenfassung).\n\n- Hypothesen (nicht bestätigt): \n  - `powerW` (1509/9) entspricht der physikalisch tatsächlichen elektrischen Leistung am Motor, benötigt jedoch noch externe Hardware-Validierung.\n  - Charakteristik `150C` repräsentiert ein BatteryCellUpdate, ist aber aktuell nur auf Sentinel-/Platzhalterbytes reduziert.\n\n- Nächste sichere READ-ONLY-Tests (max. 5): \n  1. Statischer READ-Abruf von Characteristic 1502 und 1509 im Leerlauf zur Verifizierung der Basisregister.\n  2. Prüfung der Payload-Änderungen von 1503 und 1508 bei verschiedenen Stufen ohne MotormLast.\n  3. Verifikation der Odometer-Inkremente (1506) bei stationärem Radlauf ohne Schreibbefehle.\n  4. Abgleich der Rohdaten-Exportzeilen gegen die Zusammenfassungs-Zähler für Messfahrt 2026-08-16_22-12-43.\n  5. Lesen von 150A zur Untersuchung des motor_current_A Kandidatenstatus im Stillstand.\n\n- Automatische Änderungen: KEINE\n\nFreigabe: keine automatische Änderung.",
+      "text": "### Belastbare Evidenz\n\n- **Layout-Konsistenz der Grundsignale**: Für `speedKmh` (1505@6), `currentA` (1509@0), `batteryPercent` (1509@4), `voltageV` (1509@5) und `odometerKm` (1506@0) liegt eine 100%ige Übereinstimmung zwischen der App-Extraktion und dem SDK-Layout vor.\n- **BT638 GATT-Read-Erreichbarkeit**: Alle 28 angefragten Characteristics im Service `1500` liefern valide GATT-READ-Callbacks (504/504 Versuche erfolgreich).\n- **Dynamische Datenkanäle**: Die Channels 1503, 1505, 1506, 1507, 1508, 1509, 150A, 150D und 1802 verändern ihre Byte-Inhalte zwischen Scans und enthalten Echtdaten.\n- **Konsistente Leistungskorrelation**: Das Feld 1509@9 korreliert zu 0.992055 mit $|V \\cdot I|$ (MAE 4.41 W bei 1932 Samples), bleibt aber regelkonform als `candidate` isoliert.\n\n---\n\n### Konflikte / mögliche Bugs\n\n- **Zirkelschluss / Selbstreferenz**: Der Abgleich `APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT` prüft lediglich zwei Extraktionspfade derselben RAW-Quelle. Dies beweist Parser-Symmetrie, jedoch keine externe physikalische Sensorik.\n- **Datenverlust in Frühsamples**: Die ersten 6 Messfahrten weisen 0 akzeptierte Exportzeilen auf, da die Metadaten in `Zusammenfassung.txt` fehlen oder unvollständig sind.\n- **Diskrepanz bei READ-Zählern**: Die Zusammenfassungen melden teils READ-Zugriffe (z. B. 168 in Fahrt 7), während die RAW-Exportauswertung 0 READ-Zeilen ausweist.\n- **Offene Signalrollen**: Für `motorPower` vs. `treadlePower` (1505.powerA_W / powerB_W) existieren 0 Vergleiche; die Zuordnung ist ungesichert.\n\n---\n\n### Hypothesen (nicht bestätigt)\n\n- **1509@9 u16be**: Repräsentiert die reelle elektrische Wirkleistung in Watt (hängt von externer Messgeräte-Ground-Truth ab).\n- **1508@0 u8 / 1508@3 u8**: Steuern bzw. melden den Lichtstatus (`lightOn`) und die Fahrstufe (`assistanceLevel`).\n- **1502 / 150C**: Enthalten statische BMS-Parameter bzw. Einzelzellspannungen (bisher nur als Sentinel-Bytes `FF-FF...` beobachtet).\n\n---\n\n### Nächste sichere READ-ONLY-Tests (max. 5)\n\n1. **Licht-Schalt-Test (Stillstand)**: Aufzeichnung von Kanal 1508 bei manuellem Ein-/Ausschalten des Lichts im Stillstand.\n2. **Fahrstufen-Wechsel (Stillstand)**: Ändern der Support-Stufe am Display ohne Motorlauf zur Absicherung von 1508@3.\n3. **Vor/Nach-Lade-Read**: Auslesen von 1509 (SOC/Spannung) unmittelbar vor dem Laden und direkt nach dem ersten Reconnect nach dem Laden (im Stillstand, ohne Ladekabel).\n4. **Odometer-Vergleich**: Abgleich von 1506@0 mit dem physikalischen Display-Stand nach einer manuellen Schiebestrecke.\n\n---\n\n### Automatische Änderungen: KEINE\n\nFreigabe: keine automatische Änderung.",
       "outputComplete": true,
       "retryPath": [
-        "gemini-3.6-flash",
-        "gemini-3.5-flash-lite"
-      ],
-      "primaryError": "Gratis-/Ratenlimit erreicht (429) • You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded fo",
-      "fresh": false,
-      "cachedFromPreviousRun": true,
-      "lastAttempt": {
-        "status": "cached_ok",
-        "model": "gemini-3.5-flash-lite",
-        "error": ""
-      }
-    },
-    "glm": {
-      "status": "cached_ok",
-      "model": "glm-4.5-flash",
-      "provider": "Z.ai",
-      "fallback": true,
-      "text": "- **Belastbare Evidenz**\n  - Die 5 bestätigten Regeln (batteryPercent, currentA, odometerKm, speedKmh, voltageV) zeigen konsistent hohe Konfidenz (99%) und perfekte Korrelationen (1.0)\n  - Der libble-Vergleich bestätigt 100% Übereinstimmung dieser Felder mit dem SDK-Layout\n  - Die Cross-Field-Validierung für powerW (94.72% Übereinstimmung mit |Spannung × Strom|) ist statistisch signifikant\n  - BT638 GATT Deep-Read zeigt stabile Ergebnisse für die bestätigten Felder\n\n- **Konflikte / mögliche Bugs**\n  - Widerspruch zwischen powerW als Kandidat (93%) im Decoder und 100%-Übereinstimmung im libble-Vergleich\n  - Datenqualitätsanzeige zeigt für einige Messfahrten \"0 akzeptierte Exportzeilen\", obwohl später Daten verarbeitet wurden\n  - Sentinel-Only Characteristics (150C, 150B) werden als Platzhalter behandelt, könnten aber Zustandsinformationen enthalten\n  - Unterschiedliche Bewertung desselben Feldes in Original-App-Vergleich (\"APP_EXPORT_LAYOUT_CONSISTENT_NON_INDEPENDENT\") vs. Decoder-Bestätigung\n\n- **Hypothesen (nicht bestätigt)**\n  - powerW könnte bereits ausreichend validiert sein, aber Evidence Guard blockiert Bestätigung ohne unabhängige externe Validierung\n  - Dynamische Characteristics könnten zusätzliche relevante Informationen enthalten, die noch nicht vollständig extrahiert wurden\n  - Die variablen Bytes in dynamischen Charakteristiken könnten mit bestimmten Gerätezuständen korrelieren\n  - Unterschiede in Datenqualität zwischen Messfahrten könnten auf inkonsistente Exportmethoden hindeuten\n\n- **Nächste sichere READ-ONLY-Tests**\n  - Unabhängige Validierung von powerW durch Vergleich mit Referenzmessung (externes Wattmeter)\n  - Analyse von dynamischen Characteristics (1502, 1503, 1505) auf Muster und Korrelation mit bekannten Parametern\n  - Untersuchung von Sentinel-Only Characteristics (150C, 150B) auf Zustandsänderungen bei bestimmten Gerätezuständen\n  - Überprüfung der Datenqualitätsunterschiede zwischen verschiedenen Messfahrten\n\n- **Automatische Änderungen: KEINE**\n\nFreigabe: keine automatische Änderung.",
-      "outputComplete": true,
-      "retryPath": [
-        "glm-4.7-flash",
-        "glm-4.5-flash"
+        "gemini-3.7-flash",
+        "gemini-3.6-flash"
       ],
       "primaryError": "The read operation timed out",
-      "fresh": false,
-      "cachedFromPreviousRun": true,
-      "lastAttempt": {
-        "status": "cached_ok",
-        "model": "glm-4.5-flash",
-        "error": ""
-      }
+      "fresh": true
+    },
+    "glm": {
+      "status": "error",
+      "model": "glm-5.3",
+      "text": "",
+      "error": "The read operation timed out",
+      "provider": "GLM",
+      "fallbackAttempted": true,
+      "fallbackError": "The read operation timed out",
+      "outputComplete": false,
+      "fresh": false
     }
   },
   "teamSynthesis": {
@@ -62,6 +47,6 @@
   },
   "transientFallbackPass": true,
   "outputContractValidated": true,
-  "freshProviderCount": 0,
-  "cachedProviderCount": 2
+  "freshProviderCount": 1,
+  "cachedProviderCount": 0
 }

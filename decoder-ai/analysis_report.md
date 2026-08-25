@@ -1,20 +1,20 @@
 # VMAX Decoder AI – Konsensbericht
 
-- Fahrten ausgewertet: **19**
+- Fahrten ausgewertet: **20**
 - Regeln gesamt: **6**
 - Davon bestätigt: **5**
-- Profil-Revision: `e7b220d8a9143ada`
+- Profil-Revision: `df91ee4916912b23`
 
 ## Regeln
 
 | Status | Signal | Kanal | Feld | Konfidenz | Evidenz | Quelle |
 |---|---|---:|---|---:|---:|---|
 | confirmed | batteryPercent | 1509 | u8@4 | 99% | 6 Fahrt(en), 1106 Samples | original-sdk-layout+app-extraction-check |
-| confirmed | currentA | 1509 | s16be@0 | 99% | 13 Fahrt(en), 1837 Samples | original-sdk-layout+app-extraction-check |
-| confirmed | odometerKm | 1506 | u32be@0 | 99% | 10 Fahrt(en), 1526 Samples | original-sdk-layout+app-extraction-check |
-| candidate | powerW | 1509 | u16be@9 | 93% | 13 Fahrt(en), 1837 Samples | sdk-layout+cross-field-check-needs-external-proof |
-| confirmed | speedKmh | 1505 | u16be@6 | 99% | 13 Fahrt(en), 1807 Samples | original-sdk-layout+app-extraction-check |
-| confirmed | voltageV | 1509 | u16be@5 | 99% | 13 Fahrt(en), 1837 Samples | original-sdk-layout+app-extraction-check |
+| confirmed | currentA | 1509 | s16be@0 | 99% | 14 Fahrt(en), 1932 Samples | original-sdk-layout+app-extraction-check |
+| confirmed | odometerKm | 1506 | u32be@0 | 99% | 11 Fahrt(en), 1621 Samples | original-sdk-layout+app-extraction-check |
+| candidate | powerW | 1509 | u16be@9 | 93% | 14 Fahrt(en), 1932 Samples | sdk-layout+cross-field-check-needs-external-proof |
+| confirmed | speedKmh | 1505 | u16be@6 | 99% | 14 Fahrt(en), 1897 Samples | original-sdk-layout+app-extraction-check |
+| confirmed | voltageV | 1509 | u16be@5 | 99% | 14 Fahrt(en), 1932 Samples | original-sdk-layout+app-extraction-check |
 
 ## Ground-Truth-Regeln
 
@@ -26,7 +26,7 @@ Die Prozentwerte aus derselben RAW-Extraktion belegen Layoutkonsistenz, nicht au
 ## Power-Cross-Check ohne Selbstbestätigung
 
 1509/9 wird gegen |Spannung × Strom| aus den anderen 1509-Feldern geprüft, nicht gegen den eigenen `power_w`-Export.
-Vergleiche: **1837** • Nähe: **94.72%** • MAE: **4.464398 W** • Korrelation: **0.991978**.
+Vergleiche: **1932** • Nähe: **94.72%** • MAE: **4.415062 W** • Korrelation: **0.992055**.
 Auch diese Cross-Field-Übereinstimmung ist noch keine externe Ground Truth und aktiviert keine Regel automatisch.
 
 ## Sicherheitsregel

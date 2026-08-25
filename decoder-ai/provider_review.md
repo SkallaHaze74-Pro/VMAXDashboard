@@ -5,70 +5,58 @@
 
 ## Gemini 3.7 Flash
 
-Status: `cached_ok`
+Status: `ok`
 
-Modell: `gemini-3.5-flash-lite`
+Modell: `gemini-3.6-flash`
 
-Fallbackmodell aktiv: `gemini-3.5-flash-lite`.
+Fallbackmodell aktiv: `gemini-3.6-flash`.
 
-- Belastbare Evidenz: 
-  - Die Kanäle 1505 (`speedKmh`), 1506 (`odometerKm`) und 1509 (`currentA`, `voltageV`, `batteryPercent`) zeigen in `libble-Vergleich` und Original-App-Abgleich eine 100% konsistente Layout-Übereinstimmung mit dem SDK (`APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT`).
-  - `powerW` (1509/9) bleibt laut Decoder-Profil explizit ein `candidate` (Konfidenz 93%), gestützt durch 1837 plattforminterne Cross-Field-Vergleiche mit einer Korrelation von 0.9919.
+### Belastbare Evidenz
 
-- Konflikte / mögliche Bugs: 
-  - Selbstreferenz / Zirkelschluss: Die Validierung von `powerW` basiert auf `abs(voltage_v * current_a)` aus demselben RAW-Export (`1509`), was keine unabhängige externe Sensorquelle darstellt (`independentExternalConfirmation: false`).
-  - Unvollständige Zähler in der Datenqualitäts-Tabelle (viele Fragezeichen bei READ/Hybrid in den älteren Messfahrten laut Zusammenfassung).
+- **Layout-Konsistenz der Grundsignale**: Für `speedKmh` (1505@6), `currentA` (1509@0), `batteryPercent` (1509@4), `voltageV` (1509@5) und `odometerKm` (1506@0) liegt eine 100%ige Übereinstimmung zwischen der App-Extraktion und dem SDK-Layout vor.
+- **BT638 GATT-Read-Erreichbarkeit**: Alle 28 angefragten Characteristics im Service `1500` liefern valide GATT-READ-Callbacks (504/504 Versuche erfolgreich).
+- **Dynamische Datenkanäle**: Die Channels 1503, 1505, 1506, 1507, 1508, 1509, 150A, 150D und 1802 verändern ihre Byte-Inhalte zwischen Scans und enthalten Echtdaten.
+- **Konsistente Leistungskorrelation**: Das Feld 1509@9 korreliert zu 0.992055 mit $|V \cdot I|$ (MAE 4.41 W bei 1932 Samples), bleibt aber regelkonform als `candidate` isoliert.
 
-- Hypothesen (nicht bestätigt): 
-  - `powerW` (1509/9) entspricht der physikalisch tatsächlichen elektrischen Leistung am Motor, benötigt jedoch noch externe Hardware-Validierung.
-  - Charakteristik `150C` repräsentiert ein BatteryCellUpdate, ist aber aktuell nur auf Sentinel-/Platzhalterbytes reduziert.
+---
 
-- Nächste sichere READ-ONLY-Tests (max. 5): 
-  1. Statischer READ-Abruf von Characteristic 1502 und 1509 im Leerlauf zur Verifizierung der Basisregister.
-  2. Prüfung der Payload-Änderungen von 1503 und 1508 bei verschiedenen Stufen ohne MotormLast.
-  3. Verifikation der Odometer-Inkremente (1506) bei stationärem Radlauf ohne Schreibbefehle.
-  4. Abgleich der Rohdaten-Exportzeilen gegen die Zusammenfassungs-Zähler für Messfahrt 2026-08-16_22-12-43.
-  5. Lesen von 150A zur Untersuchung des motor_current_A Kandidatenstatus im Stillstand.
+### Konflikte / mögliche Bugs
 
-- Automatische Änderungen: KEINE
+- **Zirkelschluss / Selbstreferenz**: Der Abgleich `APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT` prüft lediglich zwei Extraktionspfade derselben RAW-Quelle. Dies beweist Parser-Symmetrie, jedoch keine externe physikalische Sensorik.
+- **Datenverlust in Frühsamples**: Die ersten 6 Messfahrten weisen 0 akzeptierte Exportzeilen auf, da die Metadaten in `Zusammenfassung.txt` fehlen oder unvollständig sind.
+- **Diskrepanz bei READ-Zählern**: Die Zusammenfassungen melden teils READ-Zugriffe (z. B. 168 in Fahrt 7), während die RAW-Exportauswertung 0 READ-Zeilen ausweist.
+- **Offene Signalrollen**: Für `motorPower` vs. `treadlePower` (1505.powerA_W / powerB_W) existieren 0 Vergleiche; die Zuordnung ist ungesichert.
+
+---
+
+### Hypothesen (nicht bestätigt)
+
+- **1509@9 u16be**: Repräsentiert die reelle elektrische Wirkleistung in Watt (hängt von externer Messgeräte-Ground-Truth ab).
+- **1508@0 u8 / 1508@3 u8**: Steuern bzw. melden den Lichtstatus (`lightOn`) und die Fahrstufe (`assistanceLevel`).
+- **1502 / 150C**: Enthalten statische BMS-Parameter bzw. Einzelzellspannungen (bisher nur als Sentinel-Bytes `FF-FF...` beobachtet).
+
+---
+
+### Nächste sichere READ-ONLY-Tests (max. 5)
+
+1. **Licht-Schalt-Test (Stillstand)**: Aufzeichnung von Kanal 1508 bei manuellem Ein-/Ausschalten des Lichts im Stillstand.
+2. **Fahrstufen-Wechsel (Stillstand)**: Ändern der Support-Stufe am Display ohne Motorlauf zur Absicherung von 1508@3.
+3. **Vor/Nach-Lade-Read**: Auslesen von 1509 (SOC/Spannung) unmittelbar vor dem Laden und direkt nach dem ersten Reconnect nach dem Laden (im Stillstand, ohne Ladekabel).
+4. **Odometer-Vergleich**: Abgleich von 1506@0 mit dem physikalischen Display-Stand nach einer manuellen Schiebestrecke.
+
+---
+
+### Automatische Änderungen: KEINE
 
 Freigabe: keine automatische Änderung.
 
 ## GLM
 
-Status: `cached_ok`
+Status: `error`
 
-Modell: `glm-4.5-flash`
+Modell: `glm-5.3`
 
-Fallbackmodell aktiv: `glm-4.5-flash`.
-
-- **Belastbare Evidenz**
-  - Die 5 bestätigten Regeln (batteryPercent, currentA, odometerKm, speedKmh, voltageV) zeigen konsistent hohe Konfidenz (99%) und perfekte Korrelationen (1.0)
-  - Der libble-Vergleich bestätigt 100% Übereinstimmung dieser Felder mit dem SDK-Layout
-  - Die Cross-Field-Validierung für powerW (94.72% Übereinstimmung mit |Spannung × Strom|) ist statistisch signifikant
-  - BT638 GATT Deep-Read zeigt stabile Ergebnisse für die bestätigten Felder
-
-- **Konflikte / mögliche Bugs**
-  - Widerspruch zwischen powerW als Kandidat (93%) im Decoder und 100%-Übereinstimmung im libble-Vergleich
-  - Datenqualitätsanzeige zeigt für einige Messfahrten "0 akzeptierte Exportzeilen", obwohl später Daten verarbeitet wurden
-  - Sentinel-Only Characteristics (150C, 150B) werden als Platzhalter behandelt, könnten aber Zustandsinformationen enthalten
-  - Unterschiedliche Bewertung desselben Feldes in Original-App-Vergleich ("APP_EXPORT_LAYOUT_CONSISTENT_NON_INDEPENDENT") vs. Decoder-Bestätigung
-
-- **Hypothesen (nicht bestätigt)**
-  - powerW könnte bereits ausreichend validiert sein, aber Evidence Guard blockiert Bestätigung ohne unabhängige externe Validierung
-  - Dynamische Characteristics könnten zusätzliche relevante Informationen enthalten, die noch nicht vollständig extrahiert wurden
-  - Die variablen Bytes in dynamischen Charakteristiken könnten mit bestimmten Gerätezuständen korrelieren
-  - Unterschiede in Datenqualität zwischen Messfahrten könnten auf inkonsistente Exportmethoden hindeuten
-
-- **Nächste sichere READ-ONLY-Tests**
-  - Unabhängige Validierung von powerW durch Vergleich mit Referenzmessung (externes Wattmeter)
-  - Analyse von dynamischen Characteristics (1502, 1503, 1505) auf Muster und Korrelation mit bekannten Parametern
-  - Untersuchung von Sentinel-Only Characteristics (150C, 150B) auf Zustandsänderungen bei bestimmten Gerätezuständen
-  - Überprüfung der Datenqualitätsunterschiede zwischen verschiedenen Messfahrten
-
-- **Automatische Änderungen: KEINE**
-
-Freigabe: keine automatische Änderung.
+Fehler: The read operation timed out
 
 ## OpenAI GPT-5.6 Luna • Synthese, kein Evidenzvotum
 
