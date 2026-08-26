@@ -24,6 +24,10 @@ data class BleChannelState(
 data class ScooterState(
     val scanning: Boolean = false,
     val connected: Boolean = false,
+    /** True for automatic capture; an explicit manual disconnect sets it false. */
+    val connectionDesired: Boolean = true,
+    /** Independent recording intent; pause keeps the BLE connection desired. */
+    val recordingDesired: Boolean = true,
     val telemetryReady: Boolean = false,
     val connectionEpoch: Long = 0L,
     val speedSampleConnectionEpoch: Long = -1L,
@@ -37,6 +41,10 @@ data class ScooterState(
     val batteryPercent: Int? = null,
     /** Exact 1509/4 value retained for diagnostics and lossless exports. */
     val batteryPercentRaw: Int? = null,
+    /** Last real persisted 1509/4 sample; displayed only as an offline/history value. */
+    val lastKnownBatteryPercent: Int? = null,
+    val lastKnownVoltageV: Double? = null,
+    val lastKnownBatteryAt: Long = 0L,
     val voltageV: Double? = null,
     val currentA: Double? = null,
     val motorTemperatureC: Double? = null,
@@ -80,6 +88,8 @@ data class ScooterState(
     val recordingPaused: Boolean = false,
     val recordingStartedAt: Long = 0L,
     val recordingPacketCount: Int = 0,
+    val pendingMeasurementExportCount: Int = 0,
+    val measurementExportInProgress: Boolean = false,
     val markerCount: Int = 0,
     val lastMarker: String = "",
     val autoAnalysisFindings: List<MeasurementFinding> = emptyList(),

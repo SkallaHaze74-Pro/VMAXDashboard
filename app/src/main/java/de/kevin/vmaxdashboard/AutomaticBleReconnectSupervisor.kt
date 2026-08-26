@@ -15,11 +15,10 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
- * Automatically keeps an active measurement alive across an unexpected BLE drop.
+ * Automatically keeps the desired BLE connection and recorder alive.
  *
  * Manual disconnect is intentionally not reconnected because BleScooterManager
- * ends/exports the active measurement before disconnecting. An unexpected link
- * loss leaves recordingActive=true, which is the signal used here.
+ * clears connectionDesired before ending/exporting the active measurement.
  */
 class AutomaticBleReconnectSupervisor private constructor(
     private val application: Application
@@ -44,7 +43,9 @@ class AutomaticBleReconnectSupervisor private constructor(
         val connected: Boolean,
         val telemetryReady: Boolean,
         val recordingActive: Boolean,
-        val scanning: Boolean
+        val recordingDesired: Boolean,
+        val scanning: Boolean,
+        val connectionDesired: Boolean
     )
 
     override fun onActivityResumed(activity: Activity) {
@@ -63,7 +64,16 @@ class AutomaticBleReconnectSupervisor private constructor(
 
         observeJob = scope.launch {
             manager.state
-                .map { Observation(it.connected, it.telemetryReady, it.recordingActive, it.scanning) }
+                .map {
+                    Observation(
+                        it.connected,
+                        it.telemetryReady,
+                        it.recordingActive,
+                        it.recordingDesired,
+                        it.scanning,
+                        it.connectionDesired
+                    )
+                }
                 .distinctUntilChanged()
                 .collect { observation ->
                     mainHandler.post {
@@ -104,10 +114,22 @@ class AutomaticBleReconnectSupervisor private constructor(
             }
         }
 
-        // Unexpected disconnect: recording stays active, so reconnect automatically.
-        // Manual disconnect stops the recording first and therefore never reaches here.
-        if (!observation.connected && observation.recordingActive && !observation.scanning && manager.hasRequiredPermissions()) {
-            manager.startScan()
+        // Re-read the latest state: export/restart can advance while an older
+        // StateFlow observation is waiting on the main thread.
+        val current = manager.state.value
+        when (
+            automaticCaptureAction(
+                connectionDesired = current.connectionDesired,
+                connected = current.connected,
+                scanning = current.scanning,
+                recordingActive = current.recordingActive,
+                recordingDesired = current.recordingDesired,
+                permissionsGranted = manager.hasRequiredPermissions()
+            )
+        ) {
+            AutomaticCaptureAction.START_SCAN -> manager.startScan()
+            AutomaticCaptureAction.START_MEASUREMENT -> manager.startMeasurement()
+            AutomaticCaptureAction.NONE -> Unit
         }
     }
 

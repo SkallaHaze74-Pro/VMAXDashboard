@@ -61,9 +61,6 @@ private fun VmaxApp(manager: BleScooterManager, gattScanner: GattReadScanner) {
     var selectedAction by rememberSaveable { mutableStateOf("Bremse") }
     var chargeMode by rememberSaveable { mutableStateOf(false) }
     var chargeStartedAt by rememberSaveable { mutableLongStateOf(0L) }
-    var lastRealBattery by rememberSaveable { mutableStateOf<Int?>(null) }
-    var lastRealVoltage by rememberSaveable { mutableStateOf<Double?>(null) }
-    var lastRealValueAt by rememberSaveable { mutableLongStateOf(0L) }
     var previousConnected by rememberSaveable { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -101,17 +98,8 @@ private fun VmaxApp(manager: BleScooterManager, gattScanner: GattReadScanner) {
         }
     }
 
-    LaunchedEffect(state.lastBatteryTelemetryAt) {
-        if (state.connected && state.lastBatteryTelemetryAt > 0L) {
-            state.batteryPercentRaw?.takeIf { it in 0..100 }?.let { lastRealBattery = it }
-            state.voltageV?.let { lastRealVoltage = it }
-            lastRealValueAt = state.lastBatteryTelemetryAt
-        }
-    }
-
     LaunchedEffect(state.connected) {
         if (state.connected) {
-            if (!manager.state.value.recordingActive) manager.startMeasurement()
             if (chargeMode && !previousConnected) {
                 marker("BLE beim Laden wieder verbunden – Kurzfenster", false)
             }
@@ -176,6 +164,8 @@ private fun VmaxApp(manager: BleScooterManager, gattScanner: GattReadScanner) {
                         "${state.batteryPercent} % • roh ${state.batteryPercentRaw} %"
                     state.batteryPercent != null -> "${state.batteryPercent} %"
                     state.batteryPercentRaw != null -> "${state.batteryPercentRaw} % roh"
+                    state.lastKnownBatteryPercent != null ->
+                        "– live • zuletzt ${state.lastKnownBatteryPercent} %"
                     else -> "–"
                 }
                 MetricRow(
@@ -224,9 +214,9 @@ private fun VmaxApp(manager: BleScooterManager, gattScanner: GattReadScanner) {
                     state = state,
                     active = chargeMode,
                     startedAt = chargeStartedAt,
-                    lastBattery = lastRealBattery,
-                    lastVoltage = lastRealVoltage,
-                    lastValueAt = lastRealValueAt,
+                    lastBattery = state.lastKnownBatteryPercent,
+                    lastVoltage = state.lastKnownVoltageV,
+                    lastValueAt = state.lastKnownBatteryAt,
                     onPlugIn = {
                         chargeMode = true
                         chargeStartedAt = System.currentTimeMillis()
@@ -253,7 +243,16 @@ private fun VmaxApp(manager: BleScooterManager, gattScanner: GattReadScanner) {
                 )
             }
 
-            item { AutoRecordingCard(state, manager::stopMeasurementAndExport, manager::exportSessionCsv) }
+            item {
+                AutoRecordingCard(
+                    state = state,
+                    onSaveAndContinue = manager::saveMeasurementAndContinue,
+                    onPauseAndSave = manager::pauseMeasurementAndExport,
+                    onResume = manager::startMeasurement,
+                    onRetryExport = manager::retryPendingMeasurementExports,
+                    onExport = manager::exportSessionCsv
+                )
+            }
             item {
                 GitHubSyncCard(
                     snapshot = githubSnapshot,
@@ -469,7 +468,13 @@ private fun StatusCard(
                     else -> "○ Bluetooth nicht verbunden"
                 }
             )
-            Text(if (state.recordingActive) "● Automatische Datenaufnahme läuft" else "○ Aufnahme wartet")
+            Text(
+                when {
+                    state.recordingActive -> "● Automatische Datenaufnahme läuft"
+                    state.recordingDesired -> "◐ Aufnahme wartet auf Verbindung"
+                    else -> "○ Aufnahme bewusst pausiert"
+                }
+            )
             Text(
                 "Original-SDK live: ${state.sdkLiveFieldCount} Felder • Evidence Guard: " +
                     "${aiProfile.confirmedRuleCount}/${aiProfile.ruleCount} bestätigt",
@@ -676,21 +681,66 @@ private fun OriginalSdkRealtimeCard(state: ScooterState) {
 }
 
 @Composable
-private fun AutoRecordingCard(state: ScooterState, onStop: () -> Unit, onExport: () -> Unit) {
+private fun AutoRecordingCard(
+    state: ScooterState,
+    onSaveAndContinue: () -> Unit,
+    onPauseAndSave: () -> Unit,
+    onResume: () -> Unit,
+    onRetryExport: () -> Unit,
+    onExport: () -> Unit
+) {
     Card(shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Automatische Daueraufnahme", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text("Pakete: ${state.recordingPacketCount} • Marker: ${state.markerCount}")
-            Button(
-                onClick = onStop,
-                enabled = state.recordingActive,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("STOPPEN, ANALYSIEREN & SPEICHERN")
+            if (state.recordingActive) {
+                Button(
+                    onClick = onSaveAndContinue,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("ABSCHNITT SPEICHERN & WEITER")
+                }
+                OutlinedButton(
+                    onClick = onPauseAndSave,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("AUFNAHME PAUSIEREN & SPEICHERN")
+                }
+                Text(
+                    "Beim ersten Knopf nimmt der neue Abschnitt ohne Exportlücke sofort weiter auf. Pausieren hält nur die Aufnahme an; Bluetooth verbindet weiterhin automatisch.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            } else {
+                Button(
+                    onClick = onResume,
+                    enabled = state.connected,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("AUFNAHME FORTSETZEN")
+                }
+                Text(
+                    if (state.connected) {
+                        "Die Verbindung bleibt aktiv; im Stillstand kannst du jetzt Zero-/Kickstart sicher ändern."
+                    } else {
+                        "Bluetooth wird automatisch wieder gesucht. Danach kannst du die Aufnahme fortsetzen."
+                    },
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            if (state.measurementExportInProgress) {
+                Text("Speichere im Hintergrund …", style = MaterialTheme.typography.bodySmall)
+            }
+            if (state.pendingMeasurementExportCount > 0 && !state.measurementExportInProgress) {
+                OutlinedButton(
+                    onClick = onRetryExport,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("UNGESICHERTE ABSCHNITTE ERNEUT SPEICHERN (${state.pendingMeasurementExportCount})")
+                }
             }
             OutlinedButton(
                 onClick = onExport,
-                enabled = state.packetTotal > 0,
+                enabled = state.recordingActive && state.recordingPacketCount > 0,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Rohdaten zusätzlich als CSV")
