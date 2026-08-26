@@ -1,11 +1,11 @@
 {
   "schema": "vmax-provider-review-v2",
-  "generatedAtMs": 1787737288513,
-  "inputFingerprint": "0e4d9fe9412025addb74a6a82c61a832b09a37d46c994bbd246a5f68e0cac23b",
+  "generatedAtMs": 1787750811419,
+  "inputFingerprint": "b07d7db55583220b649ff0cedfe86014bb1563fbf971ac10051d26a4825ce901",
   "advisoryOnly": true,
   "readOnlyReviewerContract": true,
   "automaticChangeAuthority": false,
-  "independentReviewerCount": 1,
+  "independentReviewerCount": 2,
   "modelConsensusCountsAsEvidence": false,
   "providers": {
     "gemini": {
@@ -13,26 +13,28 @@
       "model": "gemini-3.5-flash-lite",
       "provider": "Gemini",
       "fallback": true,
-      "text": "- Belastbare Evidenz\n  * Das Decoder-Profil (`83eb267d6a348481`) basiert auf 21 ausgewerteten Messfahrten mit insgesamt 5 bestätigten und 1 Kandidaten-Regel (`powerW`).\n  * Der libble-Vergleich zeigt, dass die Felder `speed_kmh` (1505), `current_A` (1509), `direct_power_W` (1509), `soc_percent` (1509) und `voltage_V` (1509) eine 100%ige Layout-Konsistenz mit dem SDK aufweisen (`APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT`).\n  * Der GATT-Deep-Read-Abgleich verzeichnet 644 erfolgreiche Callback-Payloads über 28 Charakteristiken ohne fehlerhafte Payloads.\n\n- Konflikte / mögliche Bugs\n  * Mehrere Quellangaben (z.B. im Original-App-Vergleich) stufen `APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT` als \"non-independent\" ein; das bedeutet, sie vergleichen nur App-Extraktionen mit demselben RAW-Paket, was keinen echten physischen Sensornachweis darstellt.\n  * Das Feld `powerW` (1509/9) verbleibt trotz einer Kreuzvalidierung von 95.02% Nähe und 0.992 Korrelation lediglich im Status `candidate`, da eine unabhängige externe Validierung fehlt.\n  * Datenqualitätslücken: Einige ältere Messfahrten (z.B. `Messfahrt_2026-08-13_19-17-14`) weisen 0 akzeptierte Exportzeilen oder unvollständige Zähler auf.\n\n- Hypothesen (nicht bestätigt)\n  * `powerW` (1509/9) entspricht der echten elektrischen Leistung, allerdings ist die semantische Natur derzeit nur durch interne Kreuzrechnung (`Spannung × Strom`) gestützt.\n  * Charakteristik `150C` wird weiterhin als reiner `BatteryCellUpdate`-Platzhalter gewertet, ohne bestätigte Byte-Offets.\n\n- Nächste sichere READ-ONLY-Tests (max. 5)\n  1. Lesen der statischen Charakteristik `1502` im Stillstand zur Verifizierung der Akku-/Controller-Struktur.\n  2. Lesen der dynamischen Charakteristik `1505` im Stillstand für Basiswerte.\n  3. Lesen der Charakteristik `1506` im Stillstand zur Odometer-Konsistenzprüfung.\n  4. Lesen der Charakteristik `1509` im Stillstand zur Überprüfung der Live-Spannungs- und Strom-Defaults.\n  5. Lesen der Charakteristik `150A` im Stillstand zur Verifizierung des Motor-Layouts.\n\n- Automatische Änderungen: KEINE\n\nFreigabe: keine automatische Änderung.",
+      "text": "- Belastbare Evidenz:\n  - 22 Messfahrten und 672 erfolgreiche GATT-Callbacks belegen konstante Rohdatenstrukturen für die Kanäle 1505, 1506 und 1509 (Quelle: BT638 GATT DEEP READ & libble-Vergleich).\n  - 5 Decoder-Regeln (`speedKmh`, `odometerKm`, `voltageV`, `currentA`, `batteryPercent`) besitzen eine Konsistenz von 99% basierend auf SDK-Layout- und App-Extraktionsprüfungen (Quelle: Decoder-Profil).\n  - `powerW` (Kanal 1509, Offset 9) ist im Profil explizit als `candidate` markiert, da eine reine app-interne RAW-Konsistenz und Kreuzvalidierung kein unabhängiger semantischer Beweis sind (Quelle: Evidence Guard).\n\n- Konflikte / mögliche Bugs:\n  - Selbstreferenz bei Leistungswerten: Die Kreuzvalidierung von `powerW` gegen `abs(voltage_v * current_a)` vergleicht App-Export-Daten miteinander, was zu Zirkelschlüssen führen kann, solange keine externe physikalische Messung vorliegt (Quelle: Evidence Guard).\n  - Diskrepanzen in den Export-Zusammenfassungen: Einige frühe Messfahrten (z. B. `Messfahrt_2026-08-13_19-17-14`) zeigen unvollständige oder fehlende Zählerwerte (`?` in der Datenqualitäts-Tabelle) (Quelle: libble-Vergleich).\n\n- Hypothesen (nicht bestätigt):\n  - 1509/9 u16be entspricht physischer elektrischer Leistung in Watt (offen bis zur externen Validierung).\n  - Kanal 150C repräsentiert Zellspannungen oder ein BatteryCellUpdate (bisher nur Platzhalter- und Sentinel-Bytes beobachtet; Quelle: GATT Deep Read).\n\n- Nächste sichere READ-ONLY-Tests (max. 5):\n  1. Nur im Stillstand und ohne Ladekabel: Einen kurzen READ-/Notify-Mitschnitt der Kanäle 1505 und 1509 aufzeichnen.\n  2. Abgleich der gemessenen Odometer-Werte aus Kanal 1506 mit einem unbeteiligten externen GPS-Log bei konstanter Fahrt (Soll-Ist-Vergleich ohne Schreibzugriff).\n  3. Statische Konsistenzprüfung der Characteristics 1502 und 1503 im getrennten Verbindungszustand.\n  4. Überprüfung der Rohdaten-Payloads auf Plausibilität (keine Sprünge im SOC oder der Spannung) bei aufeinanderfolgenden READ-Versuchen.\n  5. Kontrolle der Export-Zusammenfassungen auf konsistente Zähler ohne Annahme von Nullwerten für fehlende Einträge.\n\n- Automatische Änderungen: KEINE\n\nFreigabe: keine automatische Änderung.",
       "outputComplete": true,
       "retryPath": [
-        "gemini-3.7-flash",
         "gemini-3.6-flash",
         "gemini-3.5-flash-lite"
       ],
-      "primaryError": "The read operation timed out",
+      "primaryError": "Gratis-/Ratenlimit erreicht (429) • You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded fo",
       "fresh": true
     },
     "glm": {
-      "status": "error",
-      "model": "glm-5.3",
-      "text": "",
-      "error": "The read operation timed out",
-      "provider": "GLM",
-      "fallbackAttempted": true,
-      "fallbackError": "The read operation timed out",
-      "outputComplete": false,
-      "fresh": false
+      "status": "ok",
+      "model": "glm-4.5-flash",
+      "provider": "Z.ai",
+      "fallback": true,
+      "text": "Belastbare Evidenz\n- batteryPercent, currentA, odometerKm, speedKmh und voltageV sind mit 99% Konfidenz bestätigt\n- Diese Felder zeigen 100% Trefferrate im libble-Vergleich mit dem BT638-Livestand\n- BT638 GATT DEEP READ bestätigt erfolgreiche Lesezugriffe auf die entsprechenden Characteristics\n- Cross-Field-Check für powerW zeigt hohe Korrelation (0.992124) mit |Spannung × Strom|\n\nKonflikte / mögliche Bugs\n- powerW bleibt Kandidat mit 93% Konfidenz, da unabhängige semantische Validierung fehlt\n- Im libble-Vergleich wird powerW nicht direkt geprüft, nur indirekt über Cross-Field-Check\n- Mehrere wichtige Akkufelder (charging, chargingRemainSeconds, stateOfHealth) sind noch unzugeordnet\n- 1502 (Battery/static candidate) hat statische Payloads, könnte aber wichtige Batterieparameter enthalten\n\nHypothesen (nicht bestätigt)\n- powerW könnte tatsächlich die Leistung in Watt darstellen, basierend auf der hohen Korrelation mit Spannung × Strom\n- 1502 könnte fehlende Akkuzustandsdaten wie Ladezeit oder Gesundheitsparameter enthalten\n- 150C (BatteryCellUpdate candidate) könnte Zellspannungs- oder Temperaturdaten liefern, die noch nicht extrahiert wurden\n- Die Unterschiede in 1505-Payload-Varianten könnten verschiedene Betriebsmodi widerspiegeln\n\nNächste sichere READ-ONLY-Tests\n1. Detaillierte Analyse von 1502 (Battery/static candidate) zur Identifizierung noch fehlender Batterieparameter\n2. Unabhängige Validierung von powerW durch Vergleich mit bekannten physikalischen Messwerten\n3. Untersuchung von 150C auf mögliche Zellinformationen und deren Bedeutung\n4. Analyse von 1507 zur Klärung der Statistikblock-Semantik\n5. Überprüfung der Korrelation zwischen 1503-Varianten und bekannten Gerätezuständen\n\nAutomatische Änderungen: KEINE\n\nFreigabe: keine automatische Änderung.",
+      "outputComplete": true,
+      "retryPath": [
+        "glm-4.7-flash",
+        "glm-4.5-flash"
+      ],
+      "primaryError": "The read operation timed out",
+      "fresh": true
     }
   },
   "teamSynthesis": {
@@ -48,6 +50,6 @@
   },
   "transientFallbackPass": true,
   "outputContractValidated": true,
-  "freshProviderCount": 1,
+  "freshProviderCount": 2,
   "cachedProviderCount": 0
 }

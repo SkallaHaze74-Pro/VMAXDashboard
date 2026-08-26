@@ -1,8 +1,8 @@
 {
   "schema": "vmax-adaptive-decoder-v1",
-  "revision": "83eb267d6a348481",
-  "generatedAtMs": 1787682946714,
-  "rideCount": 21,
+  "revision": "a4b8867e090ec146",
+  "generatedAtMs": 1787750196350,
+  "rideCount": 22,
   "ruleCount": 6,
   "confirmedRuleCount": 5,
   "rules": [
@@ -78,10 +78,10 @@
         "libbleVerdict": "APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT",
         "layoutMatchPercent": 100.0,
         "layoutMae": 0.0,
-        "crossFieldComparisons": 2147,
-        "crossFieldClosePercent": 95.02,
-        "crossFieldMaeW": 4.22054,
-        "crossFieldCorrelation": 0.992114,
+        "crossFieldComparisons": 2155,
+        "crossFieldClosePercent": 95.03,
+        "crossFieldMaeW": 4.204872,
+        "crossFieldCorrelation": 0.992124,
         "crossFieldReference": "abs(voltage_v * current_a) via electrical_power_w",
         "independentExternalConfirmation": false,
         "independentArtifactBinding": "disabled-until-artifact-is-locally-hashed"

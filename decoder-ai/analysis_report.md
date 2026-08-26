@@ -1,9 +1,9 @@
 # VMAX Decoder AI – Konsensbericht
 
-- Fahrten ausgewertet: **21**
+- Fahrten ausgewertet: **22**
 - Regeln gesamt: **6**
 - Davon bestätigt: **5**
-- Profil-Revision: `83eb267d6a348481`
+- Profil-Revision: `a4b8867e090ec146`
 
 ## Regeln
 
@@ -26,7 +26,7 @@ Die Prozentwerte aus derselben RAW-Extraktion belegen Layoutkonsistenz, nicht au
 ## Power-Cross-Check ohne Selbstbestätigung
 
 1509/9 wird gegen |Spannung × Strom| aus den anderen 1509-Feldern geprüft, nicht gegen den eigenen `power_w`-Export.
-Vergleiche: **2147** • Nähe: **95.02%** • MAE: **4.22054 W** • Korrelation: **0.992114**.
+Vergleiche: **2155** • Nähe: **95.03%** • MAE: **4.204872 W** • Korrelation: **0.992124**.
 Auch diese Cross-Field-Übereinstimmung ist noch keine externe Ground Truth und aktiviert keine Regel automatisch.
 
 ## Sicherheitsregel

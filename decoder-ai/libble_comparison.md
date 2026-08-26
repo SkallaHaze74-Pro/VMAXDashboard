@@ -1,21 +1,21 @@
 # VMAX libble Ground-Truth Vergleich
 
 Quelle der Semantik: `libble-sdk-native-lib.so`
-Ausgewertete Messfahrten: **21**
+Ausgewertete Messfahrten: **22**
 
 ## SDK-Felder gegen echten BT638-Livestand
 
 | Feld | Samples | Vergleiche | Treffer | MAE | Urteil |
 |---|---:|---:|---:|---:|---|
-| 1505.powerA_W | 2111 | 0 | – | – | OBSERVED_NEEDS_MORE_PROOF |
-| 1505.powerB_W | 2111 | 0 | – | – | OBSERVED_NEEDS_MORE_PROOF |
-| 1505.speed_kmh | 2111 | 2111 | 100.00% | 0.000000 | APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT |
-| 1509.current_A | 2147 | 2147 | 100.00% | 0.000000 | APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT |
-| 1509.direct_power_W | 2147 | 2147 | 100.00% | 0.000000 | APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT |
-| 1509.secondary_current_A | 2147 | 0 | – | – | OBSERVED_NEEDS_MORE_PROOF |
-| 1509.soc_percent | 2147 | 2147 | 100.00% | 0.000000 | APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT |
-| 1509.voltage_V | 2147 | 2147 | 100.00% | 0.000000 | APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT |
-| 150A.motor_current_A | 2145 | 0 | – | – | OBSERVED_NEEDS_MORE_PROOF |
+| 1505.powerA_W | 2120 | 0 | – | – | OBSERVED_NEEDS_MORE_PROOF |
+| 1505.powerB_W | 2120 | 0 | – | – | OBSERVED_NEEDS_MORE_PROOF |
+| 1505.speed_kmh | 2120 | 2120 | 100.00% | 0.000000 | APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT |
+| 1509.current_A | 2155 | 2155 | 100.00% | 0.000000 | APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT |
+| 1509.direct_power_W | 2155 | 2155 | 100.00% | 0.000000 | APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT |
+| 1509.secondary_current_A | 2155 | 0 | – | – | OBSERVED_NEEDS_MORE_PROOF |
+| 1509.soc_percent | 2155 | 2155 | 100.00% | 0.000000 | APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT |
+| 1509.voltage_V | 2155 | 2155 | 100.00% | 0.000000 | APP_EXPORT_CONSISTENT_WITH_SDK_LAYOUT |
+| 150A.motor_current_A | 2153 | 0 | – | – | OBSERVED_NEEDS_MORE_PROOF |
 
 ## Datenqualität je Export
 
@@ -42,6 +42,7 @@ Ausgewertete Messfahrten: **21**
 | Messfahrt_2026-08-23_20-09-40-050 | 1039 | 1036 | 0 | 3 | 0 | 3 |
 | Messfahrt_2026-08-25_17-04-11-987 | 760 | 755 | 0 | 5 | 0 | 5 |
 | Messfahrt_2026-08-25_20-25-07-885 | 1724 | 1722 | 0 | 2 | 0 | 2 |
+| Messfahrt_2026-08-26_15-16-07-103 | 66 | 66 | 0 | 0 | 0 | 0 |
 
 ## Schutzregel
 

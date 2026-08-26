@@ -1,16 +1,16 @@
 {
   "schema": "vmax-bt638-gatt-read-aggregate-v2",
   "readOnly": true,
-  "diagnosticBundles": 37,
-  "sourceBundleCopies": 65,
-  "duplicateBundleCopies": 28,
-  "records": 1197,
-  "readAttempts": 644,
-  "readCallbacks": 644,
-  "readSuccesses": 644,
-  "payloadCallbacks": 644,
-  "validPayloadCallbacks": 644,
-  "observations": 553,
+  "diagnosticBundles": 38,
+  "sourceBundleCopies": 67,
+  "duplicateBundleCopies": 29,
+  "records": 1280,
+  "readAttempts": 672,
+  "readCallbacks": 672,
+  "readSuccesses": 672,
+  "payloadCallbacks": 672,
+  "validPayloadCallbacks": 672,
+  "observations": 608,
   "characteristics": 28,
   "successfulCharacteristics": 28,
   "payloadCharacteristics": 28,
@@ -28,27 +28,27 @@
         "00010203-0405-0607-0809-0a0b0c0d2b12"
       ],
       "knownTarget": null,
-      "attempts": 23,
-      "callbacks": 23,
-      "successes": 23,
-      "validCallbacks": 23,
+      "attempts": 24,
+      "callbacks": 24,
+      "successes": 24,
+      "validCallbacks": 24,
       "failures": 0,
       "nonCallbackEvents": 0,
       "statusCounts": {
-        "0": 23
+        "0": 24
       },
       "outcomeCounts": {
-        "CALLBACK_SUCCESS": 23
+        "CALLBACK_SUCCESS": 24
       },
-      "payloadCount": 23,
-      "validPayloadCount": 23,
+      "payloadCount": 24,
+      "validPayloadCount": 24,
       "invalidPayloadCount": 0,
       "uniquePayloadCount": 1,
       "lengthCounts": {
-        "1": 23
+        "1": 24
       },
       "validLengthCounts": {
-        "1": 23
+        "1": 24
       },
       "dynamicAcrossScans": false,
       "variableByteIndexes": [],
@@ -74,6 +74,7 @@
         "6"
       ],
       "connectionEpochs": [
+        "1",
         "2",
         "3"
       ],
@@ -95,27 +96,27 @@
         "da1a1501-d532-4285-be94-b07a3e11a098"
       ],
       "knownTarget": null,
-      "attempts": 23,
-      "callbacks": 23,
-      "successes": 23,
-      "validCallbacks": 23,
+      "attempts": 24,
+      "callbacks": 24,
+      "successes": 24,
+      "validCallbacks": 24,
       "failures": 0,
       "nonCallbackEvents": 0,
       "statusCounts": {
-        "0": 23
+        "0": 24
       },
       "outcomeCounts": {
-        "CALLBACK_SUCCESS": 23
+        "CALLBACK_SUCCESS": 24
       },
-      "payloadCount": 23,
-      "validPayloadCount": 23,
+      "payloadCount": 24,
+      "validPayloadCount": 24,
       "invalidPayloadCount": 0,
       "uniquePayloadCount": 1,
       "lengthCounts": {
-        "18": 23
+        "18": 24
       },
       "validLengthCounts": {
-        "18": 23
+        "18": 24
       },
       "dynamicAcrossScans": false,
       "variableByteIndexes": [],
@@ -139,6 +140,7 @@
         "2"
       ],
       "connectionEpochs": [
+        "1",
         "2",
         "3"
       ],
@@ -160,27 +162,27 @@
         "da1a1502-d532-4285-be94-b07a3e11a098"
       ],
       "knownTarget": "Battery/static candidate",
-      "attempts": 23,
-      "callbacks": 23,
-      "successes": 23,
-      "validCallbacks": 23,
+      "attempts": 24,
+      "callbacks": 24,
+      "successes": 24,
+      "validCallbacks": 24,
       "failures": 0,
       "nonCallbackEvents": 0,
       "statusCounts": {
-        "0": 23
+        "0": 24
       },
       "outcomeCounts": {
-        "CALLBACK_SUCCESS": 23
+        "CALLBACK_SUCCESS": 24
       },
-      "payloadCount": 23,
-      "validPayloadCount": 23,
+      "payloadCount": 24,
+      "validPayloadCount": 24,
       "invalidPayloadCount": 0,
       "uniquePayloadCount": 1,
       "lengthCounts": {
-        "16": 23
+        "16": 24
       },
       "validLengthCounts": {
-        "16": 23
+        "16": 24
       },
       "dynamicAcrossScans": false,
       "variableByteIndexes": [],
@@ -206,6 +208,7 @@
         "18"
       ],
       "connectionEpochs": [
+        "1",
         "2",
         "3"
       ],
@@ -227,27 +230,27 @@
         "da1a1503-d532-4285-be94-b07a3e11a098"
       ],
       "knownTarget": null,
-      "attempts": 23,
-      "callbacks": 23,
-      "successes": 23,
-      "validCallbacks": 23,
+      "attempts": 24,
+      "callbacks": 24,
+      "successes": 24,
+      "validCallbacks": 24,
       "failures": 0,
       "nonCallbackEvents": 0,
       "statusCounts": {
-        "0": 23
+        "0": 24
       },
       "outcomeCounts": {
-        "CALLBACK_SUCCESS": 23
+        "CALLBACK_SUCCESS": 24
       },
-      "payloadCount": 23,
-      "validPayloadCount": 23,
+      "payloadCount": 24,
+      "validPayloadCount": 24,
       "invalidPayloadCount": 0,
       "uniquePayloadCount": 3,
       "lengthCounts": {
-        "2": 23
+        "2": 24
       },
       "validLengthCounts": {
-        "2": 23
+        "2": 24
       },
       "dynamicAcrossScans": true,
       "variableByteIndexes": [
@@ -280,6 +283,7 @@
         "2"
       ],
       "connectionEpochs": [
+        "1",
         "2",
         "3"
       ],
@@ -301,27 +305,27 @@
         "da1a1504-d532-4285-be94-b07a3e11a098"
       ],
       "knownTarget": null,
-      "attempts": 23,
-      "callbacks": 23,
-      "successes": 23,
-      "validCallbacks": 23,
+      "attempts": 24,
+      "callbacks": 24,
+      "successes": 24,
+      "validCallbacks": 24,
       "failures": 0,
       "nonCallbackEvents": 0,
       "statusCounts": {
-        "0": 23
+        "0": 24
       },
       "outcomeCounts": {
-        "CALLBACK_SUCCESS": 23
+        "CALLBACK_SUCCESS": 24
       },
-      "payloadCount": 23,
-      "validPayloadCount": 23,
+      "payloadCount": 24,
+      "validPayloadCount": 24,
       "invalidPayloadCount": 0,
       "uniquePayloadCount": 1,
       "lengthCounts": {
-        "19": 23
+        "19": 24
       },
       "validLengthCounts": {
-        "19": 23
+        "19": 24
       },
       "dynamicAcrossScans": false,
       "variableByteIndexes": [],
@@ -345,6 +349,7 @@
         "2"
       ],
       "connectionEpochs": [
+        "1",
         "2",
         "3"
       ],
@@ -366,27 +371,27 @@
         "da1a1505-d532-4285-be94-b07a3e11a098"
       ],
       "knownTarget": null,
-      "attempts": 23,
-      "callbacks": 23,
-      "successes": 23,
-      "validCallbacks": 23,
+      "attempts": 24,
+      "callbacks": 24,
+      "successes": 24,
+      "validCallbacks": 24,
       "failures": 0,
       "nonCallbackEvents": 0,
       "statusCounts": {
-        "0": 23
+        "0": 24
       },
       "outcomeCounts": {
-        "CALLBACK_SUCCESS": 23
+        "CALLBACK_SUCCESS": 24
       },
-      "payloadCount": 23,
-      "validPayloadCount": 23,
+      "payloadCount": 24,
+      "validPayloadCount": 24,
       "invalidPayloadCount": 0,
       "uniquePayloadCount": 7,
       "lengthCounts": {
-        "18": 23
+        "18": 24
       },
       "validLengthCounts": {
-        "18": 23
+        "18": 24
       },
       "dynamicAcrossScans": true,
       "variableByteIndexes": [
@@ -430,6 +435,7 @@
         "18"
       ],
       "connectionEpochs": [
+        "1",
         "2",
         "3"
       ],
@@ -451,27 +457,27 @@
         "da1a1506-d532-4285-be94-b07a3e11a098"
       ],
       "knownTarget": null,
-      "attempts": 23,
-      "callbacks": 23,
-      "successes": 23,
-      "validCallbacks": 23,
+      "attempts": 24,
+      "callbacks": 24,
+      "successes": 24,
+      "validCallbacks": 24,
       "failures": 0,
       "nonCallbackEvents": 0,
       "statusCounts": {
-        "0": 23
+        "0": 24
       },
       "outcomeCounts": {
-        "CALLBACK_SUCCESS": 23
+        "CALLBACK_SUCCESS": 24
       },
-      "payloadCount": 23,
-      "validPayloadCount": 23,
+      "payloadCount": 24,
+      "validPayloadCount": 24,
       "invalidPayloadCount": 0,
       "uniquePayloadCount": 19,
       "lengthCounts": {
-        "16": 23
+        "16": 24
       },
       "validLengthCounts": {
-        "16": 23
+        "16": 24
       },
       "dynamicAcrossScans": true,
       "variableByteIndexes": [
@@ -517,6 +523,7 @@
         "18"
       ],
       "connectionEpochs": [
+        "1",
         "2",
         "3"
       ],
@@ -538,27 +545,27 @@
         "da1a1507-d532-4285-be94-b07a3e11a098"
       ],
       "knownTarget": null,
-      "attempts": 23,
-      "callbacks": 23,
-      "successes": 23,
-      "validCallbacks": 23,
+      "attempts": 24,
+      "callbacks": 24,
+      "successes": 24,
+      "validCallbacks": 24,
       "failures": 0,
       "nonCallbackEvents": 0,
       "statusCounts": {
-        "0": 23
+        "0": 24
       },
       "outcomeCounts": {
-        "CALLBACK_SUCCESS": 23
+        "CALLBACK_SUCCESS": 24
       },
-      "payloadCount": 23,
-      "validPayloadCount": 23,
+      "payloadCount": 24,
+      "validPayloadCount": 24,
       "invalidPayloadCount": 0,
       "uniquePayloadCount": 9,
       "lengthCounts": {
-        "8": 23
+        "8": 24
       },
       "validLengthCounts": {
-        "8": 23
+        "8": 24
       },
       "dynamicAcrossScans": true,
       "variableByteIndexes": [
@@ -602,6 +609,7 @@
         "2"
       ],
       "connectionEpochs": [
+        "1",
         "2",
         "3"
       ],
@@ -623,27 +631,27 @@
         "da1a1508-d532-4285-be94-b07a3e11a098"
       ],
       "knownTarget": null,
-      "attempts": 23,
-      "callbacks": 23,
-      "successes": 23,
-      "validCallbacks": 23,
+      "attempts": 24,
+      "callbacks": 24,
+      "successes": 24,
+      "validCallbacks": 24,
       "failures": 0,
       "nonCallbackEvents": 0,
       "statusCounts": {
-        "0": 23
+        "0": 24
       },
       "outcomeCounts": {
-        "CALLBACK_SUCCESS": 23
+        "CALLBACK_SUCCESS": 24
       },
-      "payloadCount": 23,
-      "validPayloadCount": 23,
+      "payloadCount": 24,
+      "validPayloadCount": 24,
       "invalidPayloadCount": 0,
       "uniquePayloadCount": 4,
       "lengthCounts": {
-        "16": 23
+        "16": 24
       },
       "validLengthCounts": {
-        "16": 23
+        "16": 24
       },
       "dynamicAcrossScans": true,
       "variableByteIndexes": [
@@ -678,6 +686,7 @@
         "18"
       ],
       "connectionEpochs": [
+        "1",
         "2",
         "3"
       ],
@@ -699,27 +708,27 @@
         "da1a1509-d532-4285-be94-b07a3e11a098"
       ],
       "knownTarget": "Battery live layout",
-      "attempts": 23,
-      "callbacks": 23,
-      "successes": 23,
-      "validCallbacks": 23,
+      "attempts": 24,
+      "callbacks": 24,
+      "successes": 24,
+      "validCallbacks": 24,
       "failures": 0,
       "nonCallbackEvents": 0,
       "statusCounts": {
-        "0": 23
+        "0": 24
       },
       "outcomeCounts": {
-        "CALLBACK_SUCCESS": 23
+        "CALLBACK_SUCCESS": 24
       },
-      "payloadCount": 23,
-      "validPayloadCount": 23,
+      "payloadCount": 24,
+      "validPayloadCount": 24,
       "invalidPayloadCount": 0,
-      "uniquePayloadCount": 22,
+      "uniquePayloadCount": 23,
       "lengthCounts": {
-        "11": 23
+        "11": 24
       },
       "validLengthCounts": {
-        "11": 23
+        "11": 24
       },
       "dynamicAcrossScans": true,
       "variableByteIndexes": [
@@ -766,6 +775,7 @@
         "18"
       ],
       "connectionEpochs": [
+        "1",
         "2",
         "3"
       ],
@@ -787,27 +797,27 @@
         "da1a150a-d532-4285-be94-b07a3e11a098"
       ],
       "knownTarget": "Motor live layout",
-      "attempts": 23,
-      "callbacks": 23,
-      "successes": 23,
-      "validCallbacks": 23,
+      "attempts": 24,
+      "callbacks": 24,
+      "successes": 24,
+      "validCallbacks": 24,
       "failures": 0,
       "nonCallbackEvents": 0,
       "statusCounts": {
-        "0": 23
+        "0": 24
       },
       "outcomeCounts": {
-        "CALLBACK_SUCCESS": 23
+        "CALLBACK_SUCCESS": 24
       },
-      "payloadCount": 23,
-      "validPayloadCount": 23,
+      "payloadCount": 24,
+      "validPayloadCount": 24,
       "invalidPayloadCount": 0,
       "uniquePayloadCount": 3,
       "lengthCounts": {
-        "10": 23
+        "10": 24
       },
       "validLengthCounts": {
-        "10": 23
+        "10": 24
       },
       "dynamicAcrossScans": true,
       "variableByteIndexes": [
@@ -840,6 +850,7 @@
         "18"
       ],
       "connectionEpochs": [
+        "1",
         "2",
         "3"
       ],
@@ -861,27 +872,27 @@
         "da1a150b-d532-4285-be94-b07a3e11a098"
       ],
       "knownTarget": null,
-      "attempts": 23,
-      "callbacks": 23,
-      "successes": 23,
-      "validCallbacks": 23,
+      "attempts": 24,
+      "callbacks": 24,
+      "successes": 24,
+      "validCallbacks": 24,
       "failures": 0,
       "nonCallbackEvents": 0,
       "statusCounts": {
-        "0": 23
+        "0": 24
       },
       "outcomeCounts": {
-        "CALLBACK_SUCCESS": 23
+        "CALLBACK_SUCCESS": 24
       },
-      "payloadCount": 23,
-      "validPayloadCount": 23,
+      "payloadCount": 24,
+      "validPayloadCount": 24,
       "invalidPayloadCount": 0,
       "uniquePayloadCount": 1,
       "lengthCounts": {
-        "20": 23
+        "20": 24
       },
       "validLengthCounts": {
-        "20": 23
+        "20": 24
       },
       "dynamicAcrossScans": false,
       "variableByteIndexes": [],
@@ -907,6 +918,7 @@
         "18"
       ],
       "connectionEpochs": [
+        "1",
         "2",
         "3"
       ],
@@ -928,27 +940,27 @@
         "da1a150c-d532-4285-be94-b07a3e11a098"
       ],
       "knownTarget": "BatteryCellUpdate candidate",
-      "attempts": 23,
-      "callbacks": 23,
-      "successes": 23,
-      "validCallbacks": 23,
+      "attempts": 24,
+      "callbacks": 24,
+      "successes": 24,
+      "validCallbacks": 24,
       "failures": 0,
       "nonCallbackEvents": 0,
       "statusCounts": {
-        "0": 23
+        "0": 24
       },
       "outcomeCounts": {
-        "CALLBACK_SUCCESS": 23
+        "CALLBACK_SUCCESS": 24
       },
-      "payloadCount": 23,
-      "validPayloadCount": 23,
+      "payloadCount": 24,
+      "validPayloadCount": 24,
       "invalidPayloadCount": 0,
       "uniquePayloadCount": 1,
       "lengthCounts": {
-        "13": 23
+        "13": 24
       },
       "validLengthCounts": {
-        "13": 23
+        "13": 24
       },
       "dynamicAcrossScans": false,
       "variableByteIndexes": [],
@@ -974,6 +986,7 @@
         "18"
       ],
       "connectionEpochs": [
+        "1",
         "2",
         "3"
       ],
@@ -995,27 +1008,27 @@
         "da1a150d-d532-4285-be94-b07a3e11a098"
       ],
       "knownTarget": null,
-      "attempts": 23,
-      "callbacks": 23,
-      "successes": 23,
-      "validCallbacks": 23,
+      "attempts": 24,
+      "callbacks": 24,
+      "successes": 24,
+      "validCallbacks": 24,
       "failures": 0,
       "nonCallbackEvents": 0,
       "statusCounts": {
-        "0": 23
+        "0": 24
       },
       "outcomeCounts": {
-        "CALLBACK_SUCCESS": 23
+        "CALLBACK_SUCCESS": 24
       },
-      "payloadCount": 23,
-      "validPayloadCount": 23,
+      "payloadCount": 24,
+      "validPayloadCount": 24,
       "invalidPayloadCount": 0,
       "uniquePayloadCount": 9,
       "lengthCounts": {
-        "20": 23
+        "20": 24
       },
       "validLengthCounts": {
-        "20": 23
+        "20": 24
       },
       "dynamicAcrossScans": true,
       "variableByteIndexes": [
@@ -1059,6 +1072,7 @@
         "18"
       ],
       "connectionEpochs": [
+        "1",
         "2",
         "3"
       ],
@@ -1080,27 +1094,27 @@
         "da1a150e-d532-4285-be94-b07a3e11a098"
       ],
       "knownTarget": null,
-      "attempts": 23,
-      "callbacks": 23,
-      "successes": 23,
-      "validCallbacks": 23,
+      "attempts": 24,
+      "callbacks": 24,
+      "successes": 24,
+      "validCallbacks": 24,
       "failures": 0,
       "nonCallbackEvents": 0,
       "statusCounts": {
-        "0": 23
+        "0": 24
       },
       "outcomeCounts": {
-        "CALLBACK_SUCCESS": 23
+        "CALLBACK_SUCCESS": 24
       },
-      "payloadCount": 23,
-      "validPayloadCount": 23,
+      "payloadCount": 24,
+      "validPayloadCount": 24,
       "invalidPayloadCount": 0,
       "uniquePayloadCount": 1,
       "lengthCounts": {
-        "20": 23
+        "20": 24
       },
       "validLengthCounts": {
-        "20": 23
+        "20": 24
       },
       "dynamicAcrossScans": false,
       "variableByteIndexes": [],
@@ -1124,6 +1138,7 @@
         "2"
       ],
       "connectionEpochs": [
+        "1",
         "2",
         "3"
       ],
@@ -1145,27 +1160,27 @@
         "da1a150f-d532-4285-be94-b07a3e11a098"
       ],
       "knownTarget": null,
-      "attempts": 23,
-      "callbacks": 23,
-      "successes": 23,
-      "validCallbacks": 23,
+      "attempts": 24,
+      "callbacks": 24,
+      "successes": 24,
+      "validCallbacks": 24,
       "failures": 0,
       "nonCallbackEvents": 0,
       "statusCounts": {
-        "0": 23
+        "0": 24
       },
       "outcomeCounts": {
-        "CALLBACK_SUCCESS": 23
+        "CALLBACK_SUCCESS": 24
       },
-      "payloadCount": 23,
-      "validPayloadCount": 23,
+      "payloadCount": 24,
+      "validPayloadCount": 24,
       "invalidPayloadCount": 0,
       "uniquePayloadCount": 1,
       "lengthCounts": {
-        "20": 23
+        "20": 24
       },
       "validLengthCounts": {
-        "20": 23
+        "20": 24
       },
       "dynamicAcrossScans": false,
       "variableByteIndexes": [],
@@ -1189,6 +1204,7 @@
         "2"
       ],
       "connectionEpochs": [
+        "1",
         "2",
         "3"
       ],
@@ -1210,27 +1226,27 @@
         "da1a1510-d532-4285-be94-b07a3e11a098"
       ],
       "knownTarget": null,
-      "attempts": 23,
-      "callbacks": 23,
-      "successes": 23,
-      "validCallbacks": 23,
+      "attempts": 24,
+      "callbacks": 24,
+      "successes": 24,
+      "validCallbacks": 24,
       "failures": 0,
       "nonCallbackEvents": 0,
       "statusCounts": {
-        "0": 23
+        "0": 24
       },
       "outcomeCounts": {
-        "CALLBACK_SUCCESS": 23
+        "CALLBACK_SUCCESS": 24
       },
-      "payloadCount": 23,
-      "validPayloadCount": 23,
+      "payloadCount": 24,
+      "validPayloadCount": 24,
       "invalidPayloadCount": 0,
       "uniquePayloadCount": 1,
       "lengthCounts": {
-        "20": 23
+        "20": 24
       },
       "validLengthCounts": {
-        "20": 23
+        "20": 24
       },
       "dynamicAcrossScans": false,
       "variableByteIndexes": [],
@@ -1254,6 +1270,7 @@
         "2"
       ],
       "connectionEpochs": [
+        "1",
         "2",
         "3"
       ],
@@ -1275,27 +1292,27 @@
         "da1a1511-d532-4285-be94-b07a3e11a098"
       ],
       "knownTarget": null,
-      "attempts": 23,
-      "callbacks": 23,
-      "successes": 23,
-      "validCallbacks": 23,
+      "attempts": 24,
+      "callbacks": 24,
+      "successes": 24,
+      "validCallbacks": 24,
       "failures": 0,
       "nonCallbackEvents": 0,
       "statusCounts": {
-        "0": 23
+        "0": 24
       },
       "outcomeCounts": {
-        "CALLBACK_SUCCESS": 23
+        "CALLBACK_SUCCESS": 24
       },
-      "payloadCount": 23,
-      "validPayloadCount": 23,
+      "payloadCount": 24,
+      "validPayloadCount": 24,
       "invalidPayloadCount": 0,
       "uniquePayloadCount": 1,
       "lengthCounts": {
-        "20": 23
+        "20": 24
       },
       "validLengthCounts": {
-        "20": 23
+        "20": 24
       },
       "dynamicAcrossScans": false,
       "variableByteIndexes": [],
@@ -1319,6 +1336,7 @@
         "2"
       ],
       "connectionEpochs": [
+        "1",
         "2",
         "3"
       ],
@@ -1340,27 +1358,27 @@
         "da1a1512-d532-4285-be94-b07a3e11a098"
       ],
       "knownTarget": null,
-      "attempts": 23,
-      "callbacks": 23,
-      "successes": 23,
-      "validCallbacks": 23,
+      "attempts": 24,
+      "callbacks": 24,
+      "successes": 24,
+      "validCallbacks": 24,
       "failures": 0,
       "nonCallbackEvents": 0,
       "statusCounts": {
-        "0": 23
+        "0": 24
       },
       "outcomeCounts": {
-        "CALLBACK_SUCCESS": 23
+        "CALLBACK_SUCCESS": 24
       },
-      "payloadCount": 23,
-      "validPayloadCount": 23,
+      "payloadCount": 24,
+      "validPayloadCount": 24,
       "invalidPayloadCount": 0,
       "uniquePayloadCount": 1,
       "lengthCounts": {
-        "20": 23
+        "20": 24
       },
       "validLengthCounts": {
-        "20": 23
+        "20": 24
       },
       "dynamicAcrossScans": false,
       "variableByteIndexes": [],
@@ -1384,6 +1402,7 @@
         "2"
       ],
       "connectionEpochs": [
+        "1",
         "2",
         "3"
       ],
@@ -1405,27 +1424,27 @@
         "da1a1513-d532-4285-be94-b07a3e11a098"
       ],
       "knownTarget": null,
-      "attempts": 23,
-      "callbacks": 23,
-      "successes": 23,
-      "validCallbacks": 23,
+      "attempts": 24,
+      "callbacks": 24,
+      "successes": 24,
+      "validCallbacks": 24,
       "failures": 0,
       "nonCallbackEvents": 0,
       "statusCounts": {
-        "0": 23
+        "0": 24
       },
       "outcomeCounts": {
-        "CALLBACK_SUCCESS": 23
+        "CALLBACK_SUCCESS": 24
       },
-      "payloadCount": 23,
-      "validPayloadCount": 23,
+      "payloadCount": 24,
+      "validPayloadCount": 24,
       "invalidPayloadCount": 0,
       "uniquePayloadCount": 1,
       "lengthCounts": {
-        "20": 23
+        "20": 24
       },
       "validLengthCounts": {
-        "20": 23
+        "20": 24
       },
       "dynamicAcrossScans": false,
       "variableByteIndexes": [],
@@ -1449,6 +1468,7 @@
         "2"
       ],
       "connectionEpochs": [
+        "1",
         "2",
         "3"
       ],
@@ -1470,27 +1490,27 @@
         "da1a151c-d532-4285-be94-b07a3e11a098"
       ],
       "knownTarget": null,
-      "attempts": 23,
-      "callbacks": 23,
-      "successes": 23,
-      "validCallbacks": 23,
+      "attempts": 24,
+      "callbacks": 24,
+      "successes": 24,
+      "validCallbacks": 24,
       "failures": 0,
       "nonCallbackEvents": 0,
       "statusCounts": {
-        "0": 23
+        "0": 24
       },
       "outcomeCounts": {
-        "CALLBACK_SUCCESS": 23
+        "CALLBACK_SUCCESS": 24
       },
-      "payloadCount": 23,
-      "validPayloadCount": 23,
+      "payloadCount": 24,
+      "validPayloadCount": 24,
       "invalidPayloadCount": 0,
       "uniquePayloadCount": 1,
       "lengthCounts": {
-        "10": 23
+        "10": 24
       },
       "validLengthCounts": {
-        "10": 23
+        "10": 24
       },
       "dynamicAcrossScans": false,
       "variableByteIndexes": [],
@@ -1514,6 +1534,7 @@
         "2"
       ],
       "connectionEpochs": [
+        "1",
         "2",
         "3"
       ],
@@ -1535,27 +1556,27 @@
         "da1a1802-d532-4285-be94-b07a3e11a098"
       ],
       "knownTarget": null,
-      "attempts": 23,
-      "callbacks": 23,
-      "successes": 23,
-      "validCallbacks": 23,
+      "attempts": 24,
+      "callbacks": 24,
+      "successes": 24,
+      "validCallbacks": 24,
       "failures": 0,
       "nonCallbackEvents": 0,
       "statusCounts": {
-        "0": 23
+        "0": 24
       },
       "outcomeCounts": {
-        "CALLBACK_SUCCESS": 23
+        "CALLBACK_SUCCESS": 24
       },
-      "payloadCount": 23,
-      "validPayloadCount": 23,
+      "payloadCount": 24,
+      "validPayloadCount": 24,
       "invalidPayloadCount": 0,
       "uniquePayloadCount": 3,
       "lengthCounts": {
-        "20": 23
+        "20": 24
       },
       "validLengthCounts": {
-        "20": 23
+        "20": 24
       },
       "dynamicAcrossScans": true,
       "variableByteIndexes": [],
@@ -1581,6 +1602,7 @@
         "2"
       ],
       "connectionEpochs": [
+        "1",
         "2",
         "3"
       ],
@@ -1602,27 +1624,27 @@
         "00002a00-0000-1000-8000-00805f9b34fb"
       ],
       "knownTarget": null,
-      "attempts": 23,
-      "callbacks": 23,
-      "successes": 23,
-      "validCallbacks": 23,
+      "attempts": 24,
+      "callbacks": 24,
+      "successes": 24,
+      "validCallbacks": 24,
       "failures": 0,
       "nonCallbackEvents": 0,
       "statusCounts": {
-        "0": 23
+        "0": 24
       },
       "outcomeCounts": {
-        "CALLBACK_SUCCESS": 23
+        "CALLBACK_SUCCESS": 24
       },
-      "payloadCount": 23,
-      "validPayloadCount": 23,
+      "payloadCount": 24,
+      "validPayloadCount": 24,
       "invalidPayloadCount": 0,
       "uniquePayloadCount": 1,
       "lengthCounts": {
-        "24": 23
+        "24": 24
       },
       "validLengthCounts": {
-        "24": 23
+        "24": 24
       },
       "dynamicAcrossScans": false,
       "variableByteIndexes": [],
@@ -1646,6 +1668,7 @@
         "18"
       ],
       "connectionEpochs": [
+        "1",
         "2",
         "3"
       ],
@@ -1667,27 +1690,27 @@
         "00002a01-0000-1000-8000-00805f9b34fb"
       ],
       "knownTarget": null,
-      "attempts": 23,
-      "callbacks": 23,
-      "successes": 23,
-      "validCallbacks": 23,
+      "attempts": 24,
+      "callbacks": 24,
+      "successes": 24,
+      "validCallbacks": 24,
       "failures": 0,
       "nonCallbackEvents": 0,
       "statusCounts": {
-        "0": 23
+        "0": 24
       },
       "outcomeCounts": {
-        "CALLBACK_SUCCESS": 23
+        "CALLBACK_SUCCESS": 24
       },
-      "payloadCount": 23,
-      "validPayloadCount": 23,
+      "payloadCount": 24,
+      "validPayloadCount": 24,
       "invalidPayloadCount": 0,
       "uniquePayloadCount": 1,
       "lengthCounts": {
-        "2": 23
+        "2": 24
       },
       "validLengthCounts": {
-        "2": 23
+        "2": 24
       },
       "dynamicAcrossScans": false,
       "variableByteIndexes": [],
@@ -1713,6 +1736,7 @@
         "2"
       ],
       "connectionEpochs": [
+        "1",
         "2",
         "3"
       ],
@@ -1734,27 +1758,27 @@
         "00002a02-0000-1000-8000-00805f9b34fb"
       ],
       "knownTarget": null,
-      "attempts": 23,
-      "callbacks": 23,
-      "successes": 23,
-      "validCallbacks": 23,
+      "attempts": 24,
+      "callbacks": 24,
+      "successes": 24,
+      "validCallbacks": 24,
       "failures": 0,
       "nonCallbackEvents": 0,
       "statusCounts": {
-        "0": 23
+        "0": 24
       },
       "outcomeCounts": {
-        "CALLBACK_SUCCESS": 23
+        "CALLBACK_SUCCESS": 24
       },
-      "payloadCount": 23,
-      "validPayloadCount": 23,
+      "payloadCount": 24,
+      "validPayloadCount": 24,
       "invalidPayloadCount": 0,
       "uniquePayloadCount": 1,
       "lengthCounts": {
-        "2": 23
+        "2": 24
       },
       "validLengthCounts": {
-        "2": 23
+        "2": 24
       },
       "dynamicAcrossScans": false,
       "variableByteIndexes": [],
@@ -1780,6 +1804,7 @@
         "2"
       ],
       "connectionEpochs": [
+        "1",
         "2",
         "3"
       ],
@@ -1801,27 +1826,27 @@
         "00002a04-0000-1000-8000-00805f9b34fb"
       ],
       "knownTarget": null,
-      "attempts": 23,
-      "callbacks": 23,
-      "successes": 23,
-      "validCallbacks": 23,
+      "attempts": 24,
+      "callbacks": 24,
+      "successes": 24,
+      "validCallbacks": 24,
       "failures": 0,
       "nonCallbackEvents": 0,
       "statusCounts": {
-        "0": 23
+        "0": 24
       },
       "outcomeCounts": {
-        "CALLBACK_SUCCESS": 23
+        "CALLBACK_SUCCESS": 24
       },
-      "payloadCount": 23,
-      "validPayloadCount": 23,
+      "payloadCount": 24,
+      "validPayloadCount": 24,
       "invalidPayloadCount": 0,
       "uniquePayloadCount": 1,
       "lengthCounts": {
-        "8": 23
+        "8": 24
       },
       "validLengthCounts": {
-        "8": 23
+        "8": 24
       },
       "dynamicAcrossScans": false,
       "variableByteIndexes": [],
@@ -1847,6 +1872,7 @@
         "2"
       ],
       "connectionEpochs": [
+        "1",
         "2",
         "3"
       ],
@@ -1868,27 +1894,27 @@
         "00002a28-0000-1000-8000-00805f9b34fb"
       ],
       "knownTarget": null,
-      "attempts": 23,
-      "callbacks": 23,
-      "successes": 23,
-      "validCallbacks": 23,
+      "attempts": 24,
+      "callbacks": 24,
+      "successes": 24,
+      "validCallbacks": 24,
       "failures": 0,
       "nonCallbackEvents": 0,
       "statusCounts": {
-        "0": 23
+        "0": 24
       },
       "outcomeCounts": {
-        "CALLBACK_SUCCESS": 23
+        "CALLBACK_SUCCESS": 24
       },
-      "payloadCount": 23,
-      "validPayloadCount": 23,
+      "payloadCount": 24,
+      "validPayloadCount": 24,
       "invalidPayloadCount": 0,
       "uniquePayloadCount": 1,
       "lengthCounts": {
-        "10": 23
+        "10": 24
       },
       "validLengthCounts": {
-        "10": 23
+        "10": 24
       },
       "dynamicAcrossScans": false,
       "variableByteIndexes": [],
@@ -1912,6 +1938,7 @@
         "2"
       ],
       "connectionEpochs": [
+        "1",
         "2",
         "3"
       ],
@@ -1933,27 +1960,27 @@
         "00002a05-0000-1000-8000-00805f9b34fb"
       ],
       "knownTarget": null,
-      "attempts": 23,
-      "callbacks": 23,
-      "successes": 23,
-      "validCallbacks": 23,
+      "attempts": 24,
+      "callbacks": 24,
+      "successes": 24,
+      "validCallbacks": 24,
       "failures": 0,
       "nonCallbackEvents": 0,
       "statusCounts": {
-        "0": 23
+        "0": 24
       },
       "outcomeCounts": {
-        "CALLBACK_SUCCESS": 23
+        "CALLBACK_SUCCESS": 24
       },
-      "payloadCount": 23,
-      "validPayloadCount": 23,
+      "payloadCount": 24,
+      "validPayloadCount": 24,
       "invalidPayloadCount": 0,
       "uniquePayloadCount": 1,
       "lengthCounts": {
-        "4": 23
+        "4": 24
       },
       "validLengthCounts": {
-        "4": 23
+        "4": 24
       },
       "dynamicAcrossScans": false,
       "variableByteIndexes": [],
@@ -1979,6 +2006,7 @@
         "123"
       ],
       "connectionEpochs": [
+        "1",
         "2",
         "3"
       ],
