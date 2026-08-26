@@ -11,6 +11,8 @@ class ScooterConnectionStateTest {
     fun reconnectClearsLatestConnectionValuesButKeepsMeasurementAggregates() {
         val old = ScooterState(
             connected = true,
+            connectionDesired = true,
+            recordingDesired = false,
             telemetryReady = true,
             connectionEpoch = 4L,
             speedSampleConnectionEpoch = 4L,
@@ -19,6 +21,9 @@ class ScooterConnectionStateTest {
             gattOperationBusy = true,
             batteryPercent = 61,
             batteryPercentRaw = 48,
+            lastKnownBatteryPercent = 61,
+            lastKnownVoltageV = 47.8,
+            lastKnownBatteryAt = 98L,
             speedKmh = 0.0,
             motorLoadRaw = 420,
             startModeRaw = 1,
@@ -36,6 +41,8 @@ class ScooterConnectionStateTest {
 
         assertTrue(cleared.connected)
         assertFalse(cleared.telemetryReady)
+        assertTrue(cleared.connectionDesired)
+        assertFalse(cleared.recordingDesired)
         assertEquals(5L, cleared.connectionEpoch)
         assertEquals(-1L, cleared.speedSampleConnectionEpoch)
         assertEquals(0L, cleared.lastSpeedSampleElapsedRealtimeMs)
@@ -43,6 +50,9 @@ class ScooterConnectionStateTest {
         assertFalse(cleared.gattOperationBusy)
         assertNull(cleared.batteryPercent)
         assertNull(cleared.batteryPercentRaw)
+        assertEquals(61, cleared.lastKnownBatteryPercent)
+        assertEquals(47.8, cleared.lastKnownVoltageV!!, 0.0)
+        assertEquals(98L, cleared.lastKnownBatteryAt)
         assertNull(cleared.speedKmh)
         assertNull(cleared.motorLoadRaw)
         assertNull(cleared.startModeRaw)
