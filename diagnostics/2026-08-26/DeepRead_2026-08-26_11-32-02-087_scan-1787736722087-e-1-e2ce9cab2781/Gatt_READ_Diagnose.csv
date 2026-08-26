@@ -1,0 +1,2 @@
+timestamp_ms;scan_id;record_kind;outcome;callback_received;service_uuid;characteristic_uuid;short_id;properties;properties_raw;status;length;hex;payload_valid;payload_sha256;public_redaction;connection_epoch;measurement_connection_epoch;rssi;evidence;meaning
+1787736722087;scan-1787736722087-e-1-e2ce9cab2781;CONNECTION_EVENT;ATTEMPT_STARTED;false;;;ATTEMPT;-;0;;0;;false;;;-1;;;BT638 beobachtet;Deep READ / BLE observation attempt started
