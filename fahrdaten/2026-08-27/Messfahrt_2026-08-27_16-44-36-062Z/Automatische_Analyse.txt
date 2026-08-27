@@ -1,0 +1,26 @@
+VMAX Automatische Messfahrt-Analyse
+Pakete: 62
+Dauer_ms: 22192
+Messdauer_ms: 22192
+Telemetrie_von_ms: 64
+Telemetrie_bis_ms: 21797
+Telemetriezeitraum_ms: 21733
+Größte_Datenlücke_ms: 1056
+Startverzögerung_ms: 64
+Endlücke_ms: 395
+Größte_globale_Datenstromlücke_ms: 1056
+Größte_kanalinterne_Taktlücke_ms: 2933
+Manuelle Marker: 0
+Automatische allgemeine Mustererkennung: aktiv
+Automatische Impuls-/Blink-Kandidaten: 0
+Gefundene Kandidaten gesamt: 0
+
+Keine eindeutigen unbekannten Schalter- oder Impulsmuster gefunden.
+Die bestätigten Fahrwerte wurden trotzdem automatisch aufgezeichnet und gespeichert.
+Für schwer erkennbare Funktionen kann zusätzlich ein einzelner Stillstandsmarker zur Bestätigung gesetzt werden.
+
+Die Automatik sucht jetzt unabhängig von Markern nach stabilen Umschaltern, kurzen Impulsen und regelmäßigen A-B-A-Mustern.
+Regelmäßige Wechsel mit ähnlichen Zeitabständen werden als möglicher Blinker-Kandidat markiert.
+Bekannte Telemetriebytes wie Geschwindigkeit, Spannung, Strom, Watt und Kilometerstand werden herausgefiltert.
+Stillstandstests dienen nur noch dazu, automatisch gefundene Kandidaten gezielt zu bestätigen.
+Hinweis: Prozentwerte sind technische Kandidatenbewertungen, keine endgültige Bestätigung der Bedeutung.
