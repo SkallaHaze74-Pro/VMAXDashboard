@@ -316,6 +316,8 @@ object MeasurementAnalyzer {
     private fun isSystemMarker(marker: Marker): Boolean {
         val label = marker.label.lowercase()
         return marker.label in setOf("START", "STOP", "PAUSE", "FORTSETZEN") ||
+            marker.label.startsWith(CONFIRMED_RIDE_EVENT_PREFIX) ||
+            label.startsWith("app_neustart") ||
             ((label.startsWith("ble ") || label.startsWith("ble-link")) &&
                 ("getrennt" in label || "wieder verbunden" in label)) ||
             label.startsWith("telemetrie wieder aktiv")

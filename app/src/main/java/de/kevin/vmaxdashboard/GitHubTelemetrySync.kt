@@ -26,6 +26,7 @@ import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.CodingErrorAction
 import java.security.KeyStore
+import java.security.MessageDigest
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.crypto.Cipher
@@ -56,17 +57,167 @@ internal val OPTIONAL_MEASUREMENT_FILES = listOf(
     DIAGNOSTIC_READ_MANIFEST_FILE
 )
 
-/** A measurement is complete with its core files; present diagnostics travel with it atomically. */
+internal const val MEASUREMENT_COMPLETION_FILE = "Export_komplett.json"
+internal const val MEASUREMENT_IN_PROGRESS_FILE = "Export_in_Arbeit.json"
+private const val MEASUREMENT_COMPLETION_SCHEMA_V2 = "vmax-measurement-completion-v2"
+
+/** MediaStore rows are consumed newest first; an older duplicate must not replace the first row. */
+internal fun <T> retainNewestMediaStoreFile(
+    filesByName: MutableMap<String, T>,
+    name: String,
+    value: T
+) {
+    if (name !in filesByName) filesByName[name] = value
+}
+
+/** All bundle contents precede the manifest, and the durable completion marker is always last. */
+internal fun measurementUploadPriority(name: String): Int = when (name) {
+    MEASUREMENT_COMPLETION_FILE -> 2
+    "manifest.json" -> 1
+    else -> 0
+}
+
+/** The limit counts newly queueable generations, never already-processed candidates. */
+internal fun <T> processQueueableCandidates(
+    candidates: Iterable<T>,
+    limit: Int,
+    attempt: (T) -> Boolean
+): Int {
+    var queued = 0
+    for (candidate in candidates) {
+        if (queued >= limit) break
+        if (attempt(candidate)) queued++
+    }
+    return queued
+}
+
+/** Core and any linked diagnostic generation must be complete before queueing. */
 internal fun measurementFilesToQueue(availableNames: Set<String>): List<String> {
+    if (MEASUREMENT_IN_PROGRESS_FILE in availableNames) return emptyList()
     if (!REQUIRED_MEASUREMENT_FILES.all(availableNames::contains)) return emptyList()
     val availableDiagnostics = OPTIONAL_MEASUREMENT_FILES.filter(availableNames::contains)
-    // A complete diagnostic triple travels atomically. If optional export failed
-    // after writing only part of it, never let those leftovers block the six core
-    // ride files or leak a torn diagnostic dataset to the public branch.
     if (availableDiagnostics.isNotEmpty() && availableDiagnostics.size != OPTIONAL_MEASUREMENT_FILES.size) {
-        return REQUIRED_MEASUREMENT_FILES
+        return emptyList()
     }
-    return REQUIRED_MEASUREMENT_FILES + availableDiagnostics
+    val completion = listOf(MEASUREMENT_COMPLETION_FILE).filter(availableNames::contains)
+    return REQUIRED_MEASUREMENT_FILES + availableDiagnostics + completion
+}
+
+/** Stable generation digest; file names and byte lengths prevent concatenation ambiguity. */
+internal fun measurementGenerationSha256(files: Map<String, ByteArray>): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    files.toSortedMap().forEach { (name, bytes) ->
+        val nameBytes = name.toByteArray(Charsets.UTF_8)
+        digest.update(ByteBuffer.allocate(Int.SIZE_BYTES).putInt(nameBytes.size).array())
+        digest.update(nameBytes)
+        digest.update(ByteBuffer.allocate(Int.SIZE_BYTES).putInt(bytes.size).array())
+        digest.update(bytes)
+    }
+    return digest.digest().joinToString("") { byte -> "%02x".format(byte.toInt() and 0xFF) }
+}
+
+internal fun measurementGenerationSourceKey(baseKey: String, completionBytes: ByteArray?): String {
+    if (completionBytes == null) return baseKey
+    val marker = runCatching {
+        JSONObject(String(completionBytes, Charsets.UTF_8))
+    }.getOrNull()
+    val generation = marker?.optString("generation_sha256")
+        ?.lowercase()
+        ?.takeIf { it.matches(Regex("[0-9a-f]{64}")) }
+        ?: measurementGenerationSha256(mapOf(MEASUREMENT_COMPLETION_FILE to completionBytes))
+    return "$baseKey:$generation"
+}
+
+internal fun measurementSourceBaseKey(sourceKey: String): String {
+    val suffix = sourceKey.substringAfterLast(':', missingDelimiterValue = "")
+    return if (suffix.matches(Regex("[0-9a-f]{64}"))) {
+        sourceKey.substringBeforeLast(':')
+    } else {
+        sourceKey
+    }
+}
+
+internal fun updatedProcessedSourceKeys(
+    existing: Set<String>,
+    sourceKey: String
+): Set<String> {
+    val baseKey = measurementSourceBaseKey(sourceKey)
+    return existing.filterTo(linkedSetOf()) {
+        measurementSourceBaseKey(it) != baseKey
+    }.apply { add(sourceKey) }
+}
+
+internal fun measurementFenceStillMatches(
+    initialCompletion: ByteArray?,
+    observedCompletion: ByteArray?,
+    inProgress: Boolean
+): Boolean = !inProgress && when {
+    initialCompletion == null -> observedCompletion == null
+    observedCompletion == null -> false
+    else -> initialCompletion.contentEquals(observedCompletion)
+}
+
+private fun summaryValue(summary: String, key: String): String? = summary.lineSequence()
+    .firstOrNull { it.startsWith("$key:") }
+    ?.substringAfter(':')
+    ?.trim()
+    ?.takeIf(String::isNotBlank)
+
+private fun isUtcMeasurementFolder(folderName: String): Boolean =
+    folderName.matches(Regex("Messfahrt_\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}-\\d{3}Z"))
+
+/**
+ * Validates the local/public generation fence, not just the presence of file names.
+ * Marker-less folders are accepted only as immutable legacy exports.
+ */
+internal fun measurementCommitAllowsPublication(
+    folderName: String,
+    summary: String,
+    files: Map<String, ByteArray>
+): Boolean {
+    if (MEASUREMENT_IN_PROGRESS_FILE in files) return false
+    val contentNames = REQUIRED_MEASUREMENT_FILES +
+        OPTIONAL_MEASUREMENT_FILES.filter(files::containsKey) +
+        listOf("manifest.json").filter(files::containsKey)
+    if (!REQUIRED_MEASUREMENT_FILES.all(files::containsKey)) return false
+    val completionBytes = files[MEASUREMENT_COMPLETION_FILE]
+    val summaryIdentity = summaryValue(summary, "Publikations_ID")
+    val startedAt = summaryValue(summary, "Start")?.toLongOrNull()
+    val expectedIdentity = startedAt?.let(::measurementPublicationIdentity)
+    if (completionBytes == null) {
+        return !isUtcMeasurementFolder(folderName) && summaryIdentity == null
+    }
+    val completion = runCatching {
+        JSONObject(String(completionBytes, Charsets.UTF_8))
+    }.getOrNull() ?: return false
+    val schema = completion.optString("schema")
+    // V1 had no content digest and therefore cannot fence a rewrite safely.
+    if (schema != MEASUREMENT_COMPLETION_SCHEMA_V2) return false
+    val markerIdentity = completion.optString("publication_identity").trim()
+    if (expectedIdentity == null || markerIdentity != expectedIdentity) return false
+    if (summaryIdentity != null && summaryIdentity != expectedIdentity) return false
+    if (isUtcMeasurementFolder(folderName) &&
+        folderName != "Messfahrt_${measurementExportStampUtc(startedAt)}"
+    ) return false
+    val expectedDigest = completion.optString("generation_sha256").lowercase()
+    if (!expectedDigest.matches(Regex("[0-9a-f]{64}"))) return false
+    val content = contentNames.associateWith { name -> files.getValue(name) }
+    return measurementGenerationSha256(content) == expectedDigest
+}
+
+/** Blocks legacy core-only folders that explicitly record a failed linked Deep READ. */
+internal fun measurementSummaryAllowsPublication(
+    summary: String,
+    availableNames: Set<String>
+): Boolean {
+    val scanLine = summary.lineSequence().firstOrNull { it.startsWith("Deep_READ_Scans:") }
+        ?: return true
+    val totalScans = scanLine.substringAfter(':').trim().toIntOrNull() ?: return false
+    if (totalScans <= 0) return true
+    if (!OPTIONAL_MEASUREMENT_FILES.all(availableNames::contains)) return false
+    val exportLine = summary.lineSequence().firstOrNull { it.startsWith("Deep_READ_Export:") }
+        ?: return false
+    return "vollständig archiviert" in exportLine
 }
 
 internal fun isCompleteMeasurementQueueFileSet(fileNames: Set<String>): Boolean {
@@ -75,6 +226,7 @@ internal fun isCompleteMeasurementQueueFileSet(fileNames: Set<String>): Boolean 
     if (optionalPresent != 0 && optionalPresent != OPTIONAL_MEASUREMENT_FILES.size) return false
     val expected = REQUIRED_MEASUREMENT_FILES.toSet() +
         (if (optionalPresent == OPTIONAL_MEASUREMENT_FILES.size) OPTIONAL_MEASUREMENT_FILES else emptyList()) +
+        listOf(MEASUREMENT_COMPLETION_FILE) +
         setOf("manifest.json", ".meta.json")
     return fileNames == expected
 }
@@ -93,6 +245,9 @@ internal fun hasExpectedMeasurementFileHeader(name: String, content: String): Bo
         DIAGNOSTIC_READ_CSV_FILE -> firstLine.startsWith("timestamp_ms;scan_id;")
         "Zusammenfassung.txt" -> firstLine.startsWith("VMAX Dashboard Messfahrt")
         DIAGNOSTIC_READ_SUMMARY_FILE -> firstLine.startsWith("VMAX BT638 Deep READ")
+        MEASUREMENT_COMPLETION_FILE -> runCatching {
+            JSONObject(content).getString("schema") == MEASUREMENT_COMPLETION_SCHEMA_V2
+        }.getOrDefault(false)
         "Lernprofil.json", DIAGNOSTIC_READ_MANIFEST_FILE, "manifest.json", ".meta.json" ->
             runCatching { JSONObject(content) }.isSuccess
         "Automatische_Analyse.txt" -> true
@@ -244,6 +399,16 @@ internal fun publicGitHubUploadBytesWithDiagnosticCsv(
         else -> bytes
     }
     return publicGitHubUploadBytes(name, enrichedBytes)
+}
+
+/** The queue stores exactly these final public bytes; upload must not transform them again. */
+internal fun finalPublicMeasurementUploadFiles(
+    files: Map<String, ByteArray>
+): Map<String, ByteArray> {
+    val diagnosticCsvBytes = files[DIAGNOSTIC_READ_CSV_FILE]
+    return files.mapValues { (name, bytes) ->
+        publicGitHubUploadBytesWithDiagnosticCsv(name, bytes, diagnosticCsvBytes)
+    }
 }
 
 internal data class TelemetryCsvMetrics(
@@ -473,7 +638,7 @@ class GitHubTelemetrySync private constructor(context: Context) {
             projection,
             selection,
             args,
-            "${MediaStore.MediaColumns.DATE_MODIFIED} DESC"
+            "${MediaStore.MediaColumns.DATE_MODIFIED} DESC, ${MediaStore.MediaColumns._ID} DESC"
         )?.use { cursor ->
             val idIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
             val nameIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
@@ -482,37 +647,36 @@ class GitHubTelemetrySync private constructor(context: Context) {
             while (cursor.moveToNext()) {
                 val path = cursor.getString(pathIndex) ?: continue
                 val name = cursor.getString(nameIndex) ?: continue
-                if (cursor.getLong(sizeIndex) <= 0L) continue
-                if (name !in REQUIRED_MEASUREMENT_FILES && name !in OPTIONAL_MEASUREMENT_FILES) continue
+                if (name !in REQUIRED_MEASUREMENT_FILES && name !in OPTIONAL_MEASUREMENT_FILES &&
+                    name != MEASUREMENT_COMPLETION_FILE && name != MEASUREMENT_IN_PROGRESS_FILE
+                ) continue
+                // A published in-progress fence blocks even if MediaStore has not
+                // refreshed its SIZE metadata yet. Content files still fail closed.
+                if (name != MEASUREMENT_IN_PROGRESS_FILE && cursor.getLong(sizeIndex) <= 0L) continue
                 val id = cursor.getLong(idIndex)
                 val uri = ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, id)
-                grouped.getOrPut(path) { linkedMapOf() }[name] = uri
+                retainNewestMediaStoreFile(
+                    grouped.getOrPut(path) { linkedMapOf() },
+                    name,
+                    uri
+                )
             }
         }
 
-        grouped.entries
-            .filter { (path, files) ->
+        processQueueableCandidates(grouped.entries, limit = 20) { (path, files) ->
+            val candidate = run {
                 val folderName = path.trimEnd('/').substringAfterLast('/')
-                val sourceKey = "mediastore:$path"
                 measurementFilesToQueue(files.keys).isNotEmpty() &&
-                    folderName.isNotBlank() &&
-                    shouldQueueMeasurementCandidate(
-                        alreadyProcessed = isProcessed(sourceKey),
-                        completeQueueAlreadyExists = isCompleteMeasurementQueueFolder(
-                            File(queueRoot, safeFolderName(folderName))
-                        )
-                    )
+                    folderName.isNotBlank()
             }
-            .take(20)
-            .forEach { (path, files) ->
-                queueMeasurement(path, files, resolver)
-            }
+            candidate && queueMeasurement(path, files, resolver)
+        }
     }
 
     private fun scanLegacyFiles() {
         val base = appContext.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS) ?: return
         val vmaxRoot = File(base, "VMAXDashboard")
-        vmaxRoot.listFiles()
+        val candidates = vmaxRoot.listFiles()
             ?.filter { it.isDirectory && it.name.startsWith("Messfahrt_") }
             ?.sortedByDescending(File::lastModified)
             ?.filter { folder ->
@@ -521,86 +685,136 @@ class GitHubTelemetrySync private constructor(context: Context) {
                     ?.map(File::getName)
                     ?.toSet()
                     .orEmpty()
-                measurementFilesToQueue(available).isNotEmpty() &&
-                    shouldQueueMeasurementCandidate(
-                        alreadyProcessed = isProcessed("legacy:${folder.absolutePath}"),
-                        completeQueueAlreadyExists = isCompleteMeasurementQueueFolder(
-                            File(queueRoot, safeFolderName(folder.name))
-                        )
-                    )
+                measurementFilesToQueue(available).isNotEmpty()
             }
-            ?.take(20)
-            ?.forEach { folder ->
-                val available = folder.listFiles()
-                    ?.filter(File::isFile)
-                    ?.map(File::getName)
-                    ?.toSet()
-                    .orEmpty()
-                if (measurementFilesToQueue(available).isEmpty()) return@forEach
-                queueLegacyMeasurement(folder)
-            }
+            .orEmpty()
+        processQueueableCandidates(candidates, limit = 20) { folder ->
+            queueLegacyMeasurement(folder)
+        }
     }
 
     private fun queueMeasurement(
         sourcePath: String,
         files: Map<String, Uri>,
         resolver: ContentResolver
-    ) {
+    ): Boolean {
         val folderName = sourcePath.trimEnd('/').substringAfterLast('/')
-        if (folderName.isBlank()) return
-        val sourceKey = "mediastore:$sourcePath"
-        if (isProcessed(sourceKey)) return
+        if (folderName.isBlank()) return false
+        val selectedFiles = measurementFilesToQueue(files.keys)
+        if (selectedFiles.isEmpty()) return false
+        val completionBytes = files[MEASUREMENT_COMPLETION_FILE]?.let { uri ->
+            resolver.openInputStream(uri)?.use { it.readBytes() }
+                ?: error("$MEASUREMENT_COMPLETION_FILE konnte nicht gelesen werden")
+        }
+        val sourceKey = measurementGenerationSourceKey(
+            "mediastore:$sourcePath",
+            completionBytes
+        )
+        if (isProcessed(sourceKey)) return false
         val queueFolder = File(queueRoot, safeFolderName(folderName))
-        if (!prepareMeasurementQueueTarget(queueFolder)) return
+        if (queueContainsSource(queueFolder, sourceKey)) return false
+        val sourceBytes = selectedFiles.associateWith { name ->
+            if (name == MEASUREMENT_COMPLETION_FILE && completionBytes != null) {
+                completionBytes
+            } else {
+                resolver.openInputStream(files.getValue(name))?.use { it.readBytes() }
+                    ?: error("$name konnte nicht gelesen werden")
+            }
+        }
+        val observedFence = readMediaStoreGenerationFence(resolver, sourcePath)
+        if (!measurementFenceStillMatches(
+                initialCompletion = completionBytes,
+                observedCompletion = observedFence.completionBytes,
+                inProgress = observedFence.inProgress
+            )
+        ) return false
+        val summaryText = sourceBytes["Zusammenfassung.txt"]
+            ?.let { String(it, Charsets.UTF_8) }
+            .orEmpty()
+        if (!measurementSummaryAllowsPublication(summaryText, files.keys)) {
+            setStatus("Messfahrt wartet auf den vollständigen verknüpften Deep READ: $folderName")
+            return false
+        }
+        if (!measurementCommitAllowsPublication(folderName, summaryText, sourceBytes)) {
+            setStatus("Messfahrt wartet auf einen gültigen vollständigen Export: $folderName")
+            return false
+        }
+        if (!prepareMeasurementQueueTarget(queueFolder, sourceKey)) return false
 
         val staging = File(queueRoot, ".${safeFolderName(folderName)}.tmp")
         staging.deleteRecursively()
         staging.mkdirs()
         try {
-            measurementFilesToQueue(files.keys).forEach { name ->
-                val uri = files.getValue(name)
-                resolver.openInputStream(uri)?.use { input ->
-                    val bytes = input.readBytes()
-                    val publicBytes = publicGitHubUploadBytes(name, bytes)
-                    check(hasExpectedMeasurementFileHeader(name, String(publicBytes, Charsets.UTF_8))) {
-                        "$name ist leer oder hat kein erwartetes Format"
-                    }
-                    File(staging, name).writeBytes(publicBytes)
-                } ?: error("$name konnte nicht gelesen werden")
+            selectedFiles.filterNot { it == MEASUREMENT_COMPLETION_FILE }.forEach { name ->
+                val bytes = sourceBytes.getValue(name)
+                check(hasExpectedMeasurementFileHeader(name, String(bytes, Charsets.UTF_8))) {
+                    "$name ist leer oder hat kein erwartetes Format"
+                }
+                File(staging, name).writeBytes(bytes)
             }
             finishQueueBundle(staging, queueFolder, folderName, sourceKey)
+            return true
         } catch (error: Exception) {
             staging.deleteRecursively()
             throw error
         }
     }
 
-    private fun queueLegacyMeasurement(sourceFolder: File) {
+    private fun queueLegacyMeasurement(sourceFolder: File): Boolean {
         val folderName = sourceFolder.name
-        val sourceKey = "legacy:${sourceFolder.absolutePath}"
-        if (isProcessed(sourceKey)) return
+        val available = sourceFolder.listFiles()
+            ?.filter(File::isFile)
+            ?.map(File::getName)
+            ?.toSet()
+            .orEmpty()
+        val selectedFiles = measurementFilesToQueue(available)
+        if (selectedFiles.isEmpty()) return false
+        val completionBytes = File(sourceFolder, MEASUREMENT_COMPLETION_FILE)
+            .takeIf(File::isFile)
+            ?.readBytes()
+        val sourceKey = measurementGenerationSourceKey(
+            "legacy:${sourceFolder.absolutePath}",
+            completionBytes
+        )
+        if (isProcessed(sourceKey)) return false
         val queueFolder = File(queueRoot, safeFolderName(folderName))
-        if (!prepareMeasurementQueueTarget(queueFolder)) return
+        if (queueContainsSource(queueFolder, sourceKey)) return false
+        val sourceBytes = selectedFiles.associateWith { name -> File(sourceFolder, name).readBytes() }
+        val observedCompletion = File(sourceFolder, MEASUREMENT_COMPLETION_FILE)
+            .takeIf(File::isFile)
+            ?.readBytes()
+        if (!measurementFenceStillMatches(
+                initialCompletion = completionBytes,
+                observedCompletion = observedCompletion,
+                inProgress = File(sourceFolder, MEASUREMENT_IN_PROGRESS_FILE).isFile
+            )
+        ) return false
+        val summaryText = sourceBytes["Zusammenfassung.txt"]
+            ?.let { String(it, Charsets.UTF_8) }
+            .orEmpty()
+        if (!measurementSummaryAllowsPublication(summaryText, available)) {
+            setStatus("Messfahrt wartet auf den vollständigen verknüpften Deep READ: $folderName")
+            return false
+        }
+        if (!measurementCommitAllowsPublication(folderName, summaryText, sourceBytes)) {
+            setStatus("Messfahrt wartet auf einen gültigen vollständigen Export: $folderName")
+            return false
+        }
+        if (!prepareMeasurementQueueTarget(queueFolder, sourceKey)) return false
 
         val staging = File(queueRoot, ".${safeFolderName(folderName)}.tmp")
         staging.deleteRecursively()
         staging.mkdirs()
         try {
-            val available = sourceFolder.listFiles()?.filter(File::isFile)?.map(File::getName)?.toSet().orEmpty()
-            val selectedFiles = measurementFilesToQueue(available)
-            if (selectedFiles.isEmpty()) {
-                staging.deleteRecursively()
-                return
-            }
-            selectedFiles.forEach { name ->
-                val source = File(sourceFolder, name)
+            selectedFiles.filterNot { it == MEASUREMENT_COMPLETION_FILE }.forEach { name ->
                 val destination = File(staging, name)
-                destination.writeBytes(publicGitHubUploadBytes(name, source.readBytes()))
+                destination.writeBytes(sourceBytes.getValue(name))
                 check(hasExpectedMeasurementFileHeader(name, destination.readText())) {
                     "$name ist leer oder hat kein erwartetes Format"
                 }
             }
             finishQueueBundle(staging, queueFolder, folderName, sourceKey)
+            return true
         } catch (error: Exception) {
             staging.deleteRecursively()
             throw error
@@ -608,8 +822,24 @@ class GitHubTelemetrySync private constructor(context: Context) {
     }
 
     private fun finishQueueBundle(staging: File, queueFolder: File, folderName: String, sourceKey: String) {
-        enrichStagedDiagnosticArtifacts(staging)
         File(staging, "manifest.json").writeText(buildManifest(staging, folderName).toString(2))
+        val summary = File(staging, "Zusammenfassung.txt").readText()
+        val startedAt = summaryValue(summary, "Start")?.toLongOrNull()
+            ?: error("Messfahrt-Start fehlt")
+        val stagedExactFiles = staging.listFiles()
+            ?.filter(File::isFile)
+            ?.associate { it.name to it.readBytes() }
+            .orEmpty()
+        val generationFiles = finalPublicMeasurementUploadFiles(stagedExactFiles)
+        generationFiles.forEach { (name, bytes) -> File(staging, name).writeBytes(bytes) }
+        File(staging, MEASUREMENT_COMPLETION_FILE).writeText(
+            JSONObject()
+                .put("schema", MEASUREMENT_COMPLETION_SCHEMA_V2)
+                .put("publication_identity", measurementPublicationIdentity(startedAt))
+                .put("generation_sha256", measurementGenerationSha256(generationFiles))
+                .put("file_count", generationFiles.size)
+                .toString(2)
+        )
         File(staging, ".meta.json").writeText(
             JSONObject()
                 .put("sourceKey", sourceKey)
@@ -618,6 +848,13 @@ class GitHubTelemetrySync private constructor(context: Context) {
         )
         val stagedNames = staging.listFiles()?.filter(File::isFile)?.map(File::getName)?.toSet().orEmpty()
         check(isCompleteMeasurementQueueFileSet(stagedNames)) { "Messfahrt-Staging ist unvollständig" }
+        val committedBytes = staging.listFiles()
+            ?.filter { it.isFile && it.name != ".meta.json" }
+            ?.associate { it.name to it.readBytes() }
+            .orEmpty()
+        check(measurementCommitAllowsPublication(folderName, summary, committedBytes)) {
+            "Messfahrt-Staging hat keinen gültigen Generationsabschluss"
+        }
         stagedNames.forEach { name ->
             check(hasExpectedMeasurementFileHeader(name, File(staging, name).readText())) {
                 "Messfahrt-Staging enthält ungültige Datei: $name"
@@ -650,19 +887,80 @@ class GitHubTelemetrySync private constructor(context: Context) {
     private fun isCompleteMeasurementQueueFolder(folder: File): Boolean = runCatching {
         if (!folder.isDirectory || folder.name.startsWith(".")) return@runCatching false
         val names = folder.listFiles()?.filter(File::isFile)?.map(File::getName)?.toSet().orEmpty()
-        isCompleteMeasurementQueueFileSet(names) && names.all { name ->
+        val summary = File(folder, "Zusammenfassung.txt").readText()
+        val bytes = folder.listFiles()
+            ?.filter { it.isFile && it.name != ".meta.json" }
+            ?.associate { it.name to it.readBytes() }
+            .orEmpty()
+        isCompleteMeasurementQueueFileSet(names) &&
+            measurementSummaryAllowsPublication(summary, names) &&
+            measurementCommitAllowsPublication(folder.name, summary, bytes) && names.all { name ->
             hasExpectedMeasurementFileHeader(name, File(folder, name).readText())
         }
     }.getOrDefault(false)
+
+    private fun queueContainsSource(folder: File, sourceKey: String): Boolean =
+        isCompleteMeasurementQueueFolder(folder) && runCatching {
+            JSONObject(File(folder, ".meta.json").readText()).getString("sourceKey") == sourceKey
+        }.getOrDefault(false)
+
+    private data class MediaStoreGenerationFence(
+        val completionBytes: ByteArray?,
+        val inProgress: Boolean
+    )
+
+    private fun readMediaStoreGenerationFence(
+        resolver: ContentResolver,
+        sourcePath: String
+    ): MediaStoreGenerationFence {
+        var completionBytes: ByteArray? = null
+        var inProgress = false
+        resolver.query(
+            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+            arrayOf(
+                MediaStore.Downloads._ID,
+                MediaStore.Downloads.DISPLAY_NAME,
+                MediaStore.Downloads.SIZE
+            ),
+            "${MediaStore.Downloads.RELATIVE_PATH} = ? AND " +
+                "${MediaStore.Downloads.DISPLAY_NAME} IN (?, ?) AND " +
+                "${MediaStore.Downloads.IS_PENDING} = 0",
+            arrayOf(sourcePath, MEASUREMENT_COMPLETION_FILE, MEASUREMENT_IN_PROGRESS_FILE),
+            "${MediaStore.Downloads.DATE_MODIFIED} DESC, ${MediaStore.Downloads._ID} DESC"
+        )?.use { cursor ->
+            val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Downloads._ID)
+            val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Downloads.DISPLAY_NAME)
+            val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.Downloads.SIZE)
+            while (cursor.moveToNext()) {
+                when (cursor.getString(nameColumn)) {
+                    MEASUREMENT_IN_PROGRESS_FILE -> inProgress = true
+                    MEASUREMENT_COMPLETION_FILE -> if (completionBytes == null) {
+                        if (cursor.getLong(sizeColumn) <= 0L) continue
+                        val uri = ContentUris.withAppendedId(
+                            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                            cursor.getLong(idColumn)
+                        )
+                        completionBytes = resolver.openInputStream(uri)?.use { it.readBytes() }
+                    }
+                }
+            }
+        }
+        return MediaStoreGenerationFence(completionBytes, inProgress)
+    }
 
     /**
      * A torn app-private queue must never block rebuilding from the still intact
      * Downloads source. Preserve it under a hidden quarantine name, then build a
      * fresh atomic directory; flush/pending counters deliberately ignore hidden dirs.
      */
-    private fun prepareMeasurementQueueTarget(queueFolder: File): Boolean {
+    private fun prepareMeasurementQueueTarget(queueFolder: File, sourceKey: String): Boolean {
         if (!queueFolder.exists()) return true
-        if (isCompleteMeasurementQueueFolder(queueFolder)) return false
+        if (isCompleteMeasurementQueueFolder(queueFolder)) {
+            val queuedSourceKey = runCatching {
+                JSONObject(File(queueFolder, ".meta.json").readText()).getString("sourceKey")
+            }.getOrNull()
+            if (queuedSourceKey == sourceKey) return false
+        }
         var suffix = 0
         var quarantine: File
         do {
@@ -726,7 +1024,12 @@ class GitHubTelemetrySync private constructor(context: Context) {
             .put("decoder_ai_analysis", true)
             .put("learning_profile", true)
             .put("app_version", packageInfo.versionName.orEmpty())
-            .put("created_at_ms", System.currentTimeMillis())
+            .put(
+                "created_at_ms",
+                summaryValues["Ende"]?.toLongOrNull()
+                    ?: summaryValues["Start"]?.toLongOrNull()
+                    ?: JSONObject.NULL
+            )
     }
 
     private fun flushPending() {
@@ -749,7 +1052,14 @@ class GitHubTelemetrySync private constructor(context: Context) {
             val metaFile = File(folder, ".meta.json")
             val fileNames = folder.listFiles()?.filter(File::isFile)?.map(File::getName)?.toSet().orEmpty()
             val queueIsValid = runCatching {
+                val summary = File(folder, "Zusammenfassung.txt").readText()
+                val bytes = folder.listFiles()
+                    ?.filter { it.isFile && it.name != ".meta.json" }
+                    ?.associate { it.name to it.readBytes() }
+                    .orEmpty()
                 isCompleteMeasurementQueueFileSet(fileNames) &&
+                    measurementSummaryAllowsPublication(summary, fileNames) &&
+                    measurementCommitAllowsPublication(folder.name, summary, bytes) &&
                     fileNames.all { name ->
                         hasExpectedMeasurementFileHeader(name, File(folder, name).readText())
                     }
@@ -766,22 +1076,24 @@ class GitHubTelemetrySync private constructor(context: Context) {
                 uploader.ensureDataBranch()
                 val uploadFiles = folder.listFiles()
                     ?.filter { it.isFile && it.name != ".meta.json" && it.name in fileNames }
-                    ?.sortedWith(compareBy<File> { it.name == "manifest.json" }.thenBy { it.name })
+                    ?.sortedWith(compareBy<File> { measurementUploadPriority(it.name) }.thenBy { it.name })
                     .orEmpty()
-                val diagnosticCsvBytes = File(folder, DIAGNOSTIC_READ_CSV_FILE)
-                    .takeIf(File::isFile)
-                    ?.readBytes()
-                uploadFiles.forEach { file ->
-                    val publicBytes = publicGitHubUploadBytesWithDiagnosticCsv(
-                        file.name,
-                        file.readBytes(),
-                        diagnosticCsvBytes
-                    )
-                    uploader.uploadIfMissing("$remoteFolder/${file.name}", publicBytes, folder.name)
+                val completionFile = File(folder, MEASUREMENT_COMPLETION_FILE)
+                val remoteCompletionPath = "$remoteFolder/$MEASUREMENT_COMPLETION_FILE"
+                if (!uploader.contentMatches(remoteCompletionPath, completionFile.readBytes())) {
+                    uploader.deleteIfExists(remoteCompletionPath, folder.name)
+                    uploadFiles.forEach { file ->
+                        uploader.uploadIfChanged(
+                            "$remoteFolder/${file.name}",
+                            file.readBytes(),
+                            folder.name
+                        )
+                    }
                 }
                 markProcessed(sourceKey)
-                folder.deleteRecursively()
-                prefs.edit().putInt("uploaded_count", prefs.getInt("uploaded_count", 0) + 1).apply()
+                check(folder.deleteRecursively()) {
+                    "Abgeschlossene Queue konnte nicht entfernt werden"
+                }
                 setStatus("✓ GitHub aktuell: ${folder.name}")
             } catch (error: Exception) {
                 setStatus("Upload wartet: ${safeMessage(error)}")
@@ -831,11 +1143,19 @@ class GitHubTelemetrySync private constructor(context: Context) {
         prefs.getStringSet("processed", emptySet()).orEmpty().contains(sourceKey)
 
     private fun markProcessed(sourceKey: String) {
-        val current = prefs.getStringSet("processed", emptySet()).orEmpty().toMutableList()
-        current.remove(sourceKey)
-        current.add(sourceKey)
-        val bounded = current.takeLast(250).toSet()
-        prefs.edit().putStringSet("processed", bounded).apply()
+        val original = prefs.getStringSet("processed", emptySet()).orEmpty()
+        val current = updatedProcessedSourceKeys(original, sourceKey)
+        val rideWasAlreadyCounted = original.any {
+            measurementSourceBaseKey(it) == measurementSourceBaseKey(sourceKey)
+        }
+        val uploadedCount = prefs.getInt("uploaded_count", 0) +
+            if (rideWasAlreadyCounted) 0 else 1
+        check(
+            prefs.edit()
+                .putStringSet("processed", current)
+                .putInt("uploaded_count", uploadedCount)
+                .commit()
+        ) { "Uploadstatus konnte nicht dauerhaft bestätigt werden" }
     }
 
     private fun setStatus(status: String) {
@@ -875,20 +1195,68 @@ private class GitHubContentsUploader(
         }
     }
 
-    fun uploadIfMissing(remotePath: String, bytes: ByteArray, measurementName: String) {
+    fun uploadIfChanged(remotePath: String, bytes: ByteArray, measurementName: String) {
         val url = "$apiBase/contents/${encodePath(remotePath)}?ref=${encodeSegment(branch)}"
         val existing = request("GET", url)
-        if (existing.code in 200..299) return
-        if (existing.code != 404) throw IOException("Dateiprüfung fehlgeschlagen (${existing.code})")
+        val existingSha = if (existing.code in 200..299) {
+            val metadata = JSONObject(existing.body)
+            val existingBytes = metadata.optString("content")
+                .takeIf(String::isNotBlank)
+                ?.let { encoded ->
+                    runCatching { Base64.decode(encoded, Base64.DEFAULT) }.getOrNull()
+                }
+            if (existingBytes?.contentEquals(bytes) == true) return
+            metadata.getString("sha")
+        } else {
+            if (existing.code != 404) {
+                throw IOException("Dateiprüfung fehlgeschlagen (${existing.code})")
+            }
+            null
+        }
 
         val payload = JSONObject()
             .put("message", "Fahrdaten $measurementName: ${remotePath.substringAfterLast('/')}")
             .put("content", Base64.encodeToString(bytes, Base64.NO_WRAP))
             .put("branch", branch)
+            .apply { existingSha?.let { put("sha", it) } }
             .toString()
         val upload = request("PUT", "$apiBase/contents/${encodePath(remotePath)}", payload)
         if (upload.code !in 200..299) {
             throw IOException("GitHub Upload fehlgeschlagen (${upload.code}): ${extractMessage(upload.body)}")
+        }
+    }
+
+    fun contentMatches(remotePath: String, bytes: ByteArray): Boolean {
+        val url = "$apiBase/contents/${encodePath(remotePath)}?ref=${encodeSegment(branch)}"
+        val existing = request("GET", url)
+        if (existing.code == 404) return false
+        if (existing.code !in 200..299) {
+            throw IOException("Dateiprüfung fehlgeschlagen (${existing.code})")
+        }
+        val encoded = JSONObject(existing.body).optString("content")
+        val existingBytes = runCatching { Base64.decode(encoded, Base64.DEFAULT) }
+            .getOrNull()
+            ?: return false
+        return existingBytes.contentEquals(bytes)
+    }
+
+    /** A completion marker must be absent while any remote generation file may change. */
+    fun deleteIfExists(remotePath: String, measurementName: String) {
+        val url = "$apiBase/contents/${encodePath(remotePath)}?ref=${encodeSegment(branch)}"
+        val existing = request("GET", url)
+        if (existing.code == 404) return
+        if (existing.code !in 200..299) {
+            throw IOException("Commit-Marker konnte nicht geprüft werden (${existing.code})")
+        }
+        val sha = JSONObject(existing.body).getString("sha")
+        val payload = JSONObject()
+            .put("message", "Fahrdaten $measurementName: Generation wird aktualisiert")
+            .put("sha", sha)
+            .put("branch", branch)
+            .toString()
+        val deleted = request("DELETE", "$apiBase/contents/${encodePath(remotePath)}", payload)
+        if (deleted.code !in 200..299) {
+            throw IOException("Commit-Marker konnte nicht entfernt werden (${deleted.code})")
         }
     }
 

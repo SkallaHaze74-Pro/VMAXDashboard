@@ -19,6 +19,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,8 +42,13 @@ class GitHubSyncActivity : ComponentActivity() {
         val sync = GitHubTelemetrySync.get(applicationContext)
         val aiSync = DecoderAiCloudSync.get(applicationContext)
         setContent {
-            MaterialTheme {
-                GitHubSyncScreen(sync = sync, aiSync = aiSync, onClose = ::finish)
+            VmaxDashboardTheme {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    GitHubSyncScreen(sync = sync, aiSync = aiSync, onClose = ::finish)
+                }
             }
         }
     }

@@ -2,7 +2,7 @@ package de.kevin.vmaxdashboard
 
 import kotlin.math.abs
 
-internal enum class BatteryPercentStability {
+enum class BatteryPercentStability {
     WAITING_FOR_REST,
     STABLE,
     RECOVERING_AFTER_LOAD,

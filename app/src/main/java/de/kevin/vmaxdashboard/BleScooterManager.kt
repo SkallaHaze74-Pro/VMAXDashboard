@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.bluetooth.*
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
+import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
@@ -24,6 +25,7 @@ import java.io.File
 import java.util.ArrayDeque
 import java.util.UUID
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.abs
 
 internal fun resolveElectricalPowerW(
@@ -82,7 +84,7 @@ internal fun measurementDeepReadExportStatus(
     return if (exportSucceeded) {
         "vollständig archiviert; $scanStatus"
     } else {
-        "fehlgeschlagen (Fahrdaten separat gesichert); $scanStatus"
+        "fehlgeschlagen (gesamte Messfahrt im privaten Retry); $scanStatus"
     }
 }
 
@@ -291,9 +293,13 @@ class BleScooterManager(private val context: Context) {
         private const val NOTIFICATION_DESCRIPTOR_TIMEOUT_MS = 3_000L
         private const val GATT_CONNECT_TIMEOUT_MS = 6_000L
         private const val GATT_SERVICE_DISCOVERY_TIMEOUT_MS = 6_000L
+        private const val ACTIVE_JOURNAL_SYNC_RECORDS = 64
+        private const val ACTIVE_JOURNAL_SYNC_MS = 1_000L
         private val MEASUREMENT_EXPORT_EXECUTOR = Executors.newSingleThreadExecutor { runnable ->
             Thread(runnable, "vmax-measurement-export").apply { isDaemon = true }
         }
+        private val ACTIVE_JOURNAL_IO = OrderedIoExecutor("vmax-active-journal")
+        private val NEXT_ACTIVE_JOURNAL_OWNER_TOKEN = AtomicLong(0L)
         private val COMPLETED_MEASUREMENT_EXPORT_IDS = mutableSetOf<String>()
 
         private fun wasMeasurementExportCompleted(id: String): Boolean =
@@ -344,7 +350,9 @@ class BleScooterManager(private val context: Context) {
         val success: Boolean,
         val message: String,
         val findings: List<MeasurementFinding> = emptyList(),
-        val location: String = ""
+        val location: String = "",
+        val rideSummary: RideTelemetrySummary? = null,
+        val dataQuality: MeasurementDataQuality? = null
     )
 
     private val bluetoothManager =
@@ -384,6 +392,8 @@ class BleScooterManager(private val context: Context) {
     private val lastTelemetryStore = LastTelemetrySnapshotStore(context)
     private val initialLastTelemetry = lastTelemetryStore.load()
     private val batteryPercentStabilizer = BatteryPercentStabilizer()
+    private val measurementTripDistanceTracker = MeasurementTripDistanceTracker()
+    private var confirmedRideEventTracker = ConfirmedRideEventTracker()
     private val previousValues = mutableMapOf<String, ByteArray>()
     private val channelPacketCounts = mutableMapOf<String, Int>()
     private val rawNotificationPacketCounter = RawNotificationPacketCounter()
@@ -391,12 +401,15 @@ class BleScooterManager(private val context: Context) {
     private val measurementExportSpool = MeasurementExportSpool(
         File(context.filesDir, "measurement_export_spool")
     )
-    private val recoveredMeasurementExports = measurementExportSpool.loadPending()
-    private val pendingMeasurementExports = RetainedExportQueue<PendingMeasurementExport>().apply {
-        recoveredMeasurementExports.forEach(::enqueue)
-    }
+    private val activeMeasurementJournalRoot = File(context.filesDir, "active_measurement_journal")
+    private val activeMeasurementJournalStore = ActiveMeasurementJournalStore(activeMeasurementJournalRoot)
+    private val activeMeasurementJournalOwnerToken =
+        NEXT_ACTIVE_JOURNAL_OWNER_TOKEN.incrementAndGet()
+    private val pendingMeasurementExports = RetainedExportQueue<PendingMeasurementExport>()
     private val measurementExportWorkerLock = Any()
     private var measurementExportWorkerRunning = false
+    private val activeJournalSegmentsAwaitingExportCleanup = mutableMapOf<String, Long>()
+    private val recoverySourceSpoolIdsByExport = mutableMapOf<String, Set<String>>()
     private val packetTimes = ArrayDeque<Long>()
     private var sessionStartedAt = System.currentTimeMillis()
     private var measurementStartedAt = 0L
@@ -409,6 +422,8 @@ class BleScooterManager(private val context: Context) {
     private var rejectedReadPackets = 0
     private var rejectedHybridPackets = 0
     private var diagnosticOnlyNotificationPackets = 0
+    private val journalFailureLock = Any()
+    private val failedJournalSegments = mutableSetOf<Long>()
     private var nextScanIntent = 0L
     private var activeScanIntent: Long? = null
     private var activeScanCallback: ScanCallback? = null
@@ -430,15 +445,84 @@ class BleScooterManager(private val context: Context) {
             lastKnownBatteryPercent = initialLastTelemetry.batteryPercent,
             lastKnownVoltageV = initialLastTelemetry.voltageV,
             lastKnownBatteryAt = initialLastTelemetry.measuredAtMs,
-            pendingMeasurementExportCount = recoveredMeasurementExports.size,
-            lastExportMessage = if (recoveredMeasurementExports.isNotEmpty()) {
-                "${recoveredMeasurementExports.size} ungesicherte(r) Abschnitt(e) nach Neustart wiederhergestellt"
-            } else {
-                ""
-            }
+            pendingMeasurementExportCount = 0
         )
     )
     val state: StateFlow<ScooterState> = _state
+
+    init {
+        recoverPendingMeasurementExportsAsync()
+    }
+
+    /** Heavy replay stays off app startup's main thread. */
+    private fun recoverPendingMeasurementExportsAsync() {
+        MEASUREMENT_EXPORT_EXECUTOR.execute {
+            val recoveryErrors = mutableListOf<String>()
+            val spoolRecovery = runCatching { measurementExportSpool.loadPendingWithDiagnostics() }
+                .getOrElse { error ->
+                    recoveryErrors += error.message ?: error.javaClass.simpleName
+                    MeasurementExportSpoolRecovery(emptyList(), emptyList())
+                }
+            val spoolPending = spoolRecovery.pendingExports
+            recoveryErrors += spoolRecovery.failures.map { failure ->
+                "${failure.fileName}: ${failure.message}"
+            }
+            val activeJournalRecovery = runCatching {
+                ACTIVE_JOURNAL_IO.submit {
+                    recoverStageAndClearUnownedActiveMeasurementJournals(
+                        store = activeMeasurementJournalStore,
+                        root = activeMeasurementJournalRoot,
+                        stage = measurementExportSpool::stage
+                    )
+                }.get()
+            }.getOrElse { error ->
+                val cause = (error as? java.util.concurrent.ExecutionException)?.cause ?: error
+                recoveryErrors += cause.message ?: cause.javaClass.simpleName
+                ActiveMeasurementJournalStartupRecovery(
+                    recovery = ActiveMeasurementJournalRecovery(emptyList(), emptyList()),
+                    segmentsNotCleared = emptySet(),
+                    cleanupErrors = emptyList()
+                )
+            }
+            val activeRecovery = activeJournalRecovery.recovery
+            val activeSegmentsNotCleared = activeJournalRecovery.segmentsNotCleared
+            recoveryErrors += activeJournalRecovery.cleanupErrors
+            val activePending = activeRecovery.pendingExports
+            recoveryErrors += activeRecovery.failures.map { failure ->
+                "${failure.fileName}: ${failure.message}"
+            }
+            val recovered = consolidateRecoveredMeasurementExports(spoolPending + activePending)
+            recovered.forEach { consolidated ->
+                val pending = consolidated.pending
+                synchronized(measurementExportWorkerLock) {
+                    recoverySourceSpoolIdsByExport[pending.id] = consolidated.sourceIds
+                    if (pending.snapshot.startedAt in activeSegmentsNotCleared) {
+                        activeJournalSegmentsAwaitingExportCleanup[pending.id] =
+                            pending.snapshot.startedAt
+                    }
+                }
+                pendingMeasurementExports.enqueue(pending)
+            }
+            update {
+                it.copy(
+                    pendingMeasurementExportCount = pendingMeasurementExports.size,
+                    recoveryIssueCount = recoveryErrors.size,
+                    recoveryIssueDetail = recoveryErrors.firstOrNull().orEmpty(),
+                    lastExportMessage = when {
+                        recoveryErrors.isNotEmpty() ->
+                            "Neustart-Sicherung teilweise wiederhergestellt: ${recoveryErrors.first()}"
+                        activePending.isNotEmpty() ->
+                            "Laufende Messfahrt nach App-Neustart gerettet • " +
+                                "${recovered.size} Abschnitt(e) werden gespeichert"
+                        recovered.isNotEmpty() ->
+                            "${recovered.size} ungesicherte(r) Abschnitt(e) nach Neustart wiederhergestellt"
+                        else -> it.lastExportMessage
+                    }
+                )
+            }
+            if (recovered.isNotEmpty()) schedulePendingMeasurementExports()
+        }
+    }
 
     fun hasRequiredPermissions(): Boolean =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -665,11 +749,24 @@ class BleScooterManager(private val context: Context) {
     }
 
     private fun addMeasurementDiagnosticBundleLocked(bundle: DiagnosticReadBundle) {
-        val linked = bundle.copy(records = bundle.records.toList())
-        val duplicate = measurementDiagnosticReadBundles.any {
-            it.scanId == linked.scanId
+        val updated = upsertDiagnosticBundleByScanId(measurementDiagnosticReadBundles, bundle)
+        measurementDiagnosticReadBundles.clear()
+        measurementDiagnosticReadBundles.addAll(updated)
+        if (recordingActive) {
+            val selected = updated.first { it.scanId == bundle.scanId }
+            val segmentStartedAt = measurementStartedAt
+            enqueueJournalIo(
+                "Deep READ konnte nicht im Messfahrt-Journal gesichert werden",
+                segmentStartedAt
+            ) {
+                activeMeasurementJournalStore.replaceDiagnosticBundle(
+                    startedAt = segmentStartedAt,
+                    recordedAt = selected.scanFinishedAt,
+                    bundle = selected
+                )
+            }
+            updateActiveJournalScalarsLocked(selected.scanFinishedAt)
         }
-        if (!duplicate) measurementDiagnosticReadBundles += linked
     }
 
     private fun isCurrentDiagnosticSessionLocked(session: DiagnosticGattReadSession): Boolean {
@@ -700,16 +797,37 @@ class BleScooterManager(private val context: Context) {
             )
         }
         if (!hasRequiredPermissions()) {
+            synchronized(gattOperationLock) { stopActiveBleScanLocked() }
+            update {
+                it.copy(
+                    scanning = false,
+                    scanStartedAtElapsedRealtimeMs = 0L,
+                    status = "Bluetooth-Berechtigungen fehlen"
+                )
+            }
             addLog("Bluetooth-Berechtigungen fehlen")
             return
         }
         if (adapter?.isEnabled != true) {
-            update { it.copy(status = "Bluetooth ist ausgeschaltet") }
+            synchronized(gattOperationLock) { stopActiveBleScanLocked() }
+            update {
+                it.copy(
+                    scanning = false,
+                    scanStartedAtElapsedRealtimeMs = 0L,
+                    status = "Bluetooth ist ausgeschaltet"
+                )
+            }
             return
         }
         val platformScanner = adapter?.bluetoothLeScanner
         if (platformScanner == null) {
-            update { it.copy(scanning = false, status = "BLE-Scanner nicht verfügbar") }
+            update {
+                it.copy(
+                    scanning = false,
+                    scanStartedAtElapsedRealtimeMs = 0L,
+                    status = "BLE-Scanner nicht verfügbar"
+                )
+            }
             return
         }
         val callback = synchronized(gattOperationLock) {
@@ -723,7 +841,13 @@ class BleScooterManager(private val context: Context) {
             createScanCallback(intent).also {
                 activeScanIntent = intent
                 activeScanCallback = it
-                update { state -> state.copy(scanning = true, status = "Suche nach $TARGET_NAME …") }
+                update { state ->
+                    state.copy(
+                        scanning = true,
+                        scanStartedAtElapsedRealtimeMs = SystemClock.elapsedRealtime(),
+                        status = "Suche nach $TARGET_NAME …"
+                    )
+                }
             }
         }
         if (callback == null) return
@@ -746,6 +870,7 @@ class BleScooterManager(private val context: Context) {
                         update {
                             it.copy(
                                 scanning = false,
+                                scanStartedAtElapsedRealtimeMs = 0L,
                                 status = "BLE-Suche konnte nicht gestartet werden: ${error.message ?: error.javaClass.simpleName}"
                             )
                         }
@@ -770,7 +895,7 @@ class BleScooterManager(private val context: Context) {
         if (callback != null && hasRequiredPermissions()) {
             runCatching { adapter?.bluetoothLeScanner?.stopScan(callback) }
         }
-        update { it.copy(scanning = false) }
+        update { it.copy(scanning = false, scanStartedAtElapsedRealtimeMs = 0L) }
     }
 
     @SuppressLint("MissingPermission")
@@ -1065,7 +1190,13 @@ class BleScooterManager(private val context: Context) {
                 activeScanCallback = null
                 activeScanIntent = null
                 nextScanIntent++
-                update { it.copy(scanning = false, status = "Scanfehler: $errorCode") }
+                update {
+                    it.copy(
+                        scanning = false,
+                        scanStartedAtElapsedRealtimeMs = 0L,
+                        status = "Scanfehler: $errorCode"
+                    )
+                }
             }
         }
     }
@@ -1103,6 +1234,7 @@ class BleScooterManager(private val context: Context) {
                         if (recordingActive) {
                             measurementConnectionEpoch++
                             measurementEpochByGattEpoch[active.epoch] = measurementConnectionEpoch
+                            updateActiveJournalScalarsLocked(System.currentTimeMillis())
                         }
                         sessionStartedAt = System.currentTimeMillis()
                         batteryPercentStabilizer.reset()
@@ -2530,7 +2662,10 @@ class BleScooterManager(private val context: Context) {
         val short = shortUuid(uuid)
         val hex = packet.joinToString("-") { "%02X".format(it.toInt() and 0xFF) }
         if (origin == BlePacketOrigin.READ) {
-            if (recordingActive && !recordingPaused) rejectedReadPackets++
+            if (recordingActive && !recordingPaused) {
+                rejectedReadPackets++
+                updateActiveJournalScalarsLocked(System.currentTimeMillis())
+            }
             addLog("READ $short (nur Diagnose, nicht als Live-Telemetrie): $hex")
             return
         }
@@ -2548,7 +2683,7 @@ class BleScooterManager(private val context: Context) {
                 val now = System.currentTimeMillis()
                 val measurementMs = now - measurementStartedAt
                 val knowledge = VmaxProtocolCatalog.get(short)
-                measurementRows.appendRaw(listOf(
+                val rawRow = listOf(
                     measurementMs.toString(),
                     now.toString(),
                     short,
@@ -2562,7 +2697,13 @@ class BleScooterManager(private val context: Context) {
                     serviceUuid,
                     characteristicUuid,
                     propertiesRaw.toString()
-                ).joinToString(";"))
+                ).joinToString(";")
+                measurementRows.appendRaw(rawRow)
+                val segmentStartedAt = measurementStartedAt
+                enqueueJournalIo("Quarantäne-Zeile konnte nicht gesichert werden", segmentStartedAt) {
+                    activeMeasurementJournalStore.appendRawRow(segmentStartedAt, now, rawRow)
+                }
+                updateActiveJournalScalarsLocked(now)
             }
             addLog("$short quarantänisiert: READ-/Firmware-ID-Hybrid exakt im RAW-Export gesichert")
             return
@@ -2572,7 +2713,7 @@ class BleScooterManager(private val context: Context) {
                 diagnosticOnlyNotificationPackets++
                 val now = System.currentTimeMillis()
                 val measurementMs = now - measurementStartedAt
-                measurementRows.appendRaw(listOf(
+                val rawRow = listOf(
                     measurementMs.toString(),
                     now.toString(),
                     short,
@@ -2586,7 +2727,13 @@ class BleScooterManager(private val context: Context) {
                     serviceUuid,
                     characteristicUuid,
                     propertiesRaw.toString()
-                ).joinToString(";"))
+                ).joinToString(";")
+                measurementRows.appendRaw(rawRow)
+                val segmentStartedAt = measurementStartedAt
+                enqueueJournalIo("Diagnose-Zeile konnte nicht gesichert werden", segmentStartedAt) {
+                    activeMeasurementJournalStore.appendRawRow(segmentStartedAt, now, rawRow)
+                }
+                updateActiveJournalScalarsLocked(now)
             }
             addLog("$short aus Service ${normalizeGattShortUuid(serviceUuid)} nur diagnostisch gesichert")
             return
@@ -2647,6 +2794,27 @@ class BleScooterManager(private val context: Context) {
         } else {
             null
         }
+        val measurementTripReading = if (recordingActive) {
+            // BT638 confirms 1506 as the odometer. A direct trip field is still
+            // unconfirmed, so the displayed ride distance uses only its delta.
+            measurementTripDistanceTracker.observe(
+                directTripKm = null,
+                odometerKm = decoded.odometerKm.takeIf { short == "1506" }
+            )
+        } else {
+            null
+        }
+        val recordedConfirmedEvents = if (recordingActive) {
+            confirmedRideEventTracker.observe(
+                connectionEpoch = callbackConnectionEpoch,
+                sourceChannel = short,
+                lightRaw = decoded.accessoryByte0,
+                rideModeRaw = decoded.accessoryByte3
+            ).takeUnless { recordingPaused }.orEmpty()
+        } else {
+            emptyList()
+        }
+        recordedConfirmedEvents.forEach { event -> addMarkerInternal(event, now) }
         val knowledge = VmaxProtocolCatalog.get(short)
         packetTimes.addLast(now)
         while (packetTimes.isNotEmpty() && packetTimes.first() < now - 3000L) packetTimes.removeFirst()
@@ -2654,12 +2822,17 @@ class BleScooterManager(private val context: Context) {
         val changedText = if (changed.isEmpty()) "–" else changed.joinToString(",")
         if (recordingActive && !recordingPaused) {
             val measurementMs = now - measurementStartedAt
-            measurementRows.appendRaw(listOf(
+            val rawRow = listOf(
                 measurementMs.toString(), now.toString(), short, knowledge.title,
                 packet.size.toString(), rawPacketNo.toString(), changedText, hex,
                 origin.name, measurementConnectionEpoch.toString(),
                 serviceUuid, characteristicUuid, propertiesRaw.toString()
-            ).joinToString(";"))
+            ).joinToString(";")
+            measurementRows.appendRaw(rawRow)
+            val segmentStartedAt = measurementStartedAt
+            enqueueJournalIo("Rohdaten-Zeile konnte nicht gesichert werden", segmentStartedAt) {
+                activeMeasurementJournalStore.appendRawRow(segmentStartedAt, now, rawRow)
+            }
             val snapshot = stateBeforePacket
             val electricalPower = resolveElectricalPowerW(
                 decoded.voltageV,
@@ -2675,7 +2848,7 @@ class BleScooterManager(private val context: Context) {
                 electricalPower != null -> "voltage_x_current_fallback"
                 else -> ""
             }
-            measurementRows.appendTelemetry(listOf(
+            val telemetryRow = listOf(
                 measurementMs.toString(), now.toString(),
                 (decoded.speedKmh ?: snapshot.speedKmh)?.toString().orEmpty(),
                 batteryReading.rawPercent?.toString().orEmpty(),
@@ -2688,7 +2861,7 @@ class BleScooterManager(private val context: Context) {
                 powerProvenance,
                 (decoded.motorTemperatureC ?: snapshot.motorTemperatureC)?.toString().orEmpty(),
                 (decoded.batteryTemperatureC ?: snapshot.batteryTemperatureC)?.toString().orEmpty(),
-                (decoded.tripDistanceKm ?: snapshot.tripDistanceKm)?.toString().orEmpty(),
+                (measurementTripReading?.tripKm ?: snapshot.tripDistanceKm)?.toString().orEmpty(),
                 (decoded.odometerKm ?: snapshot.odometerKm)?.toString().orEmpty(),
                 (decoded.driveRaw ?: snapshot.driveRaw)?.toString().orEmpty(),
                 (decoded.motorLoadRaw ?: snapshot.motorLoadRaw)?.toString().orEmpty(),
@@ -2700,7 +2873,16 @@ class BleScooterManager(private val context: Context) {
                     previousRaw = snapshot.startModeRaw
                 )?.toString().orEmpty(),
                 short
-            ).joinToString(";"))
+            ).joinToString(";")
+            measurementRows.appendTelemetry(telemetryRow)
+            enqueueJournalIo("Telemetrie-Zeile konnte nicht gesichert werden", segmentStartedAt) {
+                activeMeasurementJournalStore.appendTelemetryRow(
+                    segmentStartedAt,
+                    now,
+                    telemetryRow
+                )
+            }
+            updateActiveJournalScalarsLocked(now)
         }
 
         val old = stateBeforePacket
@@ -2745,6 +2927,7 @@ class BleScooterManager(private val context: Context) {
             it.copy(
                 batteryPercent = batteryReading.stablePercent,
                 batteryPercentRaw = batteryReading.rawPercent,
+                batteryStability = batteryReading.stability,
                 lastKnownBatteryPercent = lastTelemetry.batteryPercent,
                 lastKnownVoltageV = lastTelemetry.voltageV,
                 lastKnownBatteryAt = lastTelemetry.measuredAtMs,
@@ -2777,7 +2960,7 @@ class BleScooterManager(private val context: Context) {
                 currentA = decoded.currentA ?: it.currentA,
                 motorTemperatureC = decoded.motorTemperatureC ?: it.motorTemperatureC,
                 batteryTemperatureC = decoded.batteryTemperatureC ?: it.batteryTemperatureC,
-                tripDistanceKm = decoded.tripDistanceKm ?: it.tripDistanceKm,
+                tripDistanceKm = measurementTripReading?.tripKm ?: it.tripDistanceKm,
                 odometerKm = decoded.odometerKm ?: it.odometerKm,
                 lastCharacteristic = short,
                 lastRawHex = hex,
@@ -2804,6 +2987,8 @@ class BleScooterManager(private val context: Context) {
                     abs(resolveElectricalPowerW(decoded.voltageV, decoded.currentA, it.voltageV, it.currentA) ?: 0.0)
                 ).takeIf { value -> value > 0.0 },
                 recordingPacketCount = if (recordingActive && !recordingPaused) it.recordingPacketCount + 1 else it.recordingPacketCount,
+                markerCount = it.markerCount + recordedConfirmedEvents.size,
+                lastMarker = recordedConfirmedEvents.lastOrNull() ?: it.lastMarker,
                 channels = channels,
                 analysisPhase = when {
                     it.labRunning -> it.labPhase
@@ -2845,7 +3030,56 @@ class BleScooterManager(private val context: Context) {
         rejectedHybridPackets = 0
         diagnosticOnlyNotificationPackets = 0
         measurementDiagnosticReadBundles.clear()
+        measurementTripDistanceTracker.reset(initialOdometerKm = _state.value.odometerKm)
+        confirmedRideEventTracker = ConfirmedRideEventTracker()
         if (!rowsAlreadyStarted) measurementRows.start(startedAt)
+        synchronized(journalFailureLock) { failedJournalSegments.remove(startedAt) }
+        update { it.copy(recordingCrashProtected = null) }
+        val initialScalars = activeMeasurementJournalScalarsLocked(startedAt)
+        enqueueJournalIo(
+            message = "Messfahrt-Journal konnte nicht gestartet werden",
+            segmentStartedAt = startedAt,
+            onSuccess = {
+                mainHandler.post {
+                    update { current ->
+                        val journalHealthy = synchronized(journalFailureLock) {
+                            startedAt !in failedJournalSegments
+                        }
+                        if (journalHealthy && current.recordingActive &&
+                            current.recordingStartedAt == startedAt
+                        ) {
+                            current.copy(recordingCrashProtected = true)
+                        } else {
+                            current
+                        }
+                    }
+                }
+            }
+        ) {
+            check(
+                ProcessActiveMeasurementJournals.register(
+                    root = activeMeasurementJournalRoot,
+                    startedAt = startedAt,
+                    ownerToken = activeMeasurementJournalOwnerToken
+                )
+            ) { "Messfahrt-Journal gehört bereits einem anderen App-Manager" }
+            try {
+                activeMeasurementJournalStore.startSegment(
+                    startedAt = startedAt,
+                    scalars = initialScalars
+                )
+                // The UI only reports crash protection after the START record is
+                // durably committed by this background writer.
+                activeMeasurementJournalStore.syncSegment(startedAt)
+            } catch (error: Throwable) {
+                ProcessActiveMeasurementJournals.release(
+                    activeMeasurementJournalRoot,
+                    startedAt,
+                    activeMeasurementJournalOwnerToken
+                )
+                throw error
+            }
+        }
         update {
             it.copy(
                 recordingActive = true,
@@ -2853,6 +3087,7 @@ class BleScooterManager(private val context: Context) {
                 recordingPaused = false,
                 recordingStartedAt = startedAt,
                 recordingPacketCount = 0,
+                tripDistanceKm = measurementTripDistanceTracker.current()?.tripKm,
                 markerCount = 1,
                 lastMarker = "START",
                 analysisPhase = "Messfahrt wird aufgezeichnet"
@@ -2865,6 +3100,71 @@ class BleScooterManager(private val context: Context) {
         synchronized(gattOperationLock) {
             if (!recordingActive) null else measurementRows.rawSnapshot()
         }
+
+    /**
+     * Queues a bounded journal barrier before the activity goes into the
+     * background. No filesystem operation runs on the lifecycle/UI thread.
+     */
+    fun checkpointActiveMeasurement(): Boolean {
+        val checkpointAt = System.currentTimeMillis()
+        return synchronized(gattOperationLock) {
+            if (!recordingActive) return@synchronized false
+            diagnosticGattReadObserver
+                ?.snapshotForMeasurementCheckpoint(checkpointAt)
+                ?.let { bundle ->
+                    val linked = bundle.copy(
+                        records = linkDiagnosticRecordsToMeasurement(
+                            records = bundle.records,
+                            measurementStartedAt = measurementStartedAt,
+                            measurementEpochByGattEpoch = measurementEpochByGattEpoch
+                        ),
+                        scanStartedAt = maxOf(bundle.scanStartedAt, measurementStartedAt)
+                    )
+                    if (linked.records.isNotEmpty()) addMeasurementDiagnosticBundleLocked(linked)
+            }
+            val segmentStartedAt = measurementStartedAt
+            val checkpointScalars = activeMeasurementJournalScalarsLocked(checkpointAt)
+            val segmentAlreadyFailed = synchronized(journalFailureLock) {
+                segmentStartedAt in failedJournalSegments
+            }
+            if (!segmentAlreadyFailed) {
+                update { current ->
+                    if (current.recordingStartedAt == segmentStartedAt) {
+                        current.copy(recordingCrashProtected = null)
+                    } else {
+                        current
+                    }
+                }
+            }
+            enqueueJournalIo(
+                message = "Neustart-Sicherung fehlgeschlagen",
+                segmentStartedAt = segmentStartedAt,
+                onSuccess = {
+                    mainHandler.post {
+                        val healthy = synchronized(journalFailureLock) {
+                            segmentStartedAt !in failedJournalSegments
+                        }
+                        update { current ->
+                            if (healthy && current.recordingActive &&
+                                current.recordingStartedAt == segmentStartedAt
+                            ) {
+                                current.copy(recordingCrashProtected = true)
+                            } else {
+                                current
+                            }
+                        }
+                    }
+                }
+            ) {
+                activeMeasurementJournalStore.updateScalars(
+                    segmentStartedAt,
+                    checkpointAt,
+                    checkpointScalars
+                )
+                activeMeasurementJournalStore.syncSegment(segmentStartedAt)
+            }
+        }
+    }
 
     /** Restores a legacy backup only when the manager did not retain it itself. */
     internal fun restoreMeasurementRowsForReconnect(
@@ -2925,18 +3225,39 @@ class BleScooterManager(private val context: Context) {
     private fun stopMeasurementAndExportAfterDiagnosticFlush(continueRecording: Boolean): Boolean {
         val pendingExport = synchronized(gattOperationLock) {
             if (!recordingActive) return false
-            val now = System.currentTimeMillis()
+            val now = maxOf(System.currentTimeMillis(), measurementStartedAt + 1L)
+            val finishedStartedAt = measurementStartedAt
             val frozenRows = measurementRows.rotate(
-                currentStartedAt = measurementStartedAt,
+                currentStartedAt = finishedStartedAt,
                 stoppedAt = now,
                 nextStartedAt = now.takeIf { continueRecording }
             )
+            val stopMarker = frozenRows.markerRows.lastOrNull()
+            val finalScalars = activeMeasurementJournalScalarsLocked(now)
+            enqueueJournalIo(
+                "Messfahrt-Journal konnte am Abschnittsende nicht synchronisiert werden",
+                finishedStartedAt
+            ) {
+                if (stopMarker != null) {
+                    activeMeasurementJournalStore.appendMarkerRow(
+                        finishedStartedAt,
+                        now,
+                        stopMarker
+                    )
+                }
+                activeMeasurementJournalStore.updateScalars(
+                    finishedStartedAt,
+                    now,
+                    finalScalars
+                )
+                activeMeasurementJournalStore.syncSegment(finishedStartedAt)
+            }
             val snapshot = MeasurementExportSnapshot(
                 rawRows = frozenRows.rawRows,
                 markerRows = frozenRows.markerRows,
                 telemetryRows = frozenRows.telemetryRows,
                 deviceName = _state.value.deviceName,
-                startedAt = measurementStartedAt,
+                startedAt = finishedStartedAt,
                 connectionCount = measurementConnectionEpoch + 1,
                 receivedNotifications = receivedNotificationPackets,
                 acceptedNotifications = acceptedNotificationPackets,
@@ -2958,6 +3279,7 @@ class BleScooterManager(private val context: Context) {
                 update {
                     it.copy(
                         recordingActive = false,
+                        recordingCrashProtected = null,
                         recordingDesired = false,
                         recordingPaused = false,
                         markerCount = frozenRows.markerRows.size,
@@ -2972,17 +3294,15 @@ class BleScooterManager(private val context: Context) {
                 snapshot = snapshot
             )
         }
-        val stagingFailure = runCatching {
-            measurementExportSpool.stage(pendingExport)
-        }.exceptionOrNull()
+        synchronized(measurementExportWorkerLock) {
+            activeJournalSegmentsAwaitingExportCleanup[pendingExport.id] =
+                pendingExport.snapshot.startedAt
+        }
         pendingMeasurementExports.enqueue(pendingExport)
         update {
             it.copy(
                 pendingMeasurementExportCount = pendingMeasurementExports.size,
-                lastExportMessage = stagingFailure?.let { error ->
-                    "Privates Wiederherstellen fehlgeschlagen; Abschnitt bleibt im Speicher: " +
-                        (error.message ?: error.javaClass.simpleName)
-                } ?: it.lastExportMessage
+                lastExportMessage = "Messabschnitt wird geschützt im Hintergrund gespeichert"
             )
         }
         schedulePendingMeasurementExports()
@@ -2991,6 +3311,123 @@ class BleScooterManager(private val context: Context) {
 
     fun retryPendingMeasurementExports() {
         schedulePendingMeasurementExports()
+    }
+
+    private fun clearJournalAfterDurableSpoolStage(
+        pending: PendingMeasurementExport
+    ): Throwable? {
+        val journalStartedAt = synchronized(measurementExportWorkerLock) {
+            activeJournalSegmentsAwaitingExportCleanup[pending.id]
+        } ?: return null
+        val failure = runJournalIoBarrier(
+            "Altes Messfahrt-Journal konnte nicht bereinigt werden"
+        ) {
+            activeMeasurementJournalStore.clearSegment(journalStartedAt)
+            ProcessActiveMeasurementJournals.release(
+                activeMeasurementJournalRoot,
+                journalStartedAt,
+                activeMeasurementJournalOwnerToken
+            )
+        }
+        if (failure == null) {
+            synchronized(measurementExportWorkerLock) {
+                activeJournalSegmentsAwaitingExportCleanup.remove(pending.id)
+            }
+        }
+        return failure
+    }
+
+    /**
+     * A stopped segment must become recoverable by a replacement manager when
+     * its current export attempt cannot reach the durable-spool handoff.
+     * The ordered barrier also guarantees that its queued STOP/scalar writes
+     * completed before process ownership is released.
+     */
+    private fun releaseStoppedJournalOwnershipAfterFailedExport(
+        pending: PendingMeasurementExport
+    ) {
+        val journalStartedAt = synchronized(measurementExportWorkerLock) {
+            activeJournalSegmentsAwaitingExportCleanup[pending.id]
+        } ?: return
+        runJournalIoBarrier("Messfahrt-Journal konnte nicht für Recovery freigegeben werden") {
+            ProcessActiveMeasurementJournals.release(
+                activeMeasurementJournalRoot,
+                journalStartedAt,
+                activeMeasurementJournalOwnerToken
+            )
+        }
+    }
+
+    /**
+     * Replays the unbounded append-only journal on the background writer before
+     * staging. The bounded in-memory rows remain a fallback, not the source that
+     * can truncate a long ride.
+     */
+    private fun prepareDurableMeasurementExport(
+        pending: PendingMeasurementExport
+    ): PendingMeasurementExport {
+        val journalStartedAt = synchronized(measurementExportWorkerLock) {
+            activeJournalSegmentsAwaitingExportCleanup[pending.id]
+        }
+        if (journalStartedAt == null) {
+            measurementExportSpool.stage(pending)
+            return pending
+        }
+
+        val recovery = try {
+            ACTIVE_JOURNAL_IO.submit {
+                activeMeasurementJournalStore.recoverSegmentWithDiagnostics(journalStartedAt)
+            }.get()
+        } catch (error: Throwable) {
+            val cause = (error as? java.util.concurrent.ExecutionException)?.cause ?: error
+            // Preserve at least the frozen fallback while retaining the journal
+            // for a later full replay.
+            stageJournalReplayFallback(pending)
+            reportJournalFailure(
+                "Vollständiges Messfahrt-Journal konnte nicht gelesen werden",
+                cause,
+                affectedSegmentStartedAt = null
+            )
+            throw cause
+        }
+        val recovered = recovery.pendingExports.singleOrNull()
+        if (recovered == null) {
+            stageJournalReplayFallback(pending)
+            val detail = recovery.failures.firstOrNull()?.message
+                ?: "Messfahrt-Journal lieferte keinen vollständigen Präfix"
+            val error = IllegalStateException(detail)
+            reportJournalFailure(
+                "Vollständiges Messfahrt-Journal konnte nicht gelesen werden",
+                error,
+                affectedSegmentStartedAt = null
+            )
+            throw error
+        }
+        if (recovery.failures.isNotEmpty()) {
+            addLog("Journalhinweis: ${recovery.failures.first().message}")
+        }
+        val merged = consolidateRecoveredMeasurementExports(listOf(pending, recovered))
+            .single()
+            .pending
+        val durablePending = pending.copy(
+            stoppedAt = maxOf(pending.stoppedAt, merged.stoppedAt),
+            snapshot = merged.snapshot
+        )
+        measurementExportSpool.stage(durablePending)
+        clearJournalAfterDurableSpoolStage(pending)
+        return durablePending
+    }
+
+    private fun stageJournalReplayFallback(pending: PendingMeasurementExport) {
+        val suffix = "-journal-fallback"
+        val fallback = pending.copy(
+            id = pending.id.take(160 - suffix.length) + suffix
+        )
+        measurementExportSpool.stage(fallback)
+        synchronized(measurementExportWorkerLock) {
+            val existing = recoverySourceSpoolIdsByExport[pending.id].orEmpty()
+            recoverySourceSpoolIdsByExport[pending.id] = existing + fallback.id
+        }
     }
 
     private fun schedulePendingMeasurementExports() {
@@ -3017,6 +3454,7 @@ class BleScooterManager(private val context: Context) {
         runCatching {
             MEASUREMENT_EXPORT_EXECUTOR.execute {
                 val alreadyCompleted = wasMeasurementExportCompleted(pending.id)
+                var queuePending = pending
                 var result = if (alreadyCompleted) {
                     MeasurementExportResult(
                         success = true,
@@ -3024,8 +3462,15 @@ class BleScooterManager(private val context: Context) {
                     )
                 } else {
                     runCatching {
-                        measurementExportSpool.stage(pending)
-                        exportMeasurementBundle(pending.stoppedAt, pending.snapshot)
+                        val durablePending = prepareDurableMeasurementExport(pending)
+                        check(pendingMeasurementExports.replaceHead(pending, durablePending)) {
+                            "Export-Queue wurde während der Sicherung verändert"
+                        }
+                        queuePending = durablePending
+                        exportMeasurementBundle(
+                            durablePending.stoppedAt,
+                            durablePending.snapshot
+                        )
                     }.getOrElse { error ->
                         MeasurementExportResult(
                             success = false,
@@ -3036,7 +3481,19 @@ class BleScooterManager(private val context: Context) {
                 if (result.success) {
                     if (!alreadyCompleted) markMeasurementExportCompleted(pending.id)
                     val cleanupFailure = runCatching {
-                        measurementExportSpool.removeAfterConfirmedExport(pending.id)
+                        // Never remove the complete durable spool while an older
+                        // journal still failed to retire. A crash may otherwise
+                        // leave only the shorter source behind.
+                        clearJournalAfterDurableSpoolStage(pending)?.let { throw it }
+                        val sourceIds = synchronized(measurementExportWorkerLock) {
+                            recoverySourceSpoolIdsByExport[pending.id].orEmpty()
+                        }
+                        (sourceIds + pending.id).forEach(
+                            measurementExportSpool::removeAfterConfirmedExport
+                        )
+                        synchronized(measurementExportWorkerLock) {
+                            recoverySourceSpoolIdsByExport.remove(pending.id)
+                        }
                     }.exceptionOrNull()
                     if (cleanupFailure != null) {
                         result = MeasurementExportResult(
@@ -3044,11 +3501,16 @@ class BleScooterManager(private val context: Context) {
                             message = "Messfahrt gespeichert; privater Retry-Vermerk bleibt erhalten: " +
                                 (cleanupFailure.message ?: cleanupFailure.javaClass.simpleName),
                             findings = result.findings,
-                            location = result.location
+                            location = result.location,
+                            rideSummary = result.rideSummary,
+                            dataQuality = result.dataQuality
                         )
                     } else {
-                        pendingMeasurementExports.markSucceeded(pending)
+                        pendingMeasurementExports.markSucceeded(queuePending)
                     }
+                }
+                if (!result.success) {
+                    releaseStoppedJournalOwnershipAfterFailedExport(queuePending)
                 }
                 synchronized(measurementExportWorkerLock) {
                     measurementExportWorkerRunning = false
@@ -3059,6 +3521,26 @@ class BleScooterManager(private val context: Context) {
                         pendingMeasurementExportCount = pendingMeasurementExports.size,
                         measurementExportInProgress = false,
                         lastExportMessage = result.message,
+                        lastRideSummaryLines = if (coreSaved) {
+                            result.rideSummary?.dashboardSummaryLines().orEmpty()
+                        } else {
+                            current.lastRideSummaryLines
+                        },
+                        lastMeasurementQualityLabel = if (coreSaved) {
+                            result.dataQuality?.label.orEmpty()
+                        } else {
+                            current.lastMeasurementQualityLabel
+                        },
+                        lastMeasurementQualityDetail = if (coreSaved) {
+                            result.dataQuality?.detail.orEmpty()
+                        } else {
+                            current.lastMeasurementQualityDetail
+                        },
+                        lastMeasurementQualityStatus = if (coreSaved) {
+                            result.dataQuality?.status
+                        } else {
+                            current.lastMeasurementQualityStatus
+                        },
                         autoAnalysisFindings = if (coreSaved) result.findings else current.autoAnalysisFindings,
                         learningProfileCount = if (coreSaved) learningStore.count() else current.learningProfileCount,
                         sessionHistoryCount = if (coreSaved) historyStore.count() else current.sessionHistoryCount,
@@ -3070,6 +3552,20 @@ class BleScooterManager(private val context: Context) {
         }.onFailure { error ->
             synchronized(measurementExportWorkerLock) {
                 measurementExportWorkerRunning = false
+            }
+            val journalStartedAt = synchronized(measurementExportWorkerLock) {
+                activeJournalSegmentsAwaitingExportCleanup[pending.id]
+            }
+            if (journalStartedAt != null) {
+                runCatching {
+                    ACTIVE_JOURNAL_IO.execute {
+                        ProcessActiveMeasurementJournals.release(
+                            activeMeasurementJournalRoot,
+                            journalStartedAt,
+                            activeMeasurementJournalOwnerToken
+                        )
+                    }
+                }
             }
             update {
                 it.copy(
@@ -3094,15 +3590,118 @@ class BleScooterManager(private val context: Context) {
     }
 
     private fun addMarkerInternal(label: String, now: Long) {
-        measurementRows.appendMarker(label, now, measurementStartedAt)
+        val row = measurementRows.appendMarker(label, now, measurementStartedAt)
+        if (recordingActive) {
+            val segmentStartedAt = measurementStartedAt
+            enqueueJournalIo("Marker konnte nicht im Messfahrt-Journal gesichert werden", segmentStartedAt) {
+                activeMeasurementJournalStore.appendMarkerRow(segmentStartedAt, now, row)
+            }
+            updateActiveJournalScalarsLocked(now)
+        }
+    }
+
+    private fun activeMeasurementJournalScalarsLocked(at: Long): ActiveMeasurementJournalScalars =
+        ActiveMeasurementJournalScalars(
+            deviceName = _state.value.deviceName,
+            stoppedAt = maxOf(at, measurementStartedAt),
+            connectionCount = measurementConnectionEpoch + 1,
+            receivedNotifications = receivedNotificationPackets,
+            acceptedNotifications = acceptedNotificationPackets,
+            rejectedReads = rejectedReadPackets,
+            rejectedHybrids = rejectedHybridPackets,
+            diagnosticNotifications = diagnosticOnlyNotificationPackets
+        )
+
+    private fun updateActiveJournalScalarsLocked(at: Long) {
+        if (!recordingActive) return
+        val segmentStartedAt = measurementStartedAt
+        val scalars = activeMeasurementJournalScalarsLocked(at)
+        enqueueJournalIo("Messfahrt-Journal konnte nicht aktualisiert werden", segmentStartedAt) {
+            activeMeasurementJournalStore.updateScalars(
+                segmentStartedAt,
+                at,
+                scalars
+            )
+            activeMeasurementJournalStore.syncIfNeeded(
+                segmentStartedAt,
+                nowMs = at,
+                maxUnsyncedRecords = ACTIVE_JOURNAL_SYNC_RECORDS,
+                maxUnsyncedMs = ACTIVE_JOURNAL_SYNC_MS
+            )
+        }
+    }
+
+    private fun enqueueJournalIo(
+        message: String,
+        segmentStartedAt: Long,
+        onSuccess: (() -> Unit)? = null,
+        block: () -> Unit
+    ): Boolean =
+        runCatching {
+            ACTIVE_JOURNAL_IO.execute {
+                runCatching(block)
+                    .onSuccess { onSuccess?.invoke() }
+                    .onFailure { error ->
+                        reportJournalFailure(message, error, segmentStartedAt)
+                    }
+            }
+        }.fold(
+            onSuccess = { true },
+            onFailure = { error ->
+                reportJournalFailure(message, error, segmentStartedAt)
+                false
+            }
+        )
+
+    /** Used only from the export worker, never UI or a Bluetooth callback. */
+    private fun runJournalIoBarrier(message: String, block: () -> Unit): Throwable? =
+        runCatching { ACTIVE_JOURNAL_IO.submit(block).get() }
+            .exceptionOrNull()
+            ?.let { error ->
+                val cause = (error as? java.util.concurrent.ExecutionException)?.cause ?: error
+                reportJournalFailure(message, cause, affectedSegmentStartedAt = null)
+                cause
+            }
+
+    private fun reportJournalFailure(
+        message: String,
+        error: Throwable,
+        affectedSegmentStartedAt: Long?
+    ) {
+        val publish = affectedSegmentStartedAt?.let { startedAt ->
+            synchronized(journalFailureLock) { failedJournalSegments.add(startedAt) }
+        } ?: true
+        if (publish) {
+            update { current ->
+                val currentSegmentFailed = affectedSegmentStartedAt != null &&
+                    current.recordingActive &&
+                    current.recordingStartedAt == affectedSegmentStartedAt
+                current.copy(
+                    recordingCrashProtected = if (currentSegmentFailed) {
+                        false
+                    } else {
+                        current.recordingCrashProtected
+                    },
+                    lastExportMessage = "$message: " +
+                        (error.message ?: error.javaClass.simpleName)
+                )
+            }
+        }
     }
 
     private fun exportMeasurementBundle(
         stoppedAt: Long,
         snapshot: MeasurementExportSnapshot
     ): MeasurementExportResult {
-        val stamp = java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss-SSS", java.util.Locale.GERMANY).format(java.util.Date(snapshot.startedAt))
-        val folder = "VMAXDashboard/Messfahrt_$stamp"
+        val publicationIdentity = measurementPublicationIdentity(snapshot.startedAt)
+        val historicalFolder = historyStore.findFolderByStartedAt(snapshot.startedAt)
+            ?.takeIf { measurementExportFolder(snapshot.startedAt, it) == it }
+            ?: findExistingMeasurementFolderByStartedAt(snapshot.startedAt)
+        val folder = measurementExportFolder(
+            startedAt = snapshot.startedAt,
+            historicalFolder = historicalFolder
+        )
+        val stamp = folder.substringAfter("VMAXDashboard/Messfahrt_")
         val telemetry = buildRawTelemetryCsv(snapshot.rawRows)
         val liveTelemetry = buildLiveTelemetryCsv(snapshot.telemetryRows)
         val markers = "relative_ms;timestamp_ms;marker\n" + snapshot.markerRows.joinToString("\n")
@@ -3111,45 +3710,57 @@ class BleScooterManager(private val context: Context) {
         val analysisRows = rawTelemetryRowsForAnalysis(snapshot.rawRows)
         val (findings, analysisReport) = MeasurementAnalyzer.analyze(analysisRows, snapshot.markerRows)
         val measurementChannels = measurementChannelsFromRawRows(snapshot.rawRows)
-        learningStore.merge(findings, snapshot.deviceName, stoppedAt)
-        val learningJson = learningStore.exportJson()
+        learningStore.merge(
+            findings = findings,
+            model = snapshot.deviceName,
+            createdAt = stoppedAt,
+            sessionIdentity = publicationIdentity
+        )
+        val learningJson = learningStore.exportJson(stoppedAt)
         val diagnosticRecords = diagnosticRecordsForBundles(snapshot.diagnosticReadBundles)
         val diagnosticCounts = diagnosticReadCounts(diagnosticRecords)
         val completedDiagnosticScans = snapshot.diagnosticReadBundles.count { it.completed }
-        var diagnosticExportSucceeded = snapshot.diagnosticReadBundles.isEmpty()
-        if (snapshot.diagnosticReadBundles.isNotEmpty()) {
-            runCatching {
-                // Keep the optional triple atomic from the syncer's perspective.
-                // A partial triple is ignored publicly, while the core ride still exports.
-                writeDownloadFile(
-                    folder,
-                    DIAGNOSTIC_READ_CSV_FILE,
-                    "text/csv",
-                    buildDiagnosticReadCsv(diagnosticRecords)
+        val rideSummary = RideTelemetrySummary.fromV3Rows(snapshot.telemetryRows)
+        val dataQuality = MeasurementDataQuality.evaluate(
+            received = snapshot.receivedNotifications,
+            accepted = snapshot.acceptedNotifications,
+            rejectedHybrids = snapshot.rejectedHybrids,
+            diagnosticNotifications = snapshot.diagnosticNotifications,
+            rawRowCount = snapshot.rawRows.size,
+            telemetryRowCount = snapshot.telemetryRows.size
+        )
+        val diagnosticFiles = runCatching {
+            if (snapshot.diagnosticReadBundles.isEmpty()) {
+                emptyMap()
+            } else {
+                linkedMapOf(
+                    DIAGNOSTIC_READ_CSV_FILE to (
+                        "text/csv" to buildDiagnosticReadCsv(diagnosticRecords)
+                    ),
+                    DIAGNOSTIC_READ_SUMMARY_FILE to (
+                        "text/plain" to buildDiagnosticReadSummary(snapshot.diagnosticReadBundles)
+                    ),
+                    DIAGNOSTIC_READ_MANIFEST_FILE to (
+                        "application/json" to buildMeasurementDiagnosticManifest(
+                            measurementName = "Messfahrt_$stamp",
+                            bundles = snapshot.diagnosticReadBundles,
+                            createdAtMs = stoppedAt
+                        ).toString(2)
+                    )
                 )
-                writeDownloadFile(
-                    folder,
-                    DIAGNOSTIC_READ_SUMMARY_FILE,
-                    "text/plain",
-                    buildDiagnosticReadSummary(snapshot.diagnosticReadBundles)
-                )
-                writeDownloadFile(
-                    folder,
-                    DIAGNOSTIC_READ_MANIFEST_FILE,
-                    "application/json",
-                    buildMeasurementDiagnosticManifest(
-                        measurementName = "Messfahrt_$stamp",
-                        bundles = snapshot.diagnosticReadBundles
-                    ).toString(2)
-                )
-                diagnosticExportSucceeded = true
-            }.onFailure { error ->
-                addLog("Optionaler Deep-READ-Export fehlgeschlagen; Fahrtdaten werden trotzdem gespeichert: ${error.message}")
             }
+        }.getOrElse { error ->
+            addLog("Deep-READ-Export fehlgeschlagen; gesamte Messfahrt bleibt im privaten Retry: ${error.message}")
+            return MeasurementExportResult(
+                success = false,
+                message = "Speichern wartet geschützt: verknüpfter Deep READ ist noch nicht vollständig"
+            )
         }
+        val diagnosticExportSucceeded = true
         val summary = buildString {
             appendLine("VMAX Dashboard Messfahrt")
             appendLine("Start: ${snapshot.startedAt}")
+            appendLine("Publikations_ID: $publicationIdentity")
             appendLine("Ende: $stoppedAt")
             appendLine("Dauer_ms: ${stoppedAt - snapshot.startedAt}")
             appendLine("BLE_Pakete: ${snapshot.rawRows.size}")
@@ -3165,6 +3776,9 @@ class BleScooterManager(private val context: Context) {
             // "Antworten" means actual Android onCharacteristicRead callbacks,
             // not inventory, timeout or connection-observation rows.
             appendLine("Deep_READ_Antworten: ${diagnosticCounts.callbacks}")
+            appendLine("Deep_READ_Versuche: ${diagnosticCounts.attempts}")
+            appendLine("Deep_READ_Erfolg: ${diagnosticCounts.successes}")
+            appendLine("Deep_READ_Gültige_Payloads: ${diagnosticCounts.validPayloads}")
             appendLine(
                 "Deep_READ_Export: " + measurementDeepReadExportStatus(
                     totalScans = snapshot.diagnosticReadBundles.size,
@@ -3175,22 +3789,65 @@ class BleScooterManager(private val context: Context) {
             appendLine("Marker: ${snapshot.markerRows.size}")
             appendLine("Gerät: ${snapshot.deviceName}")
             appendLine("Kanäle: ${measurementChannels.joinToString(",")}")
+            appendLine("Datenqualität: ${dataQuality.label}")
+            appendLine("Datenqualität_Detail: ${dataQuality.detail}")
+            rideSummary.userSummaryLines().forEach(::appendLine)
         }
+        val exportFiles = linkedMapOf(
+            "BLE_Rohdaten.csv" to ("text/csv" to telemetry),
+            "Live_Telemetrie.csv" to ("text/csv" to liveTelemetry),
+            "Ereignisse.csv" to ("text/csv" to markers),
+            "Zusammenfassung.txt" to ("text/plain" to summary),
+            "Automatische_Analyse.txt" to ("text/plain" to analysisReport),
+            "Lernprofil.json" to ("application/json" to learningJson)
+        ).apply { putAll(diagnosticFiles) }
+        val generationSha256 = measurementGenerationSha256(
+            exportFiles.mapValues { (_, typedContent) ->
+                typedContent.second.toByteArray(Charsets.UTF_8)
+            }
+        )
+        val completion = JSONObject()
+            .put("schema", "vmax-measurement-completion-v2")
+            .put("publication_identity", publicationIdentity)
+            .put("generation_sha256", generationSha256)
+            .put("file_count", exportFiles.size)
+            .put("deep_read_files", snapshot.diagnosticReadBundles.isNotEmpty())
+            .put("completed_at_ms", stoppedAt)
+            .toString(2)
         return runCatching {
-            writeDownloadFile(folder, "BLE_Rohdaten.csv", "text/csv", telemetry)
-            writeDownloadFile(folder, "Live_Telemetrie.csv", "text/csv", liveTelemetry)
-            writeDownloadFile(folder, "Ereignisse.csv", "text/csv", markers)
-            writeDownloadFile(folder, "Zusammenfassung.txt", "text/plain", summary)
-            writeDownloadFile(folder, "Automatische_Analyse.txt", "text/plain", analysisReport)
-            writeDownloadFile(folder, "Lernprofil.json", "application/json", learningJson)
-            historyStore.add(
+            // Publish a visible fence before invalidating/replacing any prior generation.
+            ensureMeasurementInProgressFence(
                 folder,
-                snapshot.deviceName,
-                snapshot.startedAt,
-                stoppedAt,
-                snapshot.rawRows.size,
-                snapshot.markerRows.size,
-                measurementChannels
+                JSONObject()
+                    .put("schema", "vmax-measurement-in-progress-v1")
+                    .put("publication_identity", publicationIdentity)
+                    .put("generation_sha256", generationSha256)
+                    .toString(2)
+            )
+            deleteDownloadFile(folder, MEASUREMENT_COMPLETION_FILE)
+            OPTIONAL_MEASUREMENT_FILES
+                .filterNot(exportFiles::containsKey)
+                .forEach { deleteDownloadFile(folder, it) }
+            exportFiles.forEach { (name, typedContent) ->
+                writeDownloadFile(folder, name, typedContent.first, typedContent.second)
+            }
+            writeDownloadFile(
+                folder,
+                MEASUREMENT_COMPLETION_FILE,
+                "application/json",
+                completion
+            )
+            // Removing this fence is the sole local publication commit.
+            deleteDownloadFile(folder, MEASUREMENT_IN_PROGRESS_FILE)
+            historyStore.add(
+                publicationIdentity = publicationIdentity,
+                folder = folder,
+                model = snapshot.deviceName,
+                startedAt = snapshot.startedAt,
+                stoppedAt = stoppedAt,
+                packets = snapshot.rawRows.size,
+                markers = snapshot.markerRows.size,
+                channels = measurementChannels
             )
             val location = "Downloads/$folder"
             val complete = isMeasurementExportComplete(
@@ -3213,7 +3870,9 @@ class BleScooterManager(private val context: Context) {
                     "Fahrdaten gespeichert; verknüpfter Deep READ wartet geschützt auf Wiederholung"
                 },
                 findings = findings,
-                location = location
+                location = location,
+                rideSummary = rideSummary,
+                dataQuality = dataQuality
             )
         }.getOrElse { error ->
             addLog("Messfahrt-Export fehlgeschlagen: ${error.message}")
@@ -3226,7 +3885,8 @@ class BleScooterManager(private val context: Context) {
 
     private fun buildMeasurementDiagnosticManifest(
         measurementName: String,
-        bundles: List<DiagnosticReadBundle>
+        bundles: List<DiagnosticReadBundle>,
+        createdAtMs: Long
     ): JSONObject {
         val records = diagnosticRecordsForBundles(bundles)
         val counts = diagnosticReadCounts(records)
@@ -3271,23 +3931,147 @@ class BleScooterManager(private val context: Context) {
             .put("read_only", true)
             .put("bluetooth_address_included", false)
             .put("app_version", packageInfo.versionName.orEmpty())
-            .put("created_at_ms", System.currentTimeMillis())
+            .put("created_at_ms", createdAtMs)
         return putDiagnosticCharacteristicCounts(manifest, characteristicCounts)
+    }
+
+    /** Finds a pre-upgrade export even when the process died before historyStore.add(). */
+    private fun findExistingMeasurementFolderByStartedAt(startedAt: Long): String? {
+        val candidates = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val resolver = context.contentResolver
+            val downloadsPrefix = Environment.DIRECTORY_DOWNLOADS.trimEnd('/') + "/"
+            resolver.query(
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                arrayOf(
+                    MediaStore.Downloads._ID,
+                    MediaStore.Downloads.RELATIVE_PATH,
+                    MediaStore.Downloads.DATE_MODIFIED
+                ),
+                "${MediaStore.Downloads.DISPLAY_NAME} = ? AND " +
+                    "${MediaStore.Downloads.RELATIVE_PATH} LIKE ? AND " +
+                    "${MediaStore.Downloads.IS_PENDING} = 0",
+                arrayOf(
+                    "Zusammenfassung.txt",
+                    downloadsPrefix + "VMAXDashboard/Messfahrt_%/"
+                ),
+                "${MediaStore.Downloads.DATE_MODIFIED} DESC, ${MediaStore.Downloads._ID} DESC"
+            )?.use { cursor ->
+                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Downloads._ID)
+                val pathColumn = cursor.getColumnIndexOrThrow(MediaStore.Downloads.RELATIVE_PATH)
+                buildList {
+                    while (cursor.moveToNext()) {
+                        val path = cursor.getString(pathColumn).orEmpty().trimEnd('/')
+                        val folder = path.removePrefix(downloadsPrefix)
+                        val uri = ContentUris.withAppendedId(
+                            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                            cursor.getLong(idColumn)
+                        )
+                        val summary = resolver.openInputStream(uri)?.use { input ->
+                            String(input.readBytes(), Charsets.UTF_8)
+                        } ?: continue
+                        add(folder to summary)
+                    }
+                }
+            }.orEmpty()
+        } else {
+            val base = context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS)
+                ?.resolve("VMAXDashboard")
+            base?.listFiles()
+                ?.asSequence()
+                ?.filter { it.isDirectory && it.name.startsWith("Messfahrt_") }
+                ?.sortedByDescending(File::lastModified)
+                ?.mapNotNull { folder ->
+                    folder.resolve("Zusammenfassung.txt")
+                        .takeIf(File::isFile)
+                        ?.let { "VMAXDashboard/${folder.name}" to it.readText() }
+                }
+                ?.toList()
+                .orEmpty()
+        }
+        return existingMeasurementFolderForStartedAt(startedAt, candidates)
+    }
+
+    /** Never hides an already published fence while retrying a torn generation. */
+    private fun ensureMeasurementInProgressFence(relativeFolder: String, content: String) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val expectedPath = (
+                Environment.DIRECTORY_DOWNLOADS + "/" + relativeFolder
+            ).trimEnd('/')
+            val resolver = context.contentResolver
+            val publishedFenceExists = resolver.query(
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                arrayOf(MediaStore.Downloads._ID, MediaStore.Downloads.RELATIVE_PATH),
+                "${MediaStore.Downloads.DISPLAY_NAME} = ? AND " +
+                    "${MediaStore.Downloads.IS_PENDING} = 0",
+                arrayOf(MEASUREMENT_IN_PROGRESS_FILE),
+                null
+            )?.use { cursor ->
+                val pathColumn = cursor.getColumnIndexOrThrow(MediaStore.Downloads.RELATIVE_PATH)
+                var found = false
+                while (cursor.moveToNext() && !found) {
+                    found = cursor.getString(pathColumn).orEmpty().trimEnd('/') == expectedPath
+                }
+                found
+            } == true
+            if (publishedFenceExists) return
+        } else {
+            val base = context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS)
+                ?: error("Speicher nicht verfügbar")
+            if (File(base, relativeFolder).resolve(MEASUREMENT_IN_PROGRESS_FILE).isFile) return
+        }
+        writeDownloadFile(
+            relativeFolder,
+            MEASUREMENT_IN_PROGRESS_FILE,
+            "application/json",
+            content
+        )
     }
 
     private fun writeDownloadFile(relativeFolder: String, fileName: String, mimeType: String, content: String) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val relativePath = Environment.DIRECTORY_DOWNLOADS + "/" + relativeFolder
             val values = ContentValues().apply {
                 put(MediaStore.Downloads.DISPLAY_NAME, fileName)
                 put(MediaStore.Downloads.MIME_TYPE, mimeType)
-                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/" + relativeFolder)
+                put(MediaStore.Downloads.RELATIVE_PATH, relativePath)
                 put(MediaStore.Downloads.IS_PENDING, 1)
             }
             val resolver = context.contentResolver
-            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            val existingUri = resolver.query(
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                arrayOf(
+                    MediaStore.Downloads._ID,
+                    MediaStore.Downloads.RELATIVE_PATH,
+                    MediaStore.Downloads.DATE_MODIFIED
+                ),
+                "${MediaStore.Downloads.DISPLAY_NAME} = ?",
+                arrayOf(fileName),
+                "${MediaStore.Downloads.DATE_MODIFIED} DESC, ${MediaStore.Downloads._ID} DESC"
+            )?.use { cursor ->
+                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Downloads._ID)
+                val pathColumn = cursor.getColumnIndexOrThrow(MediaStore.Downloads.RELATIVE_PATH)
+                val expectedPath = relativePath.trimEnd('/')
+                var match: android.net.Uri? = null
+                while (cursor.moveToNext() && match == null) {
+                    if (cursor.getString(pathColumn).orEmpty().trimEnd('/') == expectedPath) {
+                        match = ContentUris.withAppendedId(
+                            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                            cursor.getLong(idColumn)
+                        )
+                    }
+                }
+                match
+            }
+            val inserted = existingUri == null
+            val uri = existingUri ?: resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
                 ?: error("Datei $fileName konnte nicht angelegt werden")
             try {
-                resolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(content) }
+                if (!inserted) {
+                    check(resolver.update(uri, values, null, null) == 1) {
+                        "Datei $fileName konnte nicht für Wiederholung geöffnet werden"
+                    }
+                }
+                resolver.openOutputStream(uri, "wt")?.bufferedWriter()?.use { it.write(content) }
                     ?: error("Datei $fileName konnte nicht geschrieben werden")
                 values.clear()
                 values.put(MediaStore.Downloads.IS_PENDING, 0)
@@ -3295,13 +4079,60 @@ class BleScooterManager(private val context: Context) {
                     "Datei $fileName konnte nicht veröffentlicht werden"
                 }
             } catch (error: Throwable) {
-                runCatching { resolver.delete(uri, null, null) }
+                // Never delete a previously published file during a retry. The
+                // private spool keeps the ride until every deterministic path
+                // has been rewritten and published successfully.
+                if (inserted) runCatching { resolver.delete(uri, null, null) }
                 throw error
             }
         } else {
             val base = context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS) ?: error("Speicher nicht verfügbar")
             val folder = File(base, relativeFolder).apply { mkdirs() }
             File(folder, fileName).writeText(content)
+        }
+    }
+
+    /** Removes every app-owned duplicate at the deterministic path before a generation commit. */
+    private fun deleteDownloadFile(relativeFolder: String, fileName: String) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val relativePath = (
+                Environment.DIRECTORY_DOWNLOADS + "/" + relativeFolder
+            ).trimEnd('/')
+            val resolver = context.contentResolver
+            val matches = resolver.query(
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                arrayOf(MediaStore.Downloads._ID, MediaStore.Downloads.RELATIVE_PATH),
+                "${MediaStore.Downloads.DISPLAY_NAME} = ?",
+                arrayOf(fileName),
+                null
+            )?.use { cursor ->
+                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Downloads._ID)
+                val pathColumn = cursor.getColumnIndexOrThrow(MediaStore.Downloads.RELATIVE_PATH)
+                buildList {
+                    while (cursor.moveToNext()) {
+                        if (cursor.getString(pathColumn).orEmpty().trimEnd('/') == relativePath) {
+                            add(
+                                ContentUris.withAppendedId(
+                                    MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                                    cursor.getLong(idColumn)
+                                )
+                            )
+                        }
+                    }
+                }
+            }.orEmpty()
+            matches.forEach { uri ->
+                check(resolver.delete(uri, null, null) >= 1) {
+                    "Datei $fileName konnte nicht ungültig gemacht werden"
+                }
+            }
+        } else {
+            val base = context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS)
+                ?: error("Speicher nicht verfügbar")
+            val file = File(base, relativeFolder).resolve(fileName)
+            check(!file.exists() || file.delete()) {
+                "Datei $fileName konnte nicht ungültig gemacht werden"
+            }
         }
     }
 

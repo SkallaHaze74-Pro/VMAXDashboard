@@ -70,6 +70,25 @@ class MeasurementExportSpoolTest {
         }
     }
 
+    @Test
+    fun corruptSnapshotIsReportedAndKeptWhileValidSnapshotStillRecovers() {
+        val root = Files.createTempDirectory("vmax-measurement-corrupt-spool").toFile()
+        try {
+            val pending = samplePendingExport()
+            MeasurementExportSpool(root).stage(pending)
+            val corrupt = java.io.File(root, "corrupt.json")
+            corrupt.writeText("{not-json")
+
+            val recovery = MeasurementExportSpool(root).loadPendingWithDiagnostics()
+
+            assertEquals(listOf(pending), recovery.pendingExports)
+            assertEquals(listOf("corrupt.json"), recovery.failures.map { it.fileName })
+            assertTrue(corrupt.isFile)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
     private fun samplePendingExport(): PendingMeasurementExport = PendingMeasurementExport(
         id = "measurement-1000-2000-test",
         stoppedAt = 2_000L,

@@ -35,12 +35,32 @@ class MeasurementAnalyzerTest {
             "3300;4300;Telemetrie wieder aktiv",
             "3500;4500;BLE beim Laden getrennt",
             "4000;5000;BLE beim Laden wieder verbunden",
+            "4500;5500;APP_NEUSTART • laufende Messfahrt automatisch gerettet",
             "5000;6000;STOP"
         )
 
         val (_, report) = MeasurementAnalyzer.analyze(emptyList(), markers)
 
+        assertTrue(report, report.contains("Manuelle Marker: 0"))
+    }
+
+    @Test
+    fun confirmedAutomaticRideEventsAreNotReportedAsManualTests() {
+        val rows = listOf(
+            packet(2_000L, "1508", bytes(0, 0, 0, 1)),
+            packet(2_800L, "1508", bytes(1, 0, 0, 1)),
+            packet(3_200L, "1508", bytes(1, 0, 0, 1))
+        )
+        val markers = listOf(
+            "0;1000;START",
+            "2500;3500;AUTO_BESTÄTIGT • Licht AUS → AN • 1508/0",
+            "5000;6000;STOP"
+        )
+
+        val (findings, report) = MeasurementAnalyzer.analyze(rows, markers)
+
         assertTrue(report.contains("Manuelle Marker: 0"))
+        assertFalse(findings.any { it.marker.startsWith(CONFIRMED_RIDE_EVENT_PREFIX) })
     }
 
     @Test

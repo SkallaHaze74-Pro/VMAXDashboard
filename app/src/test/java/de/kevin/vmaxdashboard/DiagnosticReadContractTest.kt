@@ -77,16 +77,39 @@ class DiagnosticReadContractTest {
             REQUIRED_MEASUREMENT_FILES + OPTIONAL_MEASUREMENT_FILES,
             measurementFilesToQueue(withDeepRead)
         )
-
         assertEquals(
-            REQUIRED_MEASUREMENT_FILES,
-            measurementFilesToQueue(core + DIAGNOSTIC_READ_CSV_FILE)
+            REQUIRED_MEASUREMENT_FILES + listOf(MEASUREMENT_COMPLETION_FILE),
+            measurementFilesToQueue(core + MEASUREMENT_COMPLETION_FILE)
         )
-        assertEquals(
-            REQUIRED_MEASUREMENT_FILES,
-            measurementFilesToQueue(core + setOf(DIAGNOSTIC_READ_CSV_FILE, DIAGNOSTIC_READ_SUMMARY_FILE))
+
+        assertTrue(measurementFilesToQueue(core + DIAGNOSTIC_READ_CSV_FILE).isEmpty())
+        assertTrue(
+            measurementFilesToQueue(
+                core + setOf(DIAGNOSTIC_READ_CSV_FILE, DIAGNOSTIC_READ_SUMMARY_FILE)
+            ).isEmpty()
         )
         assertTrue(measurementFilesToQueue(core - "Zusammenfassung.txt").isEmpty())
+    }
+
+    @Test
+    fun failedLinkedDeepReadSummaryCannotPublishCoreOnlyGeneration() {
+        val failed = """
+            VMAX Dashboard Messfahrt
+            Deep_READ_Scans: 1
+            Deep_READ_Export: fehlgeschlagen (gesamte Messfahrt im privaten Retry); Scans 1/1 abgeschlossen
+        """.trimIndent()
+        val complete = failed.replace(
+            "fehlgeschlagen (gesamte Messfahrt im privaten Retry)",
+            "vollständig archiviert"
+        )
+
+        assertFalse(measurementSummaryAllowsPublication(failed, REQUIRED_MEASUREMENT_FILES.toSet()))
+        assertTrue(
+            measurementSummaryAllowsPublication(
+                complete,
+                REQUIRED_MEASUREMENT_FILES.toSet() + OPTIONAL_MEASUREMENT_FILES
+            )
+        )
     }
 
     @Test
@@ -108,11 +131,16 @@ class DiagnosticReadContractTest {
     @Test
     fun measurementQueueRequiresAtomicKnownFilesAndExpectedHeaders() {
         val coreQueue = REQUIRED_MEASUREMENT_FILES.toSet() + setOf("manifest.json", ".meta.json")
-        assertTrue(isCompleteMeasurementQueueFileSet(coreQueue))
+        assertFalse(isCompleteMeasurementQueueFileSet(coreQueue))
         assertFalse(isCompleteMeasurementQueueFileSet(coreQueue - "Live_Telemetrie.csv"))
         assertFalse(isCompleteMeasurementQueueFileSet(coreQueue + DIAGNOSTIC_READ_CSV_FILE))
         assertTrue(
-            isCompleteMeasurementQueueFileSet(coreQueue + OPTIONAL_MEASUREMENT_FILES)
+            isCompleteMeasurementQueueFileSet(
+                coreQueue + OPTIONAL_MEASUREMENT_FILES + MEASUREMENT_COMPLETION_FILE
+            )
+        )
+        assertTrue(
+            isCompleteMeasurementQueueFileSet(coreQueue + MEASUREMENT_COMPLETION_FILE)
         )
         assertTrue(
             hasExpectedMeasurementFileHeader(
@@ -122,6 +150,109 @@ class DiagnosticReadContractTest {
         )
         assertFalse(hasExpectedMeasurementFileHeader("BLE_Rohdaten.csv", ""))
         assertFalse(hasExpectedMeasurementFileHeader("BLE_Rohdaten.csv", "broken"))
+        assertTrue(
+            hasExpectedMeasurementFileHeader(
+                MEASUREMENT_COMPLETION_FILE,
+                "{\"schema\":\"vmax-measurement-completion-v2\"}"
+            )
+        )
+    }
+
+    @Test
+    fun utcGenerationRequiresMatchingIdentityAndContentDigest() {
+        val startedAt = 1_726_000_123_456L
+        val summary = "VMAX Dashboard Messfahrt\nStart: $startedAt\n" +
+            "Publikations_ID: ${measurementPublicationIdentity(startedAt)}\n"
+        val content = REQUIRED_MEASUREMENT_FILES.associateWith { name ->
+            if (name == "Zusammenfassung.txt") summary.toByteArray() else name.toByteArray()
+        }
+        val marker = JSONObject()
+            .put("schema", "vmax-measurement-completion-v2")
+            .put("publication_identity", measurementPublicationIdentity(startedAt))
+            .put("generation_sha256", measurementGenerationSha256(content))
+            .toString()
+            .toByteArray()
+        val folder = "Messfahrt_${measurementExportStampUtc(startedAt)}"
+
+        assertFalse(measurementCommitAllowsPublication(folder, summary, content))
+        assertTrue(
+            measurementCommitAllowsPublication(
+                folder,
+                summary,
+                content + (MEASUREMENT_COMPLETION_FILE to marker)
+            )
+        )
+        assertFalse(
+            measurementCommitAllowsPublication(
+                folder,
+                summary,
+                content +
+                    ("Live_Telemetrie.csv" to "changed".toByteArray()) +
+                    (MEASUREMENT_COMPLETION_FILE to marker)
+            )
+        )
+        assertFalse(
+            measurementCommitAllowsPublication(
+                folder,
+                summary,
+                content +
+                    (MEASUREMENT_COMPLETION_FILE to marker) +
+                    (MEASUREMENT_IN_PROGRESS_FILE to "busy".toByteArray())
+            )
+        )
+    }
+
+    @Test
+    fun immutableLegacyGenerationWithoutNewMetadataRemainsImportable() {
+        val summary = "VMAX Dashboard Messfahrt\nStart: 1726000123456\n"
+        val content = REQUIRED_MEASUREMENT_FILES.associateWith { name ->
+            if (name == "Zusammenfassung.txt") summary.toByteArray() else name.toByteArray()
+        }
+
+        assertTrue(
+            measurementCommitAllowsPublication(
+                "Messfahrt_2024-09-10_22-28-43-456",
+                summary,
+                content
+            )
+        )
+    }
+
+    @Test
+    fun sourceFenceRejectsACommitChangeOrConcurrentRewrite() {
+        val marker = "generation-a".toByteArray()
+
+        assertTrue(measurementFenceStillMatches(marker, marker.copyOf(), inProgress = false))
+        assertTrue(measurementFenceStillMatches(null, null, inProgress = false))
+        assertFalse(measurementFenceStillMatches(marker, null, inProgress = false))
+        assertFalse(
+            measurementFenceStillMatches(marker, "generation-b".toByteArray(), inProgress = false)
+        )
+        assertFalse(measurementFenceStillMatches(marker, marker, inProgress = true))
+    }
+
+    @Test
+    fun queueDigestBindsTheExactFinalPublicUploadBytes() {
+        val exact = linkedMapOf(
+            "manifest.json" to JSONObject()
+                .put("schema", "vmax-github-telemetry-v1")
+                .put("device", "MY-SCOOTER")
+                .toString()
+                .toByteArray(),
+            DIAGNOSTIC_READ_CSV_FILE to
+                buildDiagnosticReadCsv(
+                    listOf(diagnosticReadDefaults(shortId = "1516", hex = "31-32-33"))
+                ).toByteArray()
+        )
+
+        val queued = finalPublicMeasurementUploadFiles(exact)
+        val digestAtCommit = measurementGenerationSha256(queued)
+        val digestAtUpload = measurementGenerationSha256(
+            queued.mapValues { (_, bytes) -> bytes.copyOf() }
+        )
+
+        assertEquals(digestAtCommit, digestAtUpload)
+        assertTrue(String(queued.getValue("manifest.json")).contains("public_identity_redacted"))
     }
 
     @Test
@@ -144,6 +275,58 @@ class DiagnosticReadContractTest {
                 completeQueueAlreadyExists = true
             )
         )
+    }
+
+    @Test
+    fun processedNewerCandidatesCannotStarveAnOlderUnprocessedGeneration() {
+        val visited = mutableListOf<Int>()
+        val queued = processQueueableCandidates(0..20, limit = 20) { candidate ->
+            visited += candidate
+            candidate == 20
+        }
+
+        assertEquals(1, queued)
+        assertEquals((0..20).toList(), visited)
+    }
+
+    @Test
+    fun processedGenerationsRemainDurableAndOnlyLatestGenerationPerRideIsKept() {
+        val digestA = "a".repeat(64)
+        val digestB = "b".repeat(64)
+        val firstGeneration = "mediastore:Download/VMAXDashboard/Messfahrt_1/:$digestA"
+        val secondGeneration = "mediastore:Download/VMAXDashboard/Messfahrt_1/:$digestB"
+        val manyRides = (0 until 300).mapTo(linkedSetOf()) { index ->
+            "mediastore:Download/VMAXDashboard/Messfahrt_$index/:$digestA"
+        }
+
+        val updated = updatedProcessedSourceKeys(manyRides, secondGeneration)
+
+        assertEquals(300, updated.size)
+        assertFalse(firstGeneration in updated)
+        assertTrue(secondGeneration in updated)
+    }
+
+    @Test
+    fun newestMediaStoreDuplicateWinsAndCannotBeOverwrittenByAnOlderRetry() {
+        val selected = linkedMapOf<String, String>()
+
+        retainNewestMediaStoreFile(selected, "Zusammenfassung.txt", "new-complete")
+        retainNewestMediaStoreFile(selected, "Zusammenfassung.txt", "old-failed")
+
+        assertEquals("new-complete", selected["Zusammenfassung.txt"])
+    }
+
+    @Test
+    fun completionMarkerIsUploadedAfterEveryBundleFile() {
+        val ordered = listOf(
+            MEASUREMENT_COMPLETION_FILE,
+            "manifest.json",
+            "Live_Telemetrie.csv",
+            "Zusammenfassung.txt"
+        ).sortedWith(compareBy<String> { measurementUploadPriority(it) }.thenBy { it })
+
+        assertEquals("manifest.json", ordered[ordered.lastIndex - 1])
+        assertEquals(MEASUREMENT_COMPLETION_FILE, ordered.last())
     }
 
     @Test
@@ -736,7 +919,7 @@ class DiagnosticReadContractTest {
             measurementDeepReadExportStatus(totalScans = 2, completedScans = 1, exportSucceeded = true)
         )
         assertEquals(
-            "fehlgeschlagen (Fahrdaten separat gesichert); Scans 1/2 abgeschlossen",
+            "fehlgeschlagen (gesamte Messfahrt im privaten Retry); Scans 1/2 abgeschlossen",
             measurementDeepReadExportStatus(totalScans = 2, completedScans = 1, exportSucceeded = false)
         )
     }

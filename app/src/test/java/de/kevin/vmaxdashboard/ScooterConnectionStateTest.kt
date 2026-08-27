@@ -11,6 +11,8 @@ class ScooterConnectionStateTest {
     fun reconnectClearsLatestConnectionValuesButKeepsMeasurementAggregates() {
         val old = ScooterState(
             connected = true,
+            scanning = true,
+            scanStartedAtElapsedRealtimeMs = 8_000L,
             connectionDesired = true,
             recordingDesired = false,
             telemetryReady = true,
@@ -21,6 +23,7 @@ class ScooterConnectionStateTest {
             gattOperationBusy = true,
             batteryPercent = 61,
             batteryPercentRaw = 48,
+            batteryStability = BatteryPercentStability.RECOVERING_AFTER_LOAD,
             lastKnownBatteryPercent = 61,
             lastKnownVoltageV = 47.8,
             lastKnownBatteryAt = 98L,
@@ -32,6 +35,7 @@ class ScooterConnectionStateTest {
             channels = listOf(BleChannelState(channel = "1505")),
             lastPacketAt = 99L,
             currentPowerW = 410.0,
+            tripDistanceKm = 4.2,
             maxSpeedKmh = 31.4,
             maxPowerW = 920.0,
             recordingPacketCount = 123
@@ -40,6 +44,8 @@ class ScooterConnectionStateTest {
         val cleared = old.clearConnectionScopedTelemetry(nextConnectionEpoch = 5L)
 
         assertTrue(cleared.connected)
+        assertFalse(cleared.scanning)
+        assertEquals(0L, cleared.scanStartedAtElapsedRealtimeMs)
         assertFalse(cleared.telemetryReady)
         assertTrue(cleared.connectionDesired)
         assertFalse(cleared.recordingDesired)
@@ -50,6 +56,7 @@ class ScooterConnectionStateTest {
         assertFalse(cleared.gattOperationBusy)
         assertNull(cleared.batteryPercent)
         assertNull(cleared.batteryPercentRaw)
+        assertEquals(BatteryPercentStability.DISCONNECTED, cleared.batteryStability)
         assertEquals(61, cleared.lastKnownBatteryPercent)
         assertEquals(47.8, cleared.lastKnownVoltageV!!, 0.0)
         assertEquals(98L, cleared.lastKnownBatteryAt)
@@ -61,6 +68,7 @@ class ScooterConnectionStateTest {
         assertTrue(cleared.channels.isEmpty())
         assertEquals(0L, cleared.lastPacketAt)
         assertNull(cleared.currentPowerW)
+        assertEquals(4.2, cleared.tripDistanceKm!!, 0.0001)
         assertEquals(31.4, cleared.maxSpeedKmh!!, 0.0001)
         assertEquals(920.0, cleared.maxPowerW!!, 0.0001)
         assertEquals(123, cleared.recordingPacketCount)

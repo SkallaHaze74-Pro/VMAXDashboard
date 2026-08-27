@@ -132,6 +132,37 @@ internal fun shouldPoisonDiagnosticEpochOnFinalize(
     hasInFlightPlatformRead: Boolean
 ): Boolean = hasActiveSession && hasInFlightPlatformRead
 
+/**
+ * Builds a durable, non-destructive view of an active diagnostic attempt.
+ *
+ * The stable [scanId] is intentionally reused so a later completed archive can
+ * be preferred over this partial checkpoint without counting two scans. Every
+ * record is copied into a new list; neither clearing nor extending [records]
+ * after this call can change the returned bundle.
+ */
+internal fun diagnosticReadCheckpointBundle(
+    records: List<DiagnosticReadRecord>,
+    deviceName: String,
+    scanStartedAt: Long,
+    checkpointAt: Long,
+    connectionEpoch: Long?,
+    scanId: String
+): DiagnosticReadBundle? {
+    if (connectionEpoch == null || scanId.isBlank() || scanStartedAt <= 0L || records.isEmpty()) {
+        return null
+    }
+    return DiagnosticReadBundle(
+        records = records.map { it.copy(scanId = scanId) },
+        deviceName = deviceName,
+        scanStartedAt = scanStartedAt,
+        scanFinishedAt = checkpointAt,
+        connectionEpoch = connectionEpoch,
+        scanId = scanId,
+        completed = false,
+        completionOutcome = DiagnosticReadOutcome.SCAN_PARTIAL
+    )
+}
+
 class GattReadScanner(private val manager: BleScooterManager) {
     private data class ReadKey(val serviceUuid: String, val characteristicUuid: String)
 
@@ -307,6 +338,23 @@ class GattReadScanner(private val manager: BleScooterManager) {
 
     internal fun hasPendingReadRequest(connectionEpoch: Long): Boolean =
         pendingReadConnectionEpoch == connectionEpoch && !_state.value.running
+
+    /**
+     * Copies the current Deep READ into a measurement checkpoint without
+     * cancelling a platform READ, changing its generation, or clearing evidence.
+     */
+    internal fun snapshotForMeasurementCheckpoint(
+        checkpointAt: Long = System.currentTimeMillis()
+    ): DiagnosticReadBundle? = diagnosticReadCheckpointBundle(
+        records = readRecords,
+        deviceName = observedDeviceName.ifBlank {
+            manager.state.value.deviceName.ifBlank { BleScooterManager.TARGET_NAME }
+        },
+        scanStartedAt = scanStartedAt,
+        checkpointAt = checkpointAt,
+        connectionEpoch = currentConnectionEpoch ?: activeSession?.connectionEpoch,
+        scanId = currentScanId
+    )
 
     private fun hasUnarchivedAttempt(connectionEpoch: Long): Boolean =
         currentConnectionEpoch == connectionEpoch && currentScanId.isNotBlank() &&

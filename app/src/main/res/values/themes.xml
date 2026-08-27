@@ -3,6 +3,7 @@
     <style name="Theme.VMAXDashboard" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
         <item name="android:statusBarColor">#070A10</item>
         <item name="android:navigationBarColor">#070A10</item>
         <item name="android:windowBackground">#070A10</item>

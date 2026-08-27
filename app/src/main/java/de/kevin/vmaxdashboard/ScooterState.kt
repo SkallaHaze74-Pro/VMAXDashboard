@@ -23,6 +23,8 @@ data class BleChannelState(
 
 data class ScooterState(
     val scanning: Boolean = false,
+    /** Monotonic start time of the currently published Android BLE scan generation. */
+    val scanStartedAtElapsedRealtimeMs: Long = 0L,
     val connected: Boolean = false,
     /** True for automatic capture; an explicit manual disconnect sets it false. */
     val connectionDesired: Boolean = true,
@@ -41,6 +43,8 @@ data class ScooterState(
     val batteryPercent: Int? = null,
     /** Exact 1509/4 value retained for diagnostics and lossless exports. */
     val batteryPercentRaw: Int? = null,
+    /** Explains whether the stable value is confirmed or still recovering from load. */
+    val batteryStability: BatteryPercentStability = BatteryPercentStability.RESET,
     /** Last real persisted 1509/4 sample; displayed only as an offline/history value. */
     val lastKnownBatteryPercent: Int? = null,
     val lastKnownVoltageV: Double? = null,
@@ -84,11 +88,20 @@ data class ScooterState(
     val labCandidates: List<ByteCandidate> = emptyList(),
     val encryptedReports: Int = 0,
     val lastExportMessage: String = "",
+    val lastRideSummaryLines: List<String> = emptyList(),
+    val lastMeasurementQualityLabel: String = "",
+    val lastMeasurementQualityDetail: String = "",
+    val lastMeasurementQualityStatus: MeasurementDataQualityStatus? = null,
     val recordingActive: Boolean = false,
+    /** null while the journal starts, true when active, false after any IO failure. */
+    val recordingCrashProtected: Boolean? = null,
     val recordingPaused: Boolean = false,
     val recordingStartedAt: Long = 0L,
     val recordingPacketCount: Int = 0,
     val pendingMeasurementExportCount: Int = 0,
+    /** Persistent startup diagnostics; later successful exports must not hide them. */
+    val recoveryIssueCount: Int = 0,
+    val recoveryIssueDetail: String = "",
     val measurementExportInProgress: Boolean = false,
     val markerCount: Int = 0,
     val lastMarker: String = "",
@@ -221,6 +234,8 @@ data class ScooterState(
 
 /** Drops values that are only valid for one physical GATT connection. */
 internal fun ScooterState.clearConnectionScopedTelemetry(nextConnectionEpoch: Long): ScooterState = copy(
+    scanning = false,
+    scanStartedAtElapsedRealtimeMs = 0L,
     telemetryReady = false,
     connectionEpoch = nextConnectionEpoch,
     speedSampleConnectionEpoch = -1L,
@@ -229,6 +244,7 @@ internal fun ScooterState.clearConnectionScopedTelemetry(nextConnectionEpoch: Lo
     gattOperationBusy = false,
     batteryPercent = null,
     batteryPercentRaw = null,
+    batteryStability = BatteryPercentStability.DISCONNECTED,
     voltageV = null,
     currentA = null,
     motorTemperatureC = null,
@@ -243,7 +259,7 @@ internal fun ScooterState.clearConnectionScopedTelemetry(nextConnectionEpoch: Lo
     startModeRaw = null,
     startModeWriteAvailable = false,
     startModeBusy = false,
-    tripDistanceKm = null,
+    // Measurement distance is scoped to the active ride, not one GATT epoch.
     odometerKm = null,
     lastCharacteristic = "",
     lastRawHex = "",

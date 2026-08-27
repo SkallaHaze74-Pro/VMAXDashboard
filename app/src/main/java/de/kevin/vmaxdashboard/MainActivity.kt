@@ -35,10 +35,17 @@ class MainActivity : ComponentActivity() {
     internal val bleManagerForReconnectSupervisor: BleScooterManager
         get() = dashboardViewModel.bleManager
 
+    override fun onStop() {
+        // Request an ordered durability barrier while leaving the UI thread
+        // unblocked; prior rows are never recopied from here.
+        dashboardViewModel.bleManager.checkpointActiveMeasurement()
+        super.onStop()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme {
+            VmaxDashboardTheme {
                 VmaxApp(
                     manager = dashboardViewModel.bleManager,
                     gattScanner = dashboardViewModel.gattReadScanner
@@ -120,20 +127,37 @@ private fun VmaxApp(manager: BleScooterManager, gattScanner: GattReadScanner) {
 
     LaunchedEffect(chargeMode, state.connected) {
         while (chargeMode && !manager.state.value.connected) {
-            if (!manager.state.value.scanning && manager.hasRequiredPermissions()) {
+            val current = manager.state.value
+            val action = chargeReconnectAction(
+                chargeMode = chargeMode,
+                connected = current.connected,
+                scanning = current.scanning,
+                scanStartedAtElapsedMs = current.scanStartedAtElapsedRealtimeMs,
+                nowElapsedMs = SystemClock.elapsedRealtime()
+            )
+            if (action.refreshPowerArm) {
                 gattScanner.armForNextConnection(
                     readBeforeNotifications = true,
                     archiveIfNoDevice = false
                 )
-                manager.startScan()
             }
-            delay(3_000)
+            if (action.restartBleScan) manager.stopScan()
+            if (action.startBleScan && manager.hasRequiredPermissions()) manager.startScan()
+            // Refresh before the three-second POWER discovery arm expires,
+            // including while Android already has an active BLE scan.
+            delay(2_000)
         }
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        contentColor = MaterialTheme.colorScheme.onBackground,
         topBar = {
             TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.primary
+                ),
                 title = {
                     Column {
                         Text("VMAX Dashboard • ${BuildConfig.VERSION_NAME}")
@@ -155,27 +179,27 @@ private fun VmaxApp(manager: BleScooterManager, gattScanner: GattReadScanner) {
             item { SpeedCard(state) }
             item { SectionTitle("Bestätigte Fahrdaten") }
             item {
-                val batteryText = when {
-                    state.batteryPercentRaw != null && state.batteryPercentRaw !in 0..100 ->
-                        state.batteryPercent?.let { "$it % • roh ${state.batteryPercentRaw} ungültig" }
-                            ?: "– • roh ${state.batteryPercentRaw} ungültig"
-                    state.batteryPercent != null && state.batteryPercentRaw != null &&
-                        state.batteryPercent != state.batteryPercentRaw ->
-                        "${state.batteryPercent} % • roh ${state.batteryPercentRaw} %"
-                    state.batteryPercent != null -> "${state.batteryPercent} %"
-                    state.batteryPercentRaw != null -> "${state.batteryPercentRaw} % roh"
-                    state.lastKnownBatteryPercent != null ->
-                        "– live • zuletzt ${state.lastKnownBatteryPercent} %"
-                    else -> "–"
-                }
+                val batteryText = batteryDisplayText(
+                    stablePercent = state.batteryPercent,
+                    rawPercent = state.batteryPercentRaw,
+                    stability = state.batteryStability,
+                    lastKnownPercent = state.lastKnownBatteryPercent
+                )
                 MetricRow(
                     "Akku stabil / roh",
                     batteryText,
-                    "Kilometer",
-                    state.odometerKm?.let { "%.1f km".format(it) } ?: "–"
+                    "Fahrt seit Aufnahme",
+                    state.tripDistanceKm?.let { "%.1f km".format(it) } ?: "–"
                 )
             }
             item { MetricRow("Spannung", state.voltageV?.let { "%.2f V".format(it) } ?: "–", "Strom", state.currentA?.let { "%.2f A".format(it) } ?: "–") }
+            item {
+                InfoCard(
+                    "Kilometerstand",
+                    state.odometerKm?.let { "%.1f km • bestätigt aus 1506".format(it) }
+                        ?: "Noch kein bestätigter 1506-Wert dieser Verbindung"
+                )
+            }
             item { SectionTitle("Kandidaten / unabhängiger Vergleich") }
             item { MetricRow("Direktfeld 1509/9 (Kandidat)", state.sdkDirectPowerW?.let { "%.0f W".format(it) } ?: state.motorLoadRaw?.let { "$it W" } ?: "–", "Elektrisch |V×A|", state.currentPowerW?.let { "%.0f W".format(it) } ?: "–") }
             item {
@@ -222,18 +246,30 @@ private fun VmaxApp(manager: BleScooterManager, gattScanner: GattReadScanner) {
                         chargeStartedAt = System.currentTimeMillis()
                         gattScanner.armForNextConnection(readBeforeNotifications = true)
                         marker("Ladegerät einstecken", false)
-                        if (state.connected) gattScanner.scanAndRead()
+                        if (manager.state.value.connected) gattScanner.scanAndRead()
                     },
                     onPower = {
                         gattScanner.armForNextConnection(readBeforeNotifications = true)
                         marker("Power beim Laden – Kurzfenster", false)
                         // Arm discovery immediately; a brief advertisement must not
                         // wait for the periodic reconnect loop.
-                        if (!state.connected && !state.scanning) {
-                            if (manager.hasRequiredPermissions()) manager.startScan()
-                            else connect(readBeforeNotifications = true)
+                        if (!manager.state.value.connected) {
+                            val current = manager.state.value
+                            val action = chargeReconnectAction(
+                                chargeMode = true,
+                                connected = current.connected,
+                                scanning = current.scanning,
+                                scanStartedAtElapsedMs = current.scanStartedAtElapsedRealtimeMs,
+                                nowElapsedMs = SystemClock.elapsedRealtime(),
+                                explicitPowerAttempt = true
+                            )
+                            if (action.restartBleScan) manager.stopScan()
+                            if (action.startBleScan) {
+                                if (manager.hasRequiredPermissions()) manager.startScan()
+                                else connect(readBeforeNotifications = true)
+                            }
                         }
-                        if (state.connected) gattScanner.scanAndRead()
+                        if (manager.state.value.connected) gattScanner.scanAndRead()
                     },
                     onUnplug = {
                         marker("Ladegerät abziehen", false)
@@ -252,6 +288,9 @@ private fun VmaxApp(manager: BleScooterManager, gattScanner: GattReadScanner) {
                     onRetryExport = manager::retryPendingMeasurementExports,
                     onExport = manager::exportSessionCsv
                 )
+            }
+            if (state.lastRideSummaryLines.isNotEmpty() || state.lastMeasurementQualityLabel.isNotBlank()) {
+                item { LastRideSummaryCard(state) }
             }
             item {
                 GitHubSyncCard(
@@ -420,15 +459,20 @@ private fun ChargeDiagnosticCard(
     }
     Card(shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("🔌 Lade-Diagnose", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(
+                "🔌 Lade-Diagnose",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
             Text(status)
             if (active) Text("Ladetest: ${formatElapsed(duration)}")
-            Text("Letzter echter Akkuwert: ${lastBattery?.let { "$it %" } ?: "–"}")
+            Text("Letzter empfangener Akku-Rohwert: ${lastBattery?.let { "$it %" } ?: "–"}")
             Text("Letzte echte Spannung: ${lastVoltage?.let { "%.2f V".format(it) } ?: "–"}")
             if (age != null) Text("Letzte echte Messung vor ${age}s")
             if (!active) {
-                Button(onClick = onPlugIn, enabled = state.connected, modifier = Modifier.fillMaxWidth()) {
-                    Text("1. VOR EINSTECKEN ANTIPPEN")
+                Button(onClick = onPlugIn, modifier = Modifier.fillMaxWidth()) {
+                    Text("1. LADETEST STARTEN")
                 }
             } else {
                 Button(onClick = onPower, modifier = Modifier.fillMaxWidth()) {
@@ -439,7 +483,7 @@ private fun ChargeDiagnosticCard(
                 }
             }
             Text(
-                "Erst Schritt 1 antippen, dann das Ladegerät einstecken. Offline-Werte werden nicht geschätzt. Beim POWER-Versuch startet die Suche sofort; auch ein abgebrochener Kurz-Dump wird gesichert. Ein Reconnect allein beweist keinen Ladezustand.",
+                "Schritt 1 möglichst vor dem Einstecken antippen; er funktioniert aber auch, wenn der Scooter bereits offline lädt. Offline-Werte werden nicht geschätzt. Beim POWER-Versuch startet die Suche sofort; auch ein abgebrochener Kurz-Dump wird gesichert. Ein Reconnect allein beweist keinen Ladezustand.",
                 style = MaterialTheme.typography.bodySmall
             )
         }
@@ -448,7 +492,12 @@ private fun ChargeDiagnosticCard(
 
 @Composable
 private fun SectionTitle(text: String) =
-    Text(text, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+    Text(
+        text,
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.primary
+    )
 
 @Composable
 private fun StatusCard(
@@ -485,7 +534,15 @@ private fun StatusCard(
                     aiProfile.confidenceSummary,
                 style = MaterialTheme.typography.bodySmall
             )
-            if (chargeMode) Text("🔌 Lademodus aktiv – Sofortsuche bei POWER + erneuter Scan-Check alle 3 Sekunden")
+            if (chargeMode) Text("🔌 Lademodus aktiv – POWER-Fenster + Scan werden alle 2 Sekunden erneuert")
+            if (state.recoveryIssueCount > 0) {
+                Text(
+                    "Neustart-Sicherung: ${state.recoveryIssueCount} Problem(e) • " +
+                        state.recoveryIssueDetail,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
             Text(
                 "%.1f Pakete/s • ${state.packetTotal} Pakete • ${state.channels.size} Live-Kanäle"
                     .format(state.packetsPerSecond)
@@ -510,7 +567,8 @@ private fun SpeedCard(state: ScooterState) {
             Text(
                 state.speedKmh?.let { "%.1f".format(it) } ?: "—",
                 style = MaterialTheme.typography.displayMedium,
-                fontWeight = FontWeight.Black
+                fontWeight = FontWeight.Black,
+                color = MaterialTheme.colorScheme.primary
             )
             Text("km/h • Original-libble + BT638")
             Text(
@@ -691,9 +749,30 @@ private fun AutoRecordingCard(
 ) {
     Card(shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Automatische Daueraufnahme", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("Pakete: ${state.recordingPacketCount} • Marker: ${state.markerCount}")
+            Text(
+                "Automatische Daueraufnahme",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                "Pakete: ${state.recordingPacketCount} • Marker: ${state.markerCount} • Fahrt: " +
+                    (state.tripDistanceKm?.let { "%.1f km".format(it) } ?: "–")
+            )
             if (state.recordingActive) {
+                Text(
+                    when (state.recordingCrashProtected) {
+                        true -> "Neustart-Schutz: aktiv"
+                        false -> "Neustart-Schutz: FEHLER – Aufnahme läuft nur im Speicher"
+                        null -> "Neustart-Schutz wird aktiviert …"
+                    },
+                    color = when (state.recordingCrashProtected) {
+                        true -> MaterialTheme.colorScheme.primary
+                        false -> MaterialTheme.colorScheme.error
+                        null -> MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    fontWeight = FontWeight.SemiBold
+                )
                 Button(
                     onClick = onSaveAndContinue,
                     modifier = Modifier.fillMaxWidth()
@@ -747,6 +826,38 @@ private fun AutoRecordingCard(
             }
             if (state.lastExportMessage.isNotBlank()) {
                 Text(state.lastExportMessage, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+@Composable
+private fun LastRideSummaryCard(state: ScooterState) {
+    Card(shape = RoundedCornerShape(22.dp)) {
+        Column(
+            Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                "Letzte Fahrzusammenfassung",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            if (state.lastMeasurementQualityLabel.isNotBlank()) {
+                Text(
+                    state.lastMeasurementQualityLabel,
+                    fontWeight = FontWeight.Bold,
+                    color = when (measurementQualityTone(state.lastMeasurementQualityStatus)) {
+                        DashboardStatusTone.ACCENT -> MaterialTheme.colorScheme.primary
+                        DashboardStatusTone.ERROR -> MaterialTheme.colorScheme.error
+                        DashboardStatusTone.MUTED -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+                Text(state.lastMeasurementQualityDetail, style = MaterialTheme.typography.bodySmall)
+            }
+            state.lastRideSummaryLines.forEach { line ->
+                Text(line.replace('_', ' '), style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -1072,7 +1183,7 @@ private fun MetricCard(title: String, value: String, modifier: Modifier = Modifi
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(title)
-            Text(value, fontWeight = FontWeight.Bold)
+            Text(value, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
         }
     }
 }
@@ -1081,7 +1192,7 @@ private fun MetricCard(title: String, value: String, modifier: Modifier = Modifi
 private fun InfoCard(title: String, text: String) {
     Card(shape = RoundedCornerShape(18.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
-            Text(title, fontWeight = FontWeight.Bold)
+            Text(title, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
             Text(text, style = MaterialTheme.typography.bodySmall)
         }
     }
