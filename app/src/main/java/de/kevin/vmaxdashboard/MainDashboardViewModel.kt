@@ -5,13 +5,13 @@ import androidx.lifecycle.AndroidViewModel
 
 /** Retains the single physical GATT owner and Deep-READ scanner across rotation. */
 class MainDashboardViewModel(application: Application) : AndroidViewModel(application) {
-    val bleManager = BleScooterManager(application.applicationContext).also {
-        it.retryPendingMeasurementExports()
-    }
-    val gattReadScanner = GattReadScanner(bleManager)
+    private val scooterRuntime = (application as VMAXSyncApplication).scooterRuntime
+    private val runtimeLease = scooterRuntime.acquire()
+    val bleManager = scooterRuntime.bleManager
+    val gattReadScanner = scooterRuntime.gattReadScanner
 
     override fun onCleared() {
-        bleManager.disconnect()
+        runtimeLease.close()
         super.onCleared()
     }
 }

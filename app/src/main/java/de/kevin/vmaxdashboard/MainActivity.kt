@@ -4,9 +4,12 @@ package de.kevin.vmaxdashboard
 
 import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -24,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -59,6 +63,7 @@ class MainActivity : ComponentActivity() {
 private fun VmaxApp(manager: BleScooterManager, gattScanner: GattReadScanner) {
     val state by manager.state.collectAsStateWithLifecycle()
     val gattState by gattScanner.state.collectAsStateWithLifecycle()
+    val hudRuntime by RideHudRuntime.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val githubSync = remember(context) { GitHubTelemetrySync.get(context.applicationContext) }
@@ -69,10 +74,76 @@ private fun VmaxApp(manager: BleScooterManager, gattScanner: GattReadScanner) {
     var chargeMode by rememberSaveable { mutableStateOf(false) }
     var chargeStartedAt by rememberSaveable { mutableLongStateOf(0L) }
     var previousConnected by rememberSaveable { mutableStateOf(false) }
+    var showHudPermissionDialog by rememberSaveable { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results -> if (results.values.all { it }) manager.startScan() }
+
+    val hudNotificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val startAccepted = RideHudService.start(context)
+        if (!granted) {
+            rideHudDeniedNotificationStatus(
+                startAccepted = startAccepted,
+                overlayVisible = RideHudRuntime.state.value.active
+            )?.let {
+                RideHudRuntime.report(it.active, it.message, serviceRunning = it.serviceRunning)
+            }
+        }
+    }
+
+    fun startHudAfterNotificationChoice() {
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            hudNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            RideHudService.start(context)
+        }
+    }
+
+    val hudOverlayPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        when (
+            rideHudAction(
+                requestedEnabled = true,
+                overlayPermissionGranted = RideHudService.canDrawOverlays(context),
+                overlayVisible = RideHudRuntime.state.value.active,
+                userInitiated = false
+            )
+        ) {
+            RideHudAction.SHOW_OVERLAY -> startHudAfterNotificationChoice()
+            RideHudAction.NONE -> RideHudRuntime.report(
+                false,
+                "Mini-HUD nicht aktiviert • Overlay-Berechtigung fehlt"
+            )
+            RideHudAction.REQUEST_OVERLAY_PERMISSION -> Unit
+            RideHudAction.HIDE_OVERLAY -> RideHudService.hide(context)
+        }
+    }
+
+    fun requestHudEnabled() {
+        when (
+            rideHudAction(
+                requestedEnabled = true,
+                overlayPermissionGranted = RideHudService.canDrawOverlays(context),
+                overlayVisible = hudRuntime.active,
+                userInitiated = true
+            )
+        ) {
+            RideHudAction.REQUEST_OVERLAY_PERMISSION -> showHudPermissionDialog = true
+            RideHudAction.SHOW_OVERLAY -> startHudAfterNotificationChoice()
+            RideHudAction.HIDE_OVERLAY -> RideHudService.hide(context)
+            RideHudAction.NONE -> Unit
+        }
+    }
 
     fun connect(readBeforeNotifications: Boolean = false) {
         gattScanner.armForNextConnection(readBeforeNotifications)
@@ -149,6 +220,45 @@ private fun VmaxApp(manager: BleScooterManager, gattScanner: GattReadScanner) {
         }
     }
 
+    if (showHudPermissionDialog) {
+        AlertDialog(
+            onDismissRequest = { showHudPermissionDialog = false },
+            title = { Text("Mini-HUD über anderen Apps") },
+            text = {
+                Text(
+                    "Android benötigt dafür einmalig den Spezialzugriff „Über anderen Apps einblenden“. " +
+                        "Das HUD zeigt ausschließlich Live-km/h und Akku und lässt sich jederzeit mit × schließen."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showHudPermissionDialog = false
+                        RideHudRuntime.report(false, "In Android bitte „Über anderen Apps“ erlauben")
+                        val settingsIntent = Intent(
+                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:${context.packageName}")
+                        )
+                        runCatching { hudOverlayPermissionLauncher.launch(settingsIntent) }
+                            .onFailure {
+                                RideHudRuntime.report(
+                                    false,
+                                    "Android-Einstellung für das Mini-HUD konnte nicht geöffnet werden"
+                                )
+                            }
+                    }
+                ) {
+                    Text("Einstellung öffnen")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showHudPermissionDialog = false }) {
+                    Text("Abbrechen")
+                }
+            }
+        )
+    }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onBackground,
@@ -177,6 +287,17 @@ private fun VmaxApp(manager: BleScooterManager, gattScanner: GattReadScanner) {
         ) {
             item { StatusCard(state, gattState, chargeMode, aiProfile) }
             item { SpeedCard(state) }
+            item {
+                RideHudCard(
+                    active = hudRuntime.active,
+                    serviceRunning = hudRuntime.serviceRunning,
+                    connected = state.connected,
+                    status = hudRuntime.message,
+                    onToggle = { enabled ->
+                        if (enabled) requestHudEnabled() else RideHudService.hide(context)
+                    }
+                )
+            }
             item { SectionTitle("Bestätigte Fahrdaten") }
             item {
                 val batteryText = batteryDisplayText(
@@ -578,6 +699,56 @@ private fun SpeedCard(state: ScooterState) {
             Text(
                 "150D bleibt im Stillstand gespeichert und ist kein Live-Tempo.",
                 style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
+}
+
+@Composable
+private fun RideHudCard(
+    active: Boolean,
+    serviceRunning: Boolean,
+    connected: Boolean,
+    status: String,
+    onToggle: (Boolean) -> Unit
+) {
+    Card(shape = RoundedCornerShape(22.dp)) {
+        Row(
+            Modifier.fillMaxWidth().padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    "Mini-HUD • km/h & Akku",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    "Frei verschiebbar über anderen Apps • dunkles Grün-Weiß-Design",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    when {
+                        active && !connected -> "HUD zeigt VERBINDE … und sucht automatisch weiter"
+                        serviceRunning && !active ->
+                            "HUD ausgeblendet • Fahrt und Absturz-Sicherung laufen weiter"
+                        !connected -> "Zuerst den Scooter verbinden"
+                        else -> status
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (active || serviceRunning) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+            }
+            Switch(
+                checked = active,
+                onCheckedChange = onToggle,
+                enabled = active || serviceRunning || connected
             )
         }
     }

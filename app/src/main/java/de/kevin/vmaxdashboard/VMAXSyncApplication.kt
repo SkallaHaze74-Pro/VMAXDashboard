@@ -10,10 +10,14 @@ class VMAXSyncApplication : Application() {
             private set
     }
 
+    internal lateinit var scooterRuntime: ScooterRuntime
+        private set
+
     override fun onCreate() {
         super.onCreate()
         appContext = applicationContext
         AdaptiveDecoderRuntime.initialize(this)
+        scooterRuntime = ScooterRuntime(this)
         AutomaticBleReconnectSupervisor.install(this)
         DiagnosticReadArchive.get(this).start()
 

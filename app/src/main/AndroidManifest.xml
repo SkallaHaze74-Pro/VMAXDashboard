@@ -25,6 +25,10 @@
         android:usesPermissionFlags="neverForLocation" />
 
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".VMAXSyncApplication"
@@ -49,6 +53,12 @@
             android:name=".GitHubSyncActivity"
             android:exported="false"
             android:label="VMAX GitHub Sync" />
+
+        <service
+            android:name=".RideHudService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice"
+            android:stopWithTask="false" />
 
     </application>
 
