@@ -11,25 +11,26 @@ Modell: `gemini-3.5-flash-lite`
 
 Fallbackmodell aktiv: `gemini-3.5-flash-lite`.
 
-- Belastbare Evidenz:
-  - 22 Messfahrten und 672 erfolgreiche GATT-Callbacks belegen konstante Rohdatenstrukturen für die Kanäle 1505, 1506 und 1509 (Quelle: BT638 GATT DEEP READ & libble-Vergleich).
-  - 5 Decoder-Regeln (`speedKmh`, `odometerKm`, `voltageV`, `currentA`, `batteryPercent`) besitzen eine Konsistenz von 99% basierend auf SDK-Layout- und App-Extraktionsprüfungen (Quelle: Decoder-Profil).
-  - `powerW` (Kanal 1509, Offset 9) ist im Profil explizit als `candidate` markiert, da eine reine app-interne RAW-Konsistenz und Kreuzvalidierung kein unabhängiger semantischer Beweis sind (Quelle: Evidence Guard).
+- Belastbare Evidenz: 
+  - 22 Messfahrten mit insgesamt 700 erfolgreichen READ-Callbacks (100% Callback-Erfolg bei allen 28 Characteristics gemäß BT638 Deep-READ).
+  - Fünf bestätigte Decoder-Regeln (batteryPercent, currentA, odometerKm, speedKmh, voltageV) basieren auf konsistenten App-Extraktionen und SDK-Layouts (Konfidenz 99%).
+  - Kanal `1509` (Feld 9, `powerW`) ist laut Evidence Guard als `candidate` (93% Konfidenz) markiert, da der Cross-Field-Abgleich (`abs(voltage_v * current_a)`) mit 95.03% Übereinstimmung zwar korreliert, aber keine unabhängige externe Validierung darstellt.
 
 - Konflikte / mögliche Bugs:
-  - Selbstreferenz bei Leistungswerten: Die Kreuzvalidierung von `powerW` gegen `abs(voltage_v * current_a)` vergleicht App-Export-Daten miteinander, was zu Zirkelschlüssen führen kann, solange keine externe physikalische Messung vorliegt (Quelle: Evidence Guard).
-  - Diskrepanzen in den Export-Zusammenfassungen: Einige frühe Messfahrten (z. B. `Messfahrt_2026-08-13_19-17-14`) zeigen unvollständige oder fehlende Zählerwerte (`?` in der Datenqualitäts-Tabelle) (Quelle: libble-Vergleich).
+  - Selbstreferenz bei Leistungsdaten: Der Kandidat `powerW` (1509/9) stützt sich primär auf interne Cross-Field-Vergleiche desselben RAW-Pakets, was keine echte semantische Fremdbestätigung ist.
+  - Unklare Datenqualität in Einzelexporten: Mehrere frühe Fahrten (z.B. `Messfahrt_2026-08-13_19-17-14`) weisen 0 akzeptierte Exportzeilen auf.
+  - Ladezustands-Ambivalenz: Da BLE beim Laden abschaltet, dürfen Live-Messungen während dieses Zustands nicht als Basis für Regeländerungen herangezogen werden.
 
 - Hypothesen (nicht bestätigt):
-  - 1509/9 u16be entspricht physischer elektrischer Leistung in Watt (offen bis zur externen Validierung).
-  - Kanal 150C repräsentiert Zellspannungen oder ein BatteryCellUpdate (bisher nur Platzhalter- und Sentinel-Bytes beobachtet; Quelle: GATT Deep Read).
+  - `powerW` (1509/9) repräsentiert die tatsächliche elektrische Leistung, validiert durch Spannung und Strom.
+  - `150C` entspricht einem verlässlichen `BatteryCellUpdate`-Kanal, besteht aktuell jedoch nur aus Platzhalterbytes.
 
 - Nächste sichere READ-ONLY-Tests (max. 5):
-  1. Nur im Stillstand und ohne Ladekabel: Einen kurzen READ-/Notify-Mitschnitt der Kanäle 1505 und 1509 aufzeichnen.
-  2. Abgleich der gemessenen Odometer-Werte aus Kanal 1506 mit einem unbeteiligten externen GPS-Log bei konstanter Fahrt (Soll-Ist-Vergleich ohne Schreibzugriff).
-  3. Statische Konsistenzprüfung der Characteristics 1502 und 1503 im getrennten Verbindungszustand.
-  4. Überprüfung der Rohdaten-Payloads auf Plausibilität (keine Sprünge im SOC oder der Spannung) bei aufeinanderfolgenden READ-Versuchen.
-  5. Kontrolle der Export-Zusammenfassungen auf konsistente Zähler ohne Annahme von Nullwerten für fehlende Einträge.
+  1. Statischer READ-Abgleich der Characteristics `1502` und `1509` im abgezogenen Zustand nach kurzem Reconnect.
+  2. Prüfung der Payload-Stabilität von `1503` und `150A` im Stillstand ohne aktive Fahrt.
+  3. Validierung der Odometer-Werte aus `1506` über mehrere aufeinanderfolgende statische Abfragen.
+  4. Konsistenzprüfung der Rohdaten-Exportzeilen für Fahrten mit unvollständigen Zählern (z. B. `Zusammenfassung.txt`).
+  5. Read-only-Mitschnitt eines einzelnen Notify-Frames unmittelbar nach einem Verbindungsaufbau (ohne Ladezustand).
 
 - Automatische Änderungen: KEINE
 
@@ -44,29 +45,29 @@ Modell: `glm-4.5-flash`
 Fallbackmodell aktiv: `glm-4.5-flash`.
 
 Belastbare Evidenz
-- batteryPercent, currentA, odometerKm, speedKmh und voltageV sind mit 99% Konfidenz bestätigt
-- Diese Felder zeigen 100% Trefferrate im libble-Vergleich mit dem BT638-Livestand
-- BT638 GATT DEEP READ bestätigt erfolgreiche Lesezugriffe auf die entsprechenden Characteristics
-- Cross-Field-Check für powerW zeigt hohe Korrelation (0.992124) mit |Spannung × Strom|
+- Cross-Field-Validierung für powerW zeigt 95.03% Übereinstimmung mit berechneter Leistung (Spannung × Strom)
+- Bestätigte Regeln (batteryPercent, currentA, odometerKm, speedKmh, voltageV) zeigen 99% Konfidenz und perfekte Korrelation (1.0)
+- BT638 GATT-Deep-Read bestätigt Lesbarkeit aller relevanten Characteristics mit stabilen Callback-Raten
+- App-Exporte sind konsistent mit SDK-Layout laut libble-Vergleich
 
 Konflikte / mögliche Bugs
-- powerW bleibt Kandidat mit 93% Konfidenz, da unabhängige semantische Validierung fehlt
-- Im libble-Vergleich wird powerW nicht direkt geprüft, nur indirekt über Cross-Field-Check
-- Mehrere wichtige Akkufelder (charging, chargingRemainSeconds, stateOfHealth) sind noch unzugeordnet
-- 1502 (Battery/static candidate) hat statische Payloads, könnte aber wichtige Batterieparameter enthalten
+- powerW bleibt trotz starker Cross-Field-Übereinstimmung nur "Kandidat" - mögliche übermäßige Vorsicht
+- Viele Messfahrten in libble-Vergleich zeigen 0 akzeptierte Exportzeilen - Datenaufnahmeproblem
+- Unklare Zuordnungen für Ladezustandsinformationen (charging, chargingRemainSeconds) bleiben offen
+- 150D wird nach erster Fahrt nicht mehr als Live-Geschwindigkeit gelernt - möglicher Verlust semantischer Bedeutung
 
 Hypothesen (nicht bestätigt)
-- powerW könnte tatsächlich die Leistung in Watt darstellen, basierend auf der hohen Korrelation mit Spannung × Strom
-- 1502 könnte fehlende Akkuzustandsdaten wie Ladezeit oder Gesundheitsparameter enthalten
-- 150C (BatteryCellUpdate candidate) könnte Zellspannungs- oder Temperaturdaten liefern, die noch nicht extrahiert wurden
-- Die Unterschiede in 1505-Payload-Varianten könnten verschiedene Betriebsmodi widerspiegeln
+- powerW könnte tatsächlich die Leistung darstellen, benötigt aber unabhängige physikalische Validierung
+- Variable Bytes in Characteristics 1505-150A könnten unentdeckte Zusatzinformationen enthalten
+- 1502 (Battery/static candidate) könnte relevante Akkustatikdaten liefern, die noch nicht zugeordnet sind
+- Niedrige Akzeptanzraten in libble-Vergleich deuten auf mögliche Exportprobleme hin
 
 Nächste sichere READ-ONLY-Tests
-1. Detaillierte Analyse von 1502 (Battery/static candidate) zur Identifizierung noch fehlender Batterieparameter
-2. Unabhängige Validierung von powerW durch Vergleich mit bekannten physikalischen Messwerten
-3. Untersuchung von 150C auf mögliche Zellinformationen und deren Bedeutung
-4. Analyse von 1507 zur Klärung der Statistikblock-Semantik
-5. Überprüfung der Korrelation zwischen 1503-Varianten und bekannten Gerätezuständen
+- Vergleich von powerW mit extern gemessener Leistung aus unabhängigem Messgerät
+- Analyse der variabten Bytes in Characteristics 1505-150A auf Muster und Korrelationen
+- Gezielte Untersuchung von 1502 und 150C auf Akkuzustandsdaten
+- Überprüfung der Datenaufnahmepipeline für Exportprobleme in libble-Vergleich
+- Untersuchung von 150D über mehrere Verbindungszyklen auf semantische Stabilität
 
 Automatische Änderungen: KEINE
 
