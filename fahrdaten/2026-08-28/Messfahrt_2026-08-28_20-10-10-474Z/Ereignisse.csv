@@ -1,0 +1,7 @@
+relative_ms;timestamp_ms;marker
+0;1787947810474;START
+3485;1787947813959;BLE getrennt • RAW 0 gesichert
+4242;1787947814716;BLE-Link wieder verbunden • Messfahrtdaten erhalten
+9802;1787947820276;Telemetrie wieder aktiv
+144827;1787947955301;BLE getrennt • RAW 360 gesichert
+155421;1787947965895;STOP
