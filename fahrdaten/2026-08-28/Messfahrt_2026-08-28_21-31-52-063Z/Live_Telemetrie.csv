@@ -1,0 +1,7 @@
+relative_ms;timestamp_ms;speed_kmh_candidate;battery_percent_raw;battery_percent_stable;battery_stability;voltage_v;current_a;power_w;electrical_power_w;power_provenance;motor_temp_c;battery_temp_c;trip_km;odometer_km;speed_raw_1505_u16be_b6_b7;motor_load_raw_be;light_state_1508_b0;ride_mode_1508_b3;start_mode_1508_b11;source_channel
+771;1787952712834;0.0;64;70;RECOVERING_AFTER_LOAD;49.4;0.0;0.0;0.0;1509_direct_carried;;;0.0;736.5;0;0;1;2;0;1502
+1182;1787952713245;0.0;64;70;RECOVERING_AFTER_LOAD;49.4;0.0;0.0;0.0;1509_direct_carried;;;0.0;736.5;0;0;1;2;0;1505
+1391;1787952713454;0.0;64;70;RECOVERING_AFTER_LOAD;49.4;0.0;0.0;0.0;1509_direct_carried;;;0.0;736.5;0;0;1;2;0;1506
+1812;1787952713875;0.0;64;70;RECOVERING_AFTER_LOAD;49.4;0.0;0.0;0.0;1509_direct_carried;;;0.0;736.5;0;0;1;2;0;1508
+2021;1787952714084;0.0;64;70;RECOVERING_AFTER_LOAD;49.4;0.0;0.0;0.0;1509_direct;;;0.0;736.5;0;0;1;2;0;1509
+2232;1787952714295;0.0;64;70;RECOVERING_AFTER_LOAD;49.4;0.0;0.0;0.0;1509_direct_carried;;;0.0;736.5;0;0;1;2;0;150A
