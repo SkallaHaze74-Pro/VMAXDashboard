@@ -1,0 +1,5 @@
+relative_ms;timestamp_ms;marker
+0;1788008544171;START
+9824;1788008553995;BLE getrennt • RAW 16 gesichert
+583067;1788009127238;APP_NEUSTART • laufende Messfahrt automatisch gerettet
+583067;1788009127238;STOP
