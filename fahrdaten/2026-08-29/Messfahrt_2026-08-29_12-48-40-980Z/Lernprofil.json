@@ -1,0 +1,7 @@
+{
+  "format": "VMAX_LEARNING_PROFILE_V1",
+  "updatedAt": 1788008544171,
+  "candidates": [],
+  "public_identity_redacted": true,
+  "public_hash_privacy": "unsalted SHA-256 pseudonym; same identity is linkable across public uploads"
+}
