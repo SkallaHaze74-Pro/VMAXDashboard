@@ -4,13 +4,13 @@
   "reference": "abs(voltage_v * current_a) via electrical_power_w",
   "evidenceType": "cross-field-physical-consistency",
   "independentExternalConfirmation": false,
-  "rideCount": 24,
-  "ridesWithComparisons": 18,
-  "comparisons": 2668,
-  "maeW": 3.768928,
+  "rideCount": 33,
+  "ridesWithComparisons": 27,
+  "comparisons": 3705,
+  "maeW": 3.852362,
   "medianAbsErrorW": 0.0,
-  "closePercent": 95.35,
-  "correlation": 0.992507,
+  "closePercent": 94.95,
+  "correlation": 0.992112,
   "status": "CROSS_FIELD_EVIDENCE_AVAILABLE",
   "note": "Cross-field consistency is useful evidence but is not external semantic proof. It must never activate the decoder rule by itself.",
   "rides": [
@@ -157,6 +157,78 @@
       "medianAbsErrorW": 0.0,
       "closePercent": 100.0,
       "correlation": null
+    },
+    {
+      "ride": "Messfahrt_2026-08-27_21-07-11-681Z",
+      "comparisons": 455,
+      "maeW": 2.672088,
+      "medianAbsErrorW": 0.0,
+      "closePercent": 94.95,
+      "correlation": 0.996654
+    },
+    {
+      "ride": "Messfahrt_2026-08-27_21-29-30-909Z",
+      "comparisons": 24,
+      "maeW": 0.0,
+      "medianAbsErrorW": 0.0,
+      "closePercent": 100.0,
+      "correlation": null
+    },
+    {
+      "ride": "Messfahrt_2026-08-28_20-09-16-951Z",
+      "comparisons": 5,
+      "maeW": 0.0,
+      "medianAbsErrorW": 0.0,
+      "closePercent": 100.0,
+      "correlation": null
+    },
+    {
+      "ride": "Messfahrt_2026-08-28_20-10-10-474Z",
+      "comparisons": 45,
+      "maeW": 4.415556,
+      "medianAbsErrorW": 0.0,
+      "closePercent": 95.56,
+      "correlation": 0.981017
+    },
+    {
+      "ride": "Messfahrt_2026-08-28_20-12-45-895Z",
+      "comparisons": 54,
+      "maeW": 5.451852,
+      "medianAbsErrorW": 0.0,
+      "closePercent": 92.59,
+      "correlation": 0.994913
+    },
+    {
+      "ride": "Messfahrt_2026-08-28_21-31-52-063Z",
+      "comparisons": 1,
+      "maeW": 0.0,
+      "medianAbsErrorW": 0.0,
+      "closePercent": 100.0,
+      "correlation": null
+    },
+    {
+      "ride": "Messfahrt_2026-08-29_12-48-40-980Z",
+      "comparisons": 276,
+      "maeW": 5.404348,
+      "medianAbsErrorW": 0.45,
+      "closePercent": 92.39,
+      "correlation": 0.983255
+    },
+    {
+      "ride": "Messfahrt_2026-08-29_13-02-24-171Z",
+      "comparisons": 2,
+      "maeW": 0.0,
+      "medianAbsErrorW": 0.0,
+      "closePercent": 100.0,
+      "correlation": null
+    },
+    {
+      "ride": "Messfahrt_2026-08-30_01-53-44-552Z",
+      "comparisons": 175,
+      "maeW": 5.811429,
+      "medianAbsErrorW": 0.1,
+      "closePercent": 92.57,
+      "correlation": 0.964143
     }
   ]
 }
