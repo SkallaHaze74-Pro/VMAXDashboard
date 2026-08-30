@@ -1,0 +1,36 @@
+VMAX Dashboard Messfahrt
+Start: 1788054824552
+Publikations_ID: measurement-v1:1788054824552
+Ende: 1788057895375
+Dauer_ms: 3070823
+BLE_Pakete: 1404
+BLE_Empfangen: 1404
+BLE_Akzeptiert: 1404
+READ_Verworfen: 0
+Hybrid_Verworfen: 0
+Diagnose_Notifications_isoliert: 0
+Verbindungsepochen: 1
+Deep_READ_Scans: 1
+Deep_READ_Vollständige_Scans: 1
+Deep_READ_Teil_Scans: 0
+Deep_READ_Antworten: 28
+Deep_READ_Versuche: 28
+Deep_READ_Erfolg: 28
+Deep_READ_Gültige_Payloads: 28
+Deep_READ_Export: vollständig archiviert; Scans 1/1 abgeschlossen
+Marker: 2
+Gerät: BT638
+Kanäle: 1502,1505,1506,1508,1509,150A,150B,150D
+Datenqualität: Saubere Exportintegrität
+Datenqualität_Detail: 1404/1404 empfangene Notifications klassifiziert • RAW 1404/1404 • Live 1404/1404 • bewertet Exportintegrität, nicht Funkvollständigkeit
+Fahrdaten_Zeilen: 1404
+Strecke_km: 1.6
+Strecke_Quelle: Kilometerstand-Differenz 1506
+Geschwindigkeit_Max_kmh: 21.1
+Akku_Start_roh_Prozent: 27
+Akku_Ende_roh_Prozent: 21
+Akku_Endstatus: nur Rohwert vorhanden – noch nicht stabil bestätigt
+Akku_Rohminimum_Prozent: 21
+Akku_Gehaltenes_Rohminimum_Prozent: 21
+Spannung_Min_V: 42.8
+Strom_Spitze_Abs_A: 17.0
